@@ -53,6 +53,83 @@ Phase 0 of the MVP build is in progress. The IR schema (`packages/ir`) is drafte
 
 Order of landing, in priority: compiler + runtime + benchmark harness (Phase 0), then parser + verifier + healer + CLI + MCP server (Phase 1). The healer is the headline feature. Published false-heal rate is the headline metric.
 
+## Local development
+
+Setup instructions for picking the project up on a fresh machine. The repo is a pnpm workspace running Node 22 LTS. The same commands work on macOS, Windows, and Linux once the prerequisites are in place.
+
+### Prerequisites
+
+**Node 22 LTS or newer.** Verify with `node --version`. If missing:
+
+- macOS: `brew install node@22`, or install via [fnm](https://github.com/Schniz/fnm), [Volta](https://volta.sh/), or [nvm](https://github.com/nvm-sh/nvm).
+- Windows: `winget install OpenJS.NodeJS.LTS`, or download the installer from [nodejs.org](https://nodejs.org/).
+- Linux: use your distro's package manager, `nvm`, or `fnm`.
+
+**pnpm 9.x.** The version is pinned in the root `package.json` via `packageManager`. The simplest install is Corepack, which ships with Node:
+
+```sh
+corepack enable
+corepack prepare pnpm@latest --activate
+pnpm --version
+```
+
+#### Windows caveat: Corepack and Node in Program Files
+
+If Node was installed to `C:\Program Files\nodejs\`, Corepack cannot write its shims there without admin rights and the enable step fails with `EPERM`. Either run an elevated PowerShell window, or install pnpm standalone to your user profile:
+
+```powershell
+Invoke-WebRequest -UseBasicParsing "https://get.pnpm.io/install.ps1" -OutFile "$env:TEMP\pnpm-install.ps1"
+& "$env:TEMP\pnpm-install.ps1"
+```
+
+Open a new terminal after installation so pnpm is on your PATH. This gotcha and its workarounds are also captured in [`docs/development/gotchas.md`](./docs/development/gotchas.md).
+
+### Clone and install
+
+```sh
+git clone https://github.com/<your-fork>/agent-script-compiler.git
+cd agent-script-compiler
+pnpm install
+```
+
+The first install takes around 30 seconds and produces `node_modules/` and `pnpm-lock.yaml`. Both are gitignored except for the lockfile.
+
+### Verify the baseline
+
+Run all three before and after every change. They are the invariant the whole project builds on:
+
+```sh
+pnpm typecheck
+pnpm format:check
+pnpm test
+```
+
+All three must pass. If any fails on a fresh clone, something has broken that should not have; check [`docs/development/gotchas.md`](./docs/development/gotchas.md) for known issues and fixes.
+
+### Common commands
+
+| Command                             | What it does                                                                              |
+| ----------------------------------- | ----------------------------------------------------------------------------------------- |
+| `pnpm install`                      | Install workspace dependencies.                                                           |
+| `pnpm typecheck`                    | `tsc --noEmit` across every workspace package.                                            |
+| `pnpm test`                         | Vitest run across every workspace package.                                                |
+| `pnpm test:watch`                   | Vitest in watch mode for the active package.                                              |
+| `pnpm format`                       | Apply Prettier formatting in place.                                                       |
+| `pnpm format:check`                 | Verify formatting without writing.                                                        |
+| `pnpm --filter @asc/ir regen-types` | Regenerate `packages/ir/src/types.ts` from the JSON schemas. Run after any schema change. |
+| `pnpm --filter @asc/<pkg> test`     | Run tests for a single package.                                                           |
+
+### Editor setup
+
+Any TypeScript-aware editor works. VS Code picks up `tsconfig.base.json` and the per-package `tsconfig.json` files automatically. Recommended extensions: Prettier, ESLint (when it lands), and the official JSON Schema extension so workflow files get live validation against the schema (triggered by the `$schema` pointer at the top of each example).
+
+### Where to start contributing
+
+1. Read [`CLAUDE.md`](./CLAUDE.md) for the working rules (documentation style, baseline-green requirement, no em dashes, how the ToDo list is maintained).
+2. Read [`docs/planning/ToDo.md`](./docs/planning/ToDo.md) to see the current build state. Pick the lowest unchecked item in the current phase unless you have a specific reason to work out of order.
+3. Make the change. Keep `pnpm typecheck + format:check + test` green on every commit.
+4. If you make an architectural decision, add an ADR in [`docs/architecture/decisions/`](./docs/architecture/decisions/). If you hit and fix an unusual bug, add a dated entry to [`docs/development/gotchas.md`](./docs/development/gotchas.md).
+
 ## Documentation map
 
 | Where                                                                                          | What                                                                                                                               |
