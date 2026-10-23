@@ -63,6 +63,7 @@
       }
     },
     "Target": {
+      "title": "Target",
       "type": "object",
       "description": "A ranked list of ways to find the element this step acts on. Candidates are tried in order; order should be role -> testid -> text -> css -> visual.",
       "required": ["candidates"],
@@ -76,6 +77,7 @@
       }
     },
     "SelectorCandidate": {
+      "title": "SelectorCandidate",
       "type": "object",
       "required": ["kind", "value"],
       "additionalProperties": false,
@@ -93,6 +95,7 @@
       }
     },
     "ValueSource": {
+      "title": "ValueSource",
       "description": "A value supplied to a step. May be a literal string, a reference to a workflow parameter, or a reference to a vault secret. Secrets are never inlined.",
       "oneOf": [
         {
@@ -126,6 +129,7 @@
       ]
     },
     "Condition": {
+      "title": "Condition",
       "description": "A boolean assertion about page state. Used in pre, post, assert, guard.if, and loop.while.",
       "oneOf": [
         {

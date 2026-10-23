@@ -2,56 +2,82 @@
 // Run `pnpm --filter @asc/ir regen-types` to regenerate.
 
 /**
+ * A fragment of a JSON Schema document. Used for workflow parameters,
+ * outputs, and extraction schemas, which are themselves JSON Schemas.
+ * Deliberately loose: schemas are user-authored and may use any valid
+ * JSON Schema construct. Runtime validation enforces well-formedness.
+ */
+export type JSONSchemaFragment = Record<string, unknown>;
+
+/**
  * A single step in a workflow. Every step carries an id, a natural-language intent (used by the healer when the step fails), and action-specific fields enforced by the discriminator on the 'action' property.
  */
 export type Step = CommonFields &
   (Navigate | Click | Fill | Extract | Wait | Assert | Guard | Loop);
+/**
+ * A boolean assertion about page state. Used in pre, post, assert, guard.if, and loop.while.
+ */
+export type Condition =
+  | {
+      /**
+       * Regex or substring the current URL must match.
+       */
+      urlMatches: string;
+    }
+  | {
+      /**
+       * Exact URL the current page must have.
+       */
+      urlEquals: string;
+    }
+  | {
+      /**
+       * CSS selector that must resolve to a visible element.
+       */
+      selectorVisible: string;
+    }
+  | {
+      /**
+       * CSS selector that must not resolve to any element.
+       */
+      selectorAbsent: string;
+    }
+  | {
+      /**
+       * Text that must appear anywhere on the page.
+       */
+      textPresent: string;
+    }
+  | {
+      /**
+       * HTTP response status the most recent navigation or XHR must have returned.
+       */
+      responseStatus: number;
+    };
+/**
+ * A value supplied to a step. May be a literal string, a reference to a workflow parameter, or a reference to a vault secret. Secrets are never inlined.
+ */
+export type ValueSource =
+  | string
+  | {
+      /**
+       * Name of a workflow parameter declared in Workflow.parameters.
+       */
+      param: string;
+    }
+  | {
+      /**
+       * Name of a secret declared in Workflow.secrets. Resolved from the vault at run time.
+       */
+      secret: string;
+    };
 /**
  * Repeated execution. Exactly one of foreach or while must be provided. 'foreach' iterates over elements matching a Target; 'while' repeats until a Condition stops holding. maxIterations is a safety cap.
  */
 export type Loop = {
   action: 'loop';
   foreach?: Target;
-  /**
-   * A boolean assertion about page state. Used in pre, post, assert, guard.if, and loop.while.
-   */
-  while?:
-    | {
-        /**
-         * Regex or substring the current URL must match.
-         */
-        urlMatches: string;
-      }
-    | {
-        /**
-         * Exact URL the current page must have.
-         */
-        urlEquals: string;
-      }
-    | {
-        /**
-         * CSS selector that must resolve to a visible element.
-         */
-        selectorVisible: string;
-      }
-    | {
-        /**
-         * CSS selector that must not resolve to any element.
-         */
-        selectorAbsent: string;
-      }
-    | {
-        /**
-         * Text that must appear anywhere on the page.
-         */
-        textPresent: string;
-      }
-    | {
-        /**
-         * HTTP response status the most recent navigation or XHR must have returned.
-         */
-        responseStatus: number;
-      };
+  while?: Condition;
   /**
    * Hard cap on iterations to prevent runaway loops when a 'while' condition fails to flip.
    */
@@ -97,7 +123,7 @@ export interface Workflow {
    * Typed inputs the workflow accepts at run time. Keys are parameter names; values are JSON Schema fragments describing allowed types.
    */
   parameters?: {
-    [k: string]: {};
+    [k: string]: JSONSchemaFragment;
   };
   /**
    * Names of secrets the workflow requires. Resolved at run time from the configured vault. Literal secret values must never appear in the IR or generated code.
@@ -106,7 +132,7 @@ export interface Workflow {
   /**
    * JSON Schema describing the shape of the workflow's output. Used by the verifier to check output stability.
    */
-  outputs?: {};
+  outputs?: JSONSchemaFragment;
   /**
    * Ordered list of steps the workflow executes.
    *
@@ -136,85 +162,11 @@ export interface CommonFields {
   /**
    * Preconditions that must hold before this step runs. Failure here routes to triage, typically classifying as a site change or auth decay.
    */
-  pre?: (
-    | {
-        /**
-         * Regex or substring the current URL must match.
-         */
-        urlMatches: string;
-      }
-    | {
-        /**
-         * Exact URL the current page must have.
-         */
-        urlEquals: string;
-      }
-    | {
-        /**
-         * CSS selector that must resolve to a visible element.
-         */
-        selectorVisible: string;
-      }
-    | {
-        /**
-         * CSS selector that must not resolve to any element.
-         */
-        selectorAbsent: string;
-      }
-    | {
-        /**
-         * Text that must appear anywhere on the page.
-         */
-        textPresent: string;
-      }
-    | {
-        /**
-         * HTTP response status the most recent navigation or XHR must have returned.
-         */
-        responseStatus: number;
-      }
-  )[];
+  pre?: Condition[];
   /**
    * Postconditions that must hold after this step completes. The product of these across the workflow is what makes healing tractable.
    */
-  post?: (
-    | {
-        /**
-         * Regex or substring the current URL must match.
-         */
-        urlMatches: string;
-      }
-    | {
-        /**
-         * Exact URL the current page must have.
-         */
-        urlEquals: string;
-      }
-    | {
-        /**
-         * CSS selector that must resolve to a visible element.
-         */
-        selectorVisible: string;
-      }
-    | {
-        /**
-         * CSS selector that must not resolve to any element.
-         */
-        selectorAbsent: string;
-      }
-    | {
-        /**
-         * Text that must appear anywhere on the page.
-         */
-        textPresent: string;
-      }
-    | {
-        /**
-         * HTTP response status the most recent navigation or XHR must have returned.
-         */
-        responseStatus: number;
-      }
-  )[];
+  post?: Condition[];
   /**
    * What to do when this step fails after triage. 'retry' handles only transient flake; 'escalate_to_healer' is the default for selector/site-change failures.
    */
@@ -229,23 +181,7 @@ export interface CommonFields {
  */
 export interface Navigate {
   action: 'navigate';
-  /**
-   * A value supplied to a step. May be a literal string, a reference to a workflow parameter, or a reference to a vault secret. Secrets are never inlined.
-   */
-  url:
-    | string
-    | {
-        /**
-         * Name of a workflow parameter declared in Workflow.parameters.
-         */
-        param: string;
-      }
-    | {
-        /**
-         * Name of a secret declared in Workflow.secrets. Resolved from the vault at run time.
-         */
-        secret: string;
-      };
+  url: ValueSource;
   /**
    * Load state to wait for after navigation.
    */
@@ -283,23 +219,7 @@ export interface SelectorCandidate {
 export interface Fill {
   action: 'fill';
   target: Target;
-  /**
-   * A value supplied to a step. May be a literal string, a reference to a workflow parameter, or a reference to a vault secret. Secrets are never inlined.
-   */
-  value:
-    | string
-    | {
-        /**
-         * Name of a workflow parameter declared in Workflow.parameters.
-         */
-        param: string;
-      }
-    | {
-        /**
-         * Name of a secret declared in Workflow.secrets. Resolved from the vault at run time.
-         */
-        secret: string;
-      };
+  value: ValueSource;
 }
 /**
  * Pull structured data out of the page into a typed shape. The schema field is a JSON Schema fragment the extracted value must conform to.
@@ -310,7 +230,7 @@ export interface Extract {
   /**
    * JSON Schema describing the shape of the extracted value. The verifier uses this to check output stability across runs.
    */
-  schema: {};
+  schema: JSONSchemaFragment;
   /**
    * Variable name to bind the extracted value to for use by later steps or as workflow output.
    */
@@ -321,46 +241,7 @@ export interface Extract {
  */
 export interface Wait {
   action: 'wait';
-  /**
-   * A boolean assertion about page state. Used in pre, post, assert, guard.if, and loop.while.
-   */
-  forCondition?:
-    | {
-        /**
-         * Regex or substring the current URL must match.
-         */
-        urlMatches: string;
-      }
-    | {
-        /**
-         * Exact URL the current page must have.
-         */
-        urlEquals: string;
-      }
-    | {
-        /**
-         * CSS selector that must resolve to a visible element.
-         */
-        selectorVisible: string;
-      }
-    | {
-        /**
-         * CSS selector that must not resolve to any element.
-         */
-        selectorAbsent: string;
-      }
-    | {
-        /**
-         * Text that must appear anywhere on the page.
-         */
-        textPresent: string;
-      }
-    | {
-        /**
-         * HTTP response status the most recent navigation or XHR must have returned.
-         */
-        responseStatus: number;
-      };
+  forCondition?: Condition;
   /**
    * Fixed wait in milliseconds. Avoid when forCondition is possible.
    */
@@ -371,92 +252,14 @@ export interface Wait {
  */
 export interface Assert {
   action: 'assert';
-  /**
-   * A boolean assertion about page state. Used in pre, post, assert, guard.if, and loop.while.
-   */
-  condition:
-    | {
-        /**
-         * Regex or substring the current URL must match.
-         */
-        urlMatches: string;
-      }
-    | {
-        /**
-         * Exact URL the current page must have.
-         */
-        urlEquals: string;
-      }
-    | {
-        /**
-         * CSS selector that must resolve to a visible element.
-         */
-        selectorVisible: string;
-      }
-    | {
-        /**
-         * CSS selector that must not resolve to any element.
-         */
-        selectorAbsent: string;
-      }
-    | {
-        /**
-         * Text that must appear anywhere on the page.
-         */
-        textPresent: string;
-      }
-    | {
-        /**
-         * HTTP response status the most recent navigation or XHR must have returned.
-         */
-        responseStatus: number;
-      };
+  condition: Condition;
 }
 /**
  * Conditional execution. Runs 'then' if 'if' holds, otherwise runs 'else' (if provided). Modelled after the design doc's 'cookie banner may or may not appear' pattern.
  */
 export interface Guard {
   action: 'guard';
-  /**
-   * A boolean assertion about page state. Used in pre, post, assert, guard.if, and loop.while.
-   */
-  if:
-    | {
-        /**
-         * Regex or substring the current URL must match.
-         */
-        urlMatches: string;
-      }
-    | {
-        /**
-         * Exact URL the current page must have.
-         */
-        urlEquals: string;
-      }
-    | {
-        /**
-         * CSS selector that must resolve to a visible element.
-         */
-        selectorVisible: string;
-      }
-    | {
-        /**
-         * CSS selector that must not resolve to any element.
-         */
-        selectorAbsent: string;
-      }
-    | {
-        /**
-         * Text that must appear anywhere on the page.
-         */
-        textPresent: string;
-      }
-    | {
-        /**
-         * HTTP response status the most recent navigation or XHR must have returned.
-         */
-        responseStatus: number;
-      };
+  if: Condition;
   /**
    * @minItems 1
    */
