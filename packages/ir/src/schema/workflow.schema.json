@@ -7,6 +7,10 @@
   "required": ["irVersion", "id", "name", "steps"],
   "additionalProperties": false,
   "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional pointer to the JSON Schema that validates this document. Used by editors for IntelliSense; not interpreted by ASC."
+    },
     "irVersion": {
       "type": "string",
       "pattern": "^\\d+\\.\\d+\\.\\d+$",
