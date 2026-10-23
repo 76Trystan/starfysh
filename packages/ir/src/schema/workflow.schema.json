@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://asc.dev/schemas/v1/workflow.json",
+  "title": "Workflow",
+  "description": "A compiled browser-automation workflow in Agent Script Compiler's intermediate representation (IR). This document is the single source of truth. The compiler emits Playwright code from it; the healer patches it; the verifier replays it.",
+  "type": "object",
+  "required": ["irVersion", "id", "name", "steps"],
+  "additionalProperties": false,
+  "properties": {
+    "irVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Semantic version of the IR schema this workflow conforms to. Breaking changes require a major bump plus a migration."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{2,63}$",
+      "description": "Stable workflow identifier, lowercase, snake_case or kebab-case. Must be unique within a registry."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "Human-readable workflow name."
+    },
+    "description": {
+      "type": "string",
+      "description": "Prose description of what this workflow does. Surfaced to the healer as context when a step fails."
+    },
+    "parameters": {
+      "type": "object",
+      "description": "Typed inputs the workflow accepts at run time. Keys are parameter names; values are JSON Schema fragments describing allowed types.",
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "secrets": {
+      "type": "array",
+      "description": "Names of secrets the workflow requires. Resolved at run time from the configured vault. Literal secret values must never appear in the IR or generated code.",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{2,63}$"
+      },
+      "uniqueItems": true
+    },
+    "outputs": {
+      "type": "object",
+      "description": "JSON Schema describing the shape of the workflow's output. Used by the verifier to check output stability."
+    },
+    "steps": {
+      "type": "array",
+      "description": "Ordered list of steps the workflow executes.",
+      "minItems": 1,
+      "items": { "$ref": "./step.schema.json" }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Free-form metadata (author, tags, created, source trace id, etc.). Not interpreted by the compiler.",
+      "additionalProperties": true
+    }
+  }
+}

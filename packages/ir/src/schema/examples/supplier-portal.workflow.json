@@ -1,0 +1,137 @@
+{
+  "$schema": "../workflow.schema.json",
+  "irVersion": "1.0.0",
+  "id": "wf_acme_stock",
+  "name": "Acme supplier portal, monthly low-stock extraction",
+  "description": "Logs into portal.acmesupply.com, downloads the monthly stock report, and returns rows where quantity is below reorder level. Mirrors the worked example in the Compile deep-dive.",
+  "parameters": {
+    "month": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}$",
+      "description": "Target reporting month in YYYY-MM form."
+    }
+  },
+  "secrets": ["supplier_portal_user", "supplier_portal_pass"],
+  "outputs": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "required": ["sku", "name", "qty", "reorderLevel"],
+      "properties": {
+        "sku": { "type": "string" },
+        "name": { "type": "string" },
+        "qty": { "type": "number" },
+        "reorderLevel": { "type": "number" }
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "step_01_goto_login",
+      "intent": "Open the supplier portal login page.",
+      "action": "navigate",
+      "url": "https://portal.acmesupply.com/login",
+      "post": [{ "selectorVisible": "form[action*='login']" }]
+    },
+    {
+      "id": "step_02_fill_email",
+      "intent": "Enter the supplier portal account email.",
+      "action": "fill",
+      "target": {
+        "candidates": [
+          { "kind": "role", "value": "textbox[name='Email']" },
+          { "kind": "label", "value": "Email" },
+          { "kind": "css", "value": "input[type='email']" }
+        ]
+      },
+      "value": { "secret": "supplier_portal_user" }
+    },
+    {
+      "id": "step_03_fill_password",
+      "intent": "Enter the supplier portal password.",
+      "action": "fill",
+      "target": {
+        "candidates": [
+          { "kind": "role", "value": "textbox[name='Password']" },
+          { "kind": "label", "value": "Password" },
+          { "kind": "css", "value": "input[type='password']" }
+        ]
+      },
+      "value": { "secret": "supplier_portal_pass" }
+    },
+    {
+      "id": "step_04_submit_login",
+      "intent": "Submit the login form.",
+      "action": "click",
+      "target": {
+        "candidates": [
+          { "kind": "role", "value": "button[name='Sign in']" },
+          { "kind": "testid", "value": "login-submit" },
+          { "kind": "text", "value": "Sign in" }
+        ]
+      },
+      "post": [{ "urlMatches": "/dashboard" }]
+    },
+    {
+      "id": "step_05_cookie_banner",
+      "intent": "Dismiss the cookie banner if it appears.",
+      "action": "guard",
+      "if": { "selectorVisible": "[role='dialog'] button:has-text('Accept')" },
+      "then": [
+        {
+          "id": "step_05a_accept_cookies",
+          "intent": "Click the Accept button on the cookie banner.",
+          "action": "click",
+          "target": {
+            "candidates": [
+              { "kind": "role", "value": "button[name='Accept']" },
+              { "kind": "text", "value": "Accept" }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "step_06_open_stock_report",
+      "intent": "Open the monthly stock report page.",
+      "action": "click",
+      "target": {
+        "candidates": [
+          { "kind": "role", "value": "link[name='Stock Report']" },
+          { "kind": "testid", "value": "reports-stock-monthly" },
+          { "kind": "css", "value": "#reports li:nth-child(3) a" }
+        ]
+      },
+      "post": [{ "urlMatches": "/reports/stock" }, { "selectorVisible": "table.report-rows" }]
+    },
+    {
+      "id": "step_07_extract_rows",
+      "intent": "Extract all rows from the stock report table.",
+      "action": "extract",
+      "target": {
+        "candidates": [
+          { "kind": "role", "value": "table" },
+          { "kind": "css", "value": "table.report-rows" }
+        ]
+      },
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["sku", "name", "qty", "reorderLevel"],
+          "properties": {
+            "sku": { "type": "string" },
+            "name": { "type": "string" },
+            "qty": { "type": "number" },
+            "reorderLevel": { "type": "number" }
+          }
+        }
+      },
+      "bind": "allRows"
+    }
+  ],
+  "metadata": {
+    "author": "example",
+    "sourceDoc": "docs/REMOVED.pdf"
+  }
+}

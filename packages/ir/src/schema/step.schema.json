@@ -1,0 +1,318 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://asc.dev/schemas/v1/step.json",
+  "title": "Step",
+  "description": "A single step in a workflow. Every step carries an id, a natural-language intent (used by the healer when the step fails), and action-specific fields enforced by the discriminator on the 'action' property.",
+  "type": "object",
+  "required": ["id", "intent", "action"],
+  "allOf": [
+    { "$ref": "#/$defs/CommonFields" },
+    {
+      "oneOf": [
+        { "$ref": "#/$defs/Navigate" },
+        { "$ref": "#/$defs/Click" },
+        { "$ref": "#/$defs/Fill" },
+        { "$ref": "#/$defs/Extract" },
+        { "$ref": "#/$defs/Wait" },
+        { "$ref": "#/$defs/Assert" },
+        { "$ref": "#/$defs/Guard" },
+        { "$ref": "#/$defs/Loop" }
+      ]
+    }
+  ],
+  "$defs": {
+    "CommonFields": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{2,63}$",
+          "description": "Step identifier, unique within the workflow. Referenced by the healer and in semantic diffs."
+        },
+        "intent": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Natural-language description of what this step achieves. Load-bearing: the healer uses this to re-derive the step when selectors fail."
+        },
+        "action": {
+          "type": "string",
+          "enum": ["navigate", "click", "fill", "extract", "wait", "assert", "guard", "loop"],
+          "description": "The kind of action this step performs. Discriminator for the oneOf branches."
+        },
+        "pre": {
+          "type": "array",
+          "description": "Preconditions that must hold before this step runs. Failure here routes to triage, typically classifying as a site change or auth decay.",
+          "items": { "$ref": "#/$defs/Condition" }
+        },
+        "post": {
+          "type": "array",
+          "description": "Postconditions that must hold after this step completes. The product of these across the workflow is what makes healing tractable.",
+          "items": { "$ref": "#/$defs/Condition" }
+        },
+        "onFail": {
+          "type": "string",
+          "enum": ["retry", "escalate_to_healer", "stop", "continue"],
+          "default": "escalate_to_healer",
+          "description": "What to do when this step fails after triage. 'retry' handles only transient flake; 'escalate_to_healer' is the default for selector/site-change failures."
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum time this step is allowed to take before the verifier marks it as 'possibly stuck'."
+        }
+      }
+    },
+    "Target": {
+      "type": "object",
+      "description": "A ranked list of ways to find the element this step acts on. Candidates are tried in order; order should be role -> testid -> text -> css -> visual.",
+      "required": ["candidates"],
+      "additionalProperties": false,
+      "properties": {
+        "candidates": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/SelectorCandidate" }
+        }
+      }
+    },
+    "SelectorCandidate": {
+      "type": "object",
+      "required": ["kind", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["role", "testid", "text", "label", "css", "visual"],
+          "description": "Selector strategy. Role-based locators survive redesigns best (they encode meaning, not layout); visual embeddings are the last-resort fallback."
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The selector string, in the form expected by the 'kind'. For 'role': 'button[name=\"Submit\"]'. For 'testid': 'submit-button'. For 'visual': an embedding reference such as 'emb_4f2a'."
+        }
+      }
+    },
+    "ValueSource": {
+      "description": "A value supplied to a step. May be a literal string, a reference to a workflow parameter, or a reference to a vault secret. Secrets are never inlined.",
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "Literal string value."
+        },
+        {
+          "type": "object",
+          "required": ["param"],
+          "additionalProperties": false,
+          "properties": {
+            "param": {
+              "type": "string",
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$",
+              "description": "Name of a workflow parameter declared in Workflow.parameters."
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["secret"],
+          "additionalProperties": false,
+          "properties": {
+            "secret": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{2,63}$",
+              "description": "Name of a secret declared in Workflow.secrets. Resolved from the vault at run time."
+            }
+          }
+        }
+      ]
+    },
+    "Condition": {
+      "description": "A boolean assertion about page state. Used in pre, post, assert, guard.if, and loop.while.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["urlMatches"],
+          "additionalProperties": false,
+          "properties": {
+            "urlMatches": {
+              "type": "string",
+              "description": "Regex or substring the current URL must match."
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["urlEquals"],
+          "additionalProperties": false,
+          "properties": {
+            "urlEquals": {
+              "type": "string",
+              "format": "uri",
+              "description": "Exact URL the current page must have."
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["selectorVisible"],
+          "additionalProperties": false,
+          "properties": {
+            "selectorVisible": {
+              "type": "string",
+              "description": "CSS selector that must resolve to a visible element."
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["selectorAbsent"],
+          "additionalProperties": false,
+          "properties": {
+            "selectorAbsent": {
+              "type": "string",
+              "description": "CSS selector that must not resolve to any element."
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["textPresent"],
+          "additionalProperties": false,
+          "properties": {
+            "textPresent": {
+              "type": "string",
+              "description": "Text that must appear anywhere on the page."
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["responseStatus"],
+          "additionalProperties": false,
+          "properties": {
+            "responseStatus": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 599,
+              "description": "HTTP response status the most recent navigation or XHR must have returned."
+            }
+          }
+        }
+      ]
+    },
+    "Navigate": {
+      "type": "object",
+      "description": "Navigate to a URL. Equivalent to page.goto().",
+      "required": ["action", "url"],
+      "properties": {
+        "action": { "const": "navigate" },
+        "url": { "$ref": "#/$defs/ValueSource" },
+        "waitUntil": {
+          "type": "string",
+          "enum": ["load", "domcontentloaded", "networkidle"],
+          "default": "load",
+          "description": "Load state to wait for after navigation."
+        }
+      }
+    },
+    "Click": {
+      "type": "object",
+      "description": "Click an element. Equivalent to locator.click().",
+      "required": ["action", "target"],
+      "properties": {
+        "action": { "const": "click" },
+        "target": { "$ref": "#/$defs/Target" }
+      }
+    },
+    "Fill": {
+      "type": "object",
+      "description": "Type a value into a form field. Equivalent to locator.fill().",
+      "required": ["action", "target", "value"],
+      "properties": {
+        "action": { "const": "fill" },
+        "target": { "$ref": "#/$defs/Target" },
+        "value": { "$ref": "#/$defs/ValueSource" }
+      }
+    },
+    "Extract": {
+      "type": "object",
+      "description": "Pull structured data out of the page into a typed shape. The schema field is a JSON Schema fragment the extracted value must conform to.",
+      "required": ["action", "target", "schema"],
+      "properties": {
+        "action": { "const": "extract" },
+        "target": { "$ref": "#/$defs/Target" },
+        "schema": {
+          "type": "object",
+          "description": "JSON Schema describing the shape of the extracted value. The verifier uses this to check output stability across runs."
+        },
+        "bind": {
+          "type": "string",
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$",
+          "description": "Variable name to bind the extracted value to for use by later steps or as workflow output."
+        }
+      }
+    },
+    "Wait": {
+      "type": "object",
+      "description": "Wait for a condition to become true, or for a fixed duration. Prefer forCondition over millis; fixed waits are brittle.",
+      "required": ["action"],
+      "properties": {
+        "action": { "const": "wait" },
+        "forCondition": { "$ref": "#/$defs/Condition" },
+        "millis": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Fixed wait in milliseconds. Avoid when forCondition is possible."
+        }
+      }
+    },
+    "Assert": {
+      "type": "object",
+      "description": "Assert a condition explicitly as a step. Fails the workflow if the condition is false.",
+      "required": ["action", "condition"],
+      "properties": {
+        "action": { "const": "assert" },
+        "condition": { "$ref": "#/$defs/Condition" }
+      }
+    },
+    "Guard": {
+      "type": "object",
+      "description": "Conditional execution. Runs 'then' if 'if' holds, otherwise runs 'else' (if provided). Modelled after the design doc's 'cookie banner may or may not appear' pattern.",
+      "required": ["action", "if", "then"],
+      "properties": {
+        "action": { "const": "guard" },
+        "if": { "$ref": "#/$defs/Condition" },
+        "then": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#" }
+        },
+        "else": {
+          "type": "array",
+          "items": { "$ref": "#" }
+        }
+      }
+    },
+    "Loop": {
+      "type": "object",
+      "description": "Repeated execution. Exactly one of foreach or while must be provided. 'foreach' iterates over elements matching a Target; 'while' repeats until a Condition stops holding. maxIterations is a safety cap.",
+      "required": ["action", "do"],
+      "oneOf": [{ "required": ["foreach"] }, { "required": ["while"] }],
+      "properties": {
+        "action": { "const": "loop" },
+        "foreach": { "$ref": "#/$defs/Target" },
+        "while": { "$ref": "#/$defs/Condition" },
+        "maxIterations": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 100,
+          "description": "Hard cap on iterations to prevent runaway loops when a 'while' condition fails to flip."
+        },
+        "do": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#" }
+        }
+      }
+    }
+  }
+}
