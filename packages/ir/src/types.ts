@@ -96,7 +96,7 @@ export type Loop = {
 );
 
 /**
- * A compiled browser-automation workflow in Agent Script Compiler's intermediate representation (IR). This document is the single source of truth. The compiler emits Playwright code from it; the healer patches it; the verifier replays it.
+ * A compiled browser-automation workflow in Starfysh's intermediate representation (IR). This document is the single source of truth. The compiler emits Playwright code from it; the healer patches it; the verifier replays it.
  */
 export interface Workflow {
   /**
