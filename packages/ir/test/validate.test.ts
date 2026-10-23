@@ -23,7 +23,7 @@ describe('IR_VERSION', () => {
   });
 });
 
-describe('validateWorkflow — accepts valid input', () => {
+describe('validateWorkflow, accepts valid input', () => {
   it('accepts the reference supplier-portal workflow', () => {
     const result = validateWorkflow(supplierPortal);
     expect(result.errors).toEqual([]);
@@ -50,7 +50,7 @@ describe('validateWorkflow — accepts valid input', () => {
   });
 });
 
-describe('validateWorkflow — rejects malformed input', () => {
+describe('validateWorkflow, rejects malformed input', () => {
   it('rejects a workflow missing irVersion', () => {
     const { irVersion: _ignored, ...rest } = supplierPortal;
     const result = validateWorkflow(rest);
@@ -92,7 +92,7 @@ describe('validateWorkflow — rejects malformed input', () => {
   });
 });
 
-describe('validateStep — accepts valid steps', () => {
+describe('validateStep, accepts valid steps', () => {
   it('accepts a well-formed click step', () => {
     const result = validateStep({
       id: 'test_click',
@@ -161,7 +161,7 @@ describe('validateStep — accepts valid steps', () => {
   });
 });
 
-describe('validateStep — rejects malformed steps', () => {
+describe('validateStep, rejects malformed steps', () => {
   it('rejects a click step with no target', () => {
     const result = validateStep({
       id: 'bad_click',

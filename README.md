@@ -49,4 +49,17 @@ If those numbers are good, this is a real product. If they are not, no amount of
 
 ## Status
 
-Early stage. The design is written up in `docs/`, and implementation has not started yet. First things to land, in order: a verifier that can honestly tell you when a generated script is broken and why, then a healer that patches one narrow class of failure with a visible diff and a published false-heal rate. The README will grow as real pieces land.
+Phase 0 of the MVP build is in progress. The IR schema (`packages/ir`) is drafted, validated, and type-safe; the compiler, verifier, healer, CLI, benchmark, and MCP server are all still to come. Current build state lives in [`docs/planning/ToDo.md`](./docs/planning/ToDo.md).
+
+Order of landing, in priority: compiler + runtime + benchmark harness (Phase 0), then parser + verifier + healer + CLI + MCP server (Phase 1). The healer is the headline feature. Published false-heal rate is the headline metric.
+
+## Documentation map
+
+| Where                                                                                          | What                                                                                                                               |
+| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| [`docs/planning/ToDo.md`](./docs/planning/ToDo.md)                                             | Current build state and the full MVP plan, phased. Start here if you are picking up work.                                          |
+| [`docs/scope/`](./docs/scope/)                                                                 | Internal planning notes.                         |
+| [`docs/architecture/decisions/`](./docs/architecture/decisions/)                               | Architecture Decision Records. Every load-bearing design choice is numbered and dated here.                                        |
+| [`docs/development/gotchas.md`](./docs/development/gotchas.md)                                 | Issues hit, root causes, and fixes. Read this before re-debugging anything strange.                                                |
+| [`docs/REMOVED.pdf`](./docs/REMOVED.pdf) | Internal planning notes. |
+| [`CLAUDE.md`](./CLAUDE.md)                                                                     | Local-only operating manual.                                    |
