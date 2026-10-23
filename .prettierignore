@@ -1,0 +1,8 @@
+node_modules/
+dist/
+coverage/
+pnpm-lock.yaml
+
+# existing hand-written content, not authored to Prettier style
+CLAUDE.md
+docs/
