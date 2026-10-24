@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { Locator } from 'playwright-core';
+import type { Locator } from '../src/index.js';
 import { emit, drainOutputs, ExtractionError } from '../src/index.js';
 
 /**

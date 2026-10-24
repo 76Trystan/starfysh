@@ -2,6 +2,13 @@
 // Keep this surface small and stable: every change here propagates to
 // every generated script.
 
+export type { Page, Locator } from './types.js';
+
+export { workflow, getWorkflow, listWorkflows } from './workflow.js';
+export type { WorkflowFn } from './workflow.js';
+
+export { assert, poll, AssertionError } from './assert.js';
+
 export { vault, setVaultResolver, EnvVaultResolver, VaultSecretMissingError } from './vault.js';
 export type { VaultResolver } from './vault.js';
 

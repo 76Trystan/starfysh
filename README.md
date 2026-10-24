@@ -4,11 +4,13 @@ Pay the expensive, brilliant, unreliable intelligence to write and repair cheap,
 
 ## What this is
 
-Browser automation has a trust problem. Hand-written Playwright scripts break every time a site redesigns and someone has to fix them by hand. Live AI agents cost real money on every run and still fail in confident, unexplained ways. Neither of those is something you can leave running without a person watching it.
+Browser automation has a trust problem. Hand-written scripts break every time a site redesigns, and someone has to fix them by hand. Live AI agents cost real money on every run and still fail in confident, unexplained ways. Neither of those is something you can leave running without a person watching it.
 
-This project is aimed squarely at that gap. The pitch in one line: browser automation you can actually leave running.
+Starfysh is aimed squarely at that gap. The pitch in one line: browser automation you can actually leave running.
 
-The mechanism is a compiler, not a runtime. The agent works through a task once in a real browser, under instrumentation, and the output is a plain Playwright script. From then on, the script is what runs on your schedule. When the script eventually breaks, because sites always eventually change, a healer diagnoses the failure, patches the smallest possible piece, re-verifies against the live site, and shows you a readable diff of what changed and why. The agent is only in the loop for authoring and healing, never for ordinary runs.
+The mechanism is a compiler, not a runtime. The agent works through a task once in a real browser, under instrumentation, and the output is a Starfysh script -- a typed, deterministic program that depends only on `@asc/runtime`. From then on, the script is what runs on your schedule. When the script eventually breaks, because sites always eventually change, a healer diagnoses the failure, patches the smallest possible piece, re-verifies against the live site, and shows you a readable diff of what changed and why. The agent is only in the loop for authoring and healing, never for ordinary runs.
+
+**Playwright compatibility.** If you already run Playwright scripts, `@asc/playwright-adapter` lets you plug Playwright's page objects directly into Starfysh's runtime interfaces, so the healer and verifier work on your existing scripts without migration.
 
 The compiler is how it works. The reliability is what it is for.
 
@@ -23,7 +25,7 @@ If your current options are "pay an agent to re-derive the same workflow every m
 ```mermaid
 flowchart LR
     A[You describe a task] --> B[Agent runs it once in a browser]
-    B --> C[Compiler produces a Playwright script]
+    B --> C[Compiler produces a Starfysh script]
     C --> D[Verifier replays the script<br/>and proves it works]
     D --> E[Scheduled runs use the script directly]
     E -->|Runs fine| E

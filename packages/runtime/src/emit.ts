@@ -8,7 +8,7 @@
 // schema fields with validation, never into a model's action loop.
 // If extraction fails validation, the workflow fails loudly.
 
-import type { Locator } from 'playwright-core';
+import type { Locator } from './types.js';
 
 /**
  * Column schema for emit.table. Maps column header name to the primitive

@@ -46,6 +46,15 @@ importers:
         specifier: ^15.0.0
         version: 15.0.4
 
+  packages/playwright-adapter:
+    dependencies:
+      '@asc/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+      playwright-core:
+        specifier: ^1.49.0
+        version: 1.64.1
+
   packages/runtime:
     dependencies:
       '@asc/ir':
@@ -57,9 +66,6 @@ importers:
       ajv-formats:
         specifier: ^3.0.0
         version: 3.0.1(ajv@8.20.0)
-      playwright-core:
-        specifier: ^1.49.0
-        version: 1.64.1
 
 packages:
 

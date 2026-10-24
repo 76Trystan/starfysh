@@ -4,7 +4,7 @@
 //   await guard(page.getByRole('button', { name: 'Accept' }), (btn) => btn.click());
 // to run a step only if the element is present. Absence is not a failure.
 
-import type { Locator } from 'playwright-core';
+import type { Locator } from './types.js';
 
 /**
  * Run `callback(locator)` only if the locator resolves to a visible element.

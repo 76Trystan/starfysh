@@ -222,10 +222,10 @@ await {{{target target}}}.fill({{{value value}}});`,
 {{#if bind}}const {{bind}} = {{/if}}await emit.table({{{target target}}}, {{{jsonLiteral schema}}});`,
 
   wait: `// [{{id}}] {{intent}}
-{{#if forCondition}}await expect.poll(async () => {{{cond forCondition}}}).toBe(true);{{/if}}{{#if millis}}await page.waitForTimeout({{millis}});{{/if}}`,
+{{#if forCondition}}await poll(async () => {{{cond forCondition}}});{{/if}}{{#if millis}}await page.waitForTimeout({{millis}});{{/if}}`,
 
   assert: `// [{{id}}] {{intent}}
-expect({{{cond condition}}}).toBe(true);`,
+assert({{{cond condition}}});`,
 
   guard: `// [{{id}}] {{intent}}
 if ({{{cond if}}}) {
@@ -281,9 +281,9 @@ const WORKFLOW_TEMPLATE = (ctx: {
 // Do not edit by hand. Changes should be made in the IR workflow source
 // and re-compiled.
 
-import { test, expect } from '@playwright/test';
+import { workflow, assert, poll } from '@asc/runtime';
 ${ctx.hasSecrets ? "import { vault } from '@asc/runtime';\n" : ''}${ctx.hasOutputs ? "import { emit, flushOutputs } from '@asc/runtime';\n" : "import { emit } from '@asc/runtime';\n"}
-test(${JSON.stringify(ctx.workflowId)}, async ({ page }) => {
+workflow(${JSON.stringify(ctx.workflowId)}, async (page) => {
 ${ctx.steps}
 
 ${ctx.hasOutputs ? '  await flushOutputs();\n' : ''}});

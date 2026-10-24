@@ -21,10 +21,12 @@ describe('compile: end-to-end with reference workflow', () => {
     expect(result.workflowId).toBe('wf_acme_stock');
   });
 
-  it('includes the required Playwright imports', async () => {
+  it('imports workflow, assert, and poll from @asc/runtime', async () => {
     const { source } = await compile(supplierPortal);
-    expect(source).toContain("from '@playwright/test'");
-    expect(source).toContain('import { test, expect }');
+    expect(source).toContain("from '@asc/runtime'");
+    expect(source).toContain('workflow');
+    expect(source).toContain('assert');
+    expect(source).toContain('poll');
   });
 
   it('includes @asc/runtime imports when secrets or extraction are used', async () => {
@@ -34,10 +36,10 @@ describe('compile: end-to-end with reference workflow', () => {
     expect(source).toContain('emit');
   });
 
-  it('wraps the body in a test() call with the workflow id', async () => {
+  it('wraps the body in a workflow() call with the workflow id', async () => {
     const { source } = await compile(supplierPortal);
-    expect(source).toContain("test('wf_acme_stock'");
-    expect(source).toContain('async ({ page })');
+    expect(source).toContain("workflow('wf_acme_stock'");
+    expect(source).toContain('async (page)');
   });
 
   it('emits a provenance comment for each step', async () => {

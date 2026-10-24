@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { Locator } from 'playwright-core';
+import type { Locator } from '../src/index.js';
 import { guard } from '../src/index.js';
 
 function mockLocator(opts: { visible?: boolean; throwOnCheck?: boolean }): Locator {
