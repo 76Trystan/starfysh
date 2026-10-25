@@ -382,7 +382,9 @@ describe('compile: loop step rendering', () => {
     expect(source).toContain('// [grd_in_loop]');
     expect(source).toContain('// [clk_check]');
     // Guard appears inside the loop body.
-    expect(source.indexOf('// [grd_in_loop]')).toBeGreaterThan(source.indexOf('// [lp_with_guard]'));
+    expect(source.indexOf('// [grd_in_loop]')).toBeGreaterThan(
+      source.indexOf('// [lp_with_guard]'),
+    );
   });
 
   it('renders a loop nested inside a loop', async () => {
