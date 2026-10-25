@@ -1,0 +1,13 @@
+id: books-category
+name: Books to Scrape - category navigation
+url: https://books.toscrape.com/catalogue/category/books/travel_2/index.html
+description: Navigate to the Travel category and count the number of books listed.
+outputs:
+  category:
+    type: string
+  count:
+    type: number
+tags:
+  - navigation
+  - no-auth
+  - books.toscrape.com

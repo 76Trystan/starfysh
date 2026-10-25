@@ -1,0 +1,13 @@
+id: hacker-news-headlines
+name: Hacker News - front page headlines
+url: https://news.ycombinator.com
+description: Extract the titles of the top 5 stories from the Hacker News front page.
+outputs:
+  headlines:
+    type: array
+    items:
+      type: string
+tags:
+  - extraction
+  - no-auth
+  - news.ycombinator.com

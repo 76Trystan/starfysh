@@ -1,0 +1,11 @@
+id: wikipedia-web-scraping
+name: Wikipedia - Web scraping article
+url: https://en.wikipedia.org/wiki/Web_scraping
+description: Navigate to the Web scraping article on Wikipedia and extract the first non-empty paragraph.
+outputs:
+  firstParagraph:
+    type: string
+tags:
+  - extraction
+  - no-auth
+  - en.wikipedia.org

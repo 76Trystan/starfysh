@@ -1,0 +1,14 @@
+id: books-catalogue
+name: Books to Scrape - catalogue listing
+url: https://books.toscrape.com
+description: Extract the title and price of every book on the first catalogue page (20 items).
+outputs:
+  books:
+    type: array
+    items:
+      title: string
+      price: string
+tags:
+  - extraction
+  - no-auth
+  - books.toscrape.com

@@ -1,0 +1,16 @@
+id: books-detail
+name: Books to Scrape - book detail page
+url: https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html
+description: Navigate to a specific book and extract its title, price, and availability.
+outputs:
+  title:
+    type: string
+  price:
+    type: string
+  availability:
+    type: string
+tags:
+  - extraction
+  - detail-page
+  - no-auth
+  - books.toscrape.com
