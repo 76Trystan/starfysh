@@ -1,4 +1,4 @@
-import { workflow, emit } from '@asc/runtime';
+import { workflow, emit } from '@sfysh/runtime';
 
 workflow('wikipedia-web-scraping', async (page) => {
   await page.goto('https://en.wikipedia.org/wiki/Web_scraping', { waitUntil: 'domcontentloaded' });

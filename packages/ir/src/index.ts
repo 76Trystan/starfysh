@@ -1,4 +1,4 @@
-// @asc/ir, the typed intermediate representation at the centre of the compiler.
+// @sfysh/ir, the typed intermediate representation at the centre of the compiler.
 // Every other package depends on this one. Nothing in this package depends
 // on anything else in the workspace.
 

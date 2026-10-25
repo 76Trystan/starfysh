@@ -1,4 +1,4 @@
-// @asc/compiler, emits Playwright TypeScript from a validated IR workflow.
+// @sfysh/compiler, emits Playwright TypeScript from a validated IR workflow.
 //
 // Public surface:
 //   compile(workflow)        - takes a validated Workflow, returns formatted source

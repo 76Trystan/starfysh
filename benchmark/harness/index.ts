@@ -1,5 +1,5 @@
 import { chromium } from 'playwright-core';
-import { listWorkflows } from '@asc/runtime';
+import { listWorkflows } from '@sfysh/runtime';
 import { runTask } from './runner.js';
 import { writeReport } from './reporter.js';
 

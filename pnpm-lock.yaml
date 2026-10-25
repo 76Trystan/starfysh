@@ -23,10 +23,10 @@ importers:
 
   benchmark:
     dependencies:
-      '@asc/playwright-adapter':
+      '@sfysh/playwright-adapter':
         specifier: workspace:*
         version: link:../packages/playwright-adapter
-      '@asc/runtime':
+      '@sfysh/runtime':
         specifier: workspace:*
         version: link:../packages/runtime
     devDependencies:
@@ -42,7 +42,7 @@ importers:
 
   packages/compiler:
     dependencies:
-      '@asc/ir':
+      '@sfysh/ir':
         specifier: workspace:*
         version: link:../ir
       handlebars:
@@ -67,7 +67,7 @@ importers:
 
   packages/playwright-adapter:
     dependencies:
-      '@asc/runtime':
+      '@sfysh/runtime':
         specifier: workspace:*
         version: link:../runtime
       playwright-core:
@@ -76,7 +76,7 @@ importers:
 
   packages/runtime:
     dependencies:
-      '@asc/ir':
+      '@sfysh/ir':
         specifier: workspace:*
         version: link:../ir
       ajv:

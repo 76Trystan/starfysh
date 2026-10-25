@@ -1,4 +1,4 @@
-// @asc/runtime, helpers that generated workflow code imports.
+// @sfysh/runtime, helpers that generated workflow code imports.
 // Keep this surface small and stable: every change here propagates to
 // every generated script.
 

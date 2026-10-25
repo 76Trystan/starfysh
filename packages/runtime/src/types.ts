@@ -3,7 +3,7 @@
 // These are the types generated workflow scripts depend on. They are
 // intentionally a named subset of Playwright's Page and Locator APIs so
 // that a Playwright page satisfies them structurally -- but the dependency
-// on Playwright is in @asc/playwright-adapter, not here.
+// on Playwright is in @sfysh/playwright-adapter, not here.
 
 /**
  * A handle to a single DOM element (or a collection of elements). Returned
@@ -23,7 +23,7 @@ export interface Locator {
 /**
  * A single browser page. Generated workflow scripts receive this as their
  * first argument. Any browser backend that implements this interface can
- * run a Starfysh workflow -- see @asc/playwright-adapter for the reference
+ * run a Starfysh workflow -- see @sfysh/playwright-adapter for the reference
  * implementation.
  */
 export interface Page {

@@ -1,4 +1,4 @@
-# @asc/benchmark
+# @sfysh/benchmark
 
 End-to-end benchmark harness for Starfysh. Runs a suite of real-browser tasks, records pass/fail and duration for each, and writes a timestamped JSON report to `results/`.
 
@@ -13,7 +13,7 @@ npx playwright install chromium
 Then run the suite from the repo root:
 
 ```sh
-pnpm --filter @asc/benchmark bench
+pnpm --filter @sfysh/benchmark bench
 ```
 
 Results are written to `benchmark/results/<timestamp>.json`.

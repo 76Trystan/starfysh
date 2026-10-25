@@ -6,8 +6,8 @@
 // Playwright users a clean import path.
 //
 // Usage in a Playwright test:
-//   import { asPage } from '@asc/playwright-adapter';
-//   import { workflow } from '@asc/runtime';
+//   import { asPage } from '@sfysh/playwright-adapter';
+//   import { workflow } from '@sfysh/runtime';
 //   import type { Page } from 'playwright-core';
 //
 //   test('run workflow', async ({ page }) => {
@@ -18,7 +18,7 @@
 //   });
 
 import type { Page as PlaywrightPage, Locator as PlaywrightLocator } from 'playwright-core';
-import type { Page, Locator } from '@asc/runtime';
+import type { Page, Locator } from '@sfysh/runtime';
 
 /**
  * Cast a Playwright Page to Starfysh's Page interface. Playwright's Page is a

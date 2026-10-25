@@ -1,4 +1,4 @@
-import { workflow, emit } from '@asc/runtime';
+import { workflow, emit } from '@sfysh/runtime';
 
 workflow('hacker-news-headlines', async (page) => {
   await page.goto('https://news.ycombinator.com', { waitUntil: 'domcontentloaded' });

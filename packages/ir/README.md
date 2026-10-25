@@ -1,4 +1,4 @@
-# @asc/ir
+# @sfysh/ir
 
 The typed intermediate representation at the centre of Starfysh. Every other package in the workspace depends on this one; this package depends on nothing else in the workspace.
 
@@ -22,7 +22,7 @@ If you are new to the project, read [ADR 0001](../../docs/architecture/decisions
 ## Usage
 
 ```ts
-import { validateWorkflow, type Workflow, type Step } from '@asc/ir';
+import { validateWorkflow, type Workflow, type Step } from '@sfysh/ir';
 
 const result = validateWorkflow(parsedJson);
 if (!result.valid) {
@@ -64,7 +64,7 @@ test/
 Any time a schema in `src/schema/` changes, run:
 
 ```sh
-pnpm --filter @asc/ir regen-types
+pnpm --filter @sfysh/ir regen-types
 ```
 
 This invokes `scripts/regen-types.mjs`, which:

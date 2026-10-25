@@ -1,5 +1,5 @@
 {
-  "name": "@asc/benchmark",
+  "name": "@sfysh/benchmark",
   "private": true,
   "type": "module",
   "scripts": {
@@ -7,8 +7,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@asc/playwright-adapter": "workspace:*",
-    "@asc/runtime": "workspace:*"
+    "@sfysh/playwright-adapter": "workspace:*",
+    "@sfysh/runtime": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

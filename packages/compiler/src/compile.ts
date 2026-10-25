@@ -2,7 +2,7 @@
 // templater, formats the result with Prettier, and returns the generated
 // TypeScript source as a string.
 
-import { validateWorkflow, type Workflow } from '@asc/ir';
+import { validateWorkflow, type Workflow } from '@sfysh/ir';
 import { createTemplater, CompilerError } from './templater.js';
 import { formatTypeScript } from './format.js';
 

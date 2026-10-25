@@ -1,4 +1,4 @@
-import { workflow, emit } from '@asc/runtime';
+import { workflow, emit } from '@sfysh/runtime';
 
 workflow('books-detail', async (page) => {
   await page.goto('https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html', {

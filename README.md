@@ -8,9 +8,9 @@ Browser automation has a trust problem. Hand-written scripts break every time a 
 
 Starfysh is aimed squarely at that gap. The pitch in one line: browser automation you can actually leave running.
 
-The mechanism is a compiler, not a runtime. The agent works through a task once in a real browser, under instrumentation, and the output is a Starfysh script -- a typed, deterministic program that depends only on `@asc/runtime`. From then on, the script is what runs on your schedule. When the script eventually breaks, because sites always eventually change, a healer diagnoses the failure, patches the smallest possible piece, re-verifies against the live site, and shows you a readable diff of what changed and why. The agent is only in the loop for authoring and healing, never for ordinary runs.
+The mechanism is a compiler, not a runtime. The agent works through a task once in a real browser, under instrumentation, and the output is a Starfysh script -- a typed, deterministic program that depends only on `@sfysh/runtime`. From then on, the script is what runs on your schedule. When the script eventually breaks, because sites always eventually change, a healer diagnoses the failure, patches the smallest possible piece, re-verifies against the live site, and shows you a readable diff of what changed and why. The agent is only in the loop for authoring and healing, never for ordinary runs.
 
-**Playwright compatibility.** If you already run Playwright scripts, `@asc/playwright-adapter` lets you plug Playwright's page objects directly into Starfysh's runtime interfaces, so the healer and verifier work on your existing scripts without migration.
+**Playwright compatibility.** If you already run Playwright scripts, `@sfysh/playwright-adapter` lets you plug Playwright's page objects directly into Starfysh's runtime interfaces, so the healer and verifier work on your existing scripts without migration.
 
 The compiler is how it works. The reliability is what it is for.
 
@@ -110,16 +110,16 @@ All three must pass. If any fails on a fresh clone, something has broken that sh
 
 ### Common commands
 
-| Command                             | What it does                                                                              |
-| ----------------------------------- | ----------------------------------------------------------------------------------------- |
-| `pnpm install`                      | Install workspace dependencies.                                                           |
-| `pnpm typecheck`                    | `tsc --noEmit` across every workspace package.                                            |
-| `pnpm test`                         | Vitest run across every workspace package.                                                |
-| `pnpm test:watch`                   | Vitest in watch mode for the active package.                                              |
-| `pnpm format`                       | Apply Prettier formatting in place.                                                       |
-| `pnpm format:check`                 | Verify formatting without writing.                                                        |
-| `pnpm --filter @asc/ir regen-types` | Regenerate `packages/ir/src/types.ts` from the JSON schemas. Run after any schema change. |
-| `pnpm --filter @asc/<pkg> test`     | Run tests for a single package.                                                           |
+| Command                               | What it does                                                                              |
+| ------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `pnpm install`                        | Install workspace dependencies.                                                           |
+| `pnpm typecheck`                      | `tsc --noEmit` across every workspace package.                                            |
+| `pnpm test`                           | Vitest run across every workspace package.                                                |
+| `pnpm test:watch`                     | Vitest in watch mode for the active package.                                              |
+| `pnpm format`                         | Apply Prettier formatting in place.                                                       |
+| `pnpm format:check`                   | Verify formatting without writing.                                                        |
+| `pnpm --filter @sfysh/ir regen-types` | Regenerate `packages/ir/src/types.ts` from the JSON schemas. Run after any schema change. |
+| `pnpm --filter @sfysh/<pkg> test`     | Run tests for a single package.                                                           |
 
 ### Editor setup
 

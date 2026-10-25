@@ -1,5 +1,5 @@
 // Generated from JSON Schema. Do not edit by hand.
-// Run `pnpm --filter @asc/ir regen-types` to regenerate.
+// Run `pnpm --filter @sfysh/ir regen-types` to regenerate.
 
 /**
  * A fragment of a JSON Schema document. Used for workflow parameters,

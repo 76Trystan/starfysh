@@ -1,6 +1,6 @@
 import type { Browser } from 'playwright-core';
-import { asPage } from '@asc/playwright-adapter';
-import { run, drainOutputs } from '@asc/runtime';
+import { asPage } from '@sfysh/playwright-adapter';
+import { run, drainOutputs } from '@sfysh/runtime';
 
 export interface TaskRun {
   workflowId: string;

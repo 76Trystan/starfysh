@@ -1,4 +1,4 @@
-import { workflow, emit } from '@asc/runtime';
+import { workflow, emit } from '@sfysh/runtime';
 
 workflow('books-category', async (page) => {
   await page.goto('https://books.toscrape.com/catalogue/category/books/travel_2/index.html', {

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { compile, compileUnknown, CompilerError, formatTypeScript } from '../src/index.js';
-import type { Workflow } from '@asc/ir';
+import type { Workflow } from '@sfysh/ir';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -21,17 +21,17 @@ describe('compile: end-to-end with reference workflow', () => {
     expect(result.workflowId).toBe('wf_acme_stock');
   });
 
-  it('imports workflow, assert, and poll from @asc/runtime', async () => {
+  it('imports workflow, assert, and poll from @sfysh/runtime', async () => {
     const { source } = await compile(supplierPortal);
-    expect(source).toContain("from '@asc/runtime'");
+    expect(source).toContain("from '@sfysh/runtime'");
     expect(source).toContain('workflow');
     expect(source).toContain('assert');
     expect(source).toContain('poll');
   });
 
-  it('includes @asc/runtime imports when secrets or extraction are used', async () => {
+  it('includes @sfysh/runtime imports when secrets or extraction are used', async () => {
     const { source } = await compile(supplierPortal);
-    expect(source).toContain("from '@asc/runtime'");
+    expect(source).toContain("from '@sfysh/runtime'");
     expect(source).toContain('vault');
     expect(source).toContain('emit');
   });
