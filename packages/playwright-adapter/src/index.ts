@@ -19,6 +19,7 @@
 
 import type { Page as PlaywrightPage, Locator as PlaywrightLocator } from 'playwright-core';
 import type { Page, Locator } from '@sfysh/runtime';
+import { run } from '@sfysh/runtime';
 
 /**
  * Cast a Playwright Page to Starfysh's Page interface. Playwright's Page is a
@@ -36,4 +37,41 @@ export function asPage(page: PlaywrightPage): Page {
  */
 export function asLocator(locator: PlaywrightLocator): Locator {
   return locator as unknown as Locator;
+}
+
+/**
+ * Minimal type for the Playwright test() function. Satisfied structurally by
+ * the test fixture from @playwright/test, keeping this adapter free of a
+ * hard dependency on the test framework itself.
+ */
+export type PlaywrightTestFn = (
+  title: string,
+  fn: (fixtures: { page: PlaywrightPage }) => Promise<void>,
+) => void;
+
+/**
+ * Register a Starfysh workflow as a Playwright test. Pass the `test` object
+ * from @playwright/test and the workflow id; the helper runs the workflow
+ * against Playwright's page fixture and re-throws any failure so the test
+ * is marked failed with the original error.
+ *
+ * Usage:
+ *   import { test } from '@playwright/test';
+ *   import { wrapWorkflowForTest } from '@sfysh/playwright-adapter';
+ *   import './my-workflow.js'; // registers the workflow as a side effect
+ *
+ *   wrapWorkflowForTest(test, 'my-workflow');
+ */
+export function wrapWorkflowForTest(
+  test: PlaywrightTestFn,
+  workflowId: string,
+  options?: { title?: string },
+): void {
+  test(options?.title ?? workflowId, async ({ page }) => {
+    const result = await run(workflowId, asPage(page));
+    if (result.status === 'failed') {
+      const cause = result.error?.cause;
+      throw cause instanceof Error ? cause : new Error(result.error?.message ?? 'Workflow failed');
+    }
+  });
 }
