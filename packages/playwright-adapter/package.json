@@ -2,7 +2,6 @@
   "name": "@sfysh/playwright-adapter",
   "version": "0.0.0",
   "description": "Playwright compatibility adapter for Starfysh. Bridges Playwright Page and Locator types to the Starfysh runtime interfaces so existing Playwright scripts and infrastructure can run Starfysh workflows without migration.",
-  "private": true,
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -10,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "publishConfig": {
+    "access": "public",
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
     "exports": {
