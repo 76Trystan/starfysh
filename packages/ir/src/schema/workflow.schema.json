@@ -9,7 +9,7 @@
   "properties": {
     "$schema": {
       "type": "string",
-      "description": "Optional pointer to the JSON Schema that validates this document. Used by editors for IntelliSense; not interpreted by ASC."
+      "description": "Optional pointer to the JSON Schema that validates this document. Used by editors for IntelliSense; not interpreted by Starfysh."
     },
     "irVersion": {
       "type": "string",

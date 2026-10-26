@@ -134,11 +134,9 @@ Any TypeScript-aware editor works. VS Code picks up `tsconfig.base.json` and the
 
 ## Documentation map
 
-| Where                                                                                          | What                                                                                                                               |
-| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| [`docs/planning/ToDo.md`](./docs/planning/ToDo.md)                                             | Current build state and the full MVP plan, phased. Start here if you are picking up work.                                          |
-| [`docs/scope/`](./docs/scope/)                                                                 | Internal planning notes.                         |
-| [`docs/architecture/decisions/`](./docs/architecture/decisions/)                               | Architecture Decision Records. Every load-bearing design choice is numbered and dated here.                                        |
-| [`docs/development/gotchas.md`](./docs/development/gotchas.md)                                 | Issues hit, root causes, and fixes. Read this before re-debugging anything strange.                                                |
-| [`docs/REMOVED.pdf`](./docs/REMOVED.pdf) | Internal planning notes. |
-| [`CLAUDE.md`](./CLAUDE.md)                                                                     | Local-only operating manual.                                    |
+| Where                                                            | What                                                                                            |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| [`docs/planning/ToDo.md`](./docs/planning/ToDo.md)               | Current build state and the full MVP plan, phased. Start here if you are picking up work.       |
+| [`docs/architecture/decisions/`](./docs/architecture/decisions/) | Architecture Decision Records. Every load-bearing design choice is numbered and dated here.     |
+| [`docs/development/gotchas.md`](./docs/development/gotchas.md)   | Issues hit, root causes, and fixes. Read this before re-debugging anything strange.             |
+| [`CLAUDE.md`](./CLAUDE.md)                                       | Local-only operating manual. |
