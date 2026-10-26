@@ -18,6 +18,7 @@ coverage/
 .DS_Store
 Thumbs.db
 .idea/
+.claude/
 
 # local-only documents, not published
 docs/scope/
