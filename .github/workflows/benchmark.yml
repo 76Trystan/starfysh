@@ -22,7 +22,7 @@ jobs:
 
       - run: npx playwright install --with-deps chromium
 
-      - run: pnpm --filter @asc/benchmark bench
+      - run: pnpm --filter @sfysh/benchmark bench
 
       - uses: actions/upload-artifact@v4
         if: always()
