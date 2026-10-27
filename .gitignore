@@ -22,6 +22,7 @@ Thumbs.db
 
 # local-only documents, not published
 docs/scope/
+docs/planning/
 
 # benchmark results are machine-generated; use CI artifacts for baselines
 benchmark/results/*.json
