@@ -1,5 +1,5 @@
 {
-  "name": "agent-script-compiler",
+  "name": "starfysh",
   "private": true,
   "type": "module",
   "scripts": {

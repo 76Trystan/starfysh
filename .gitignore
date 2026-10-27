@@ -23,6 +23,11 @@ Thumbs.db
 # local-only documents, not published
 docs/scope/
 docs/planning/
+docs/development/
+docs/architecture/
+
+# local-only operating manual
+CLAUDE.md
 
 # benchmark results are machine-generated; use CI artifacts for baselines
 benchmark/results/*.json

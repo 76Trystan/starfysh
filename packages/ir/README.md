@@ -2,7 +2,7 @@
 
 The typed intermediate representation at the centre of Starfysh. Every other package in the workspace depends on this one; this package depends on nothing else in the workspace.
 
-If you are new to the project, see ADR 0001 (IR-first architecture) and ADR 0007 (JSON Schema as source of truth) in `docs/architecture/decisions/` for the design rationale.
+The IR is JSON-Schema-first and designed to survive breaking changes through explicit `irVersion` bumps and migrations. The compiler emits it, the verifier replays it, the healer patches it, and the runtime executes it. See `docs/reference/ir-schema.md` for the full schema reference.
 
 ## What is in the box
 
@@ -84,7 +84,7 @@ Commit the regenerated `types.ts` in the same change as the schema edit so a rea
 - **Minor** for additive changes: new optional fields, new step kinds, new condition kinds, new selector kinds.
 - **Major** for breaking changes: removed fields, renamed fields, tightened constraints that would reject previously-valid workflows.
 
-Any major bump must ship with a migration helper (not yet implemented; see the ToDo).
+Any major bump must ship with a migration helper (not yet implemented).
 
 ## Why this file matters more than most
 

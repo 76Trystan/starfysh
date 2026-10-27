@@ -51,7 +51,7 @@ If those numbers are good, this is a real product. If they are not, no amount of
 
 ## Status
 
-Phase 0 (foundations) is complete. The IR schema, compiler, runtime, Playwright adapter, and benchmark harness are all built and tested. Current build state lives in [`docs/planning/ToDo.md`](./docs/planning/ToDo.md).
+Phase 0 (foundations) is complete. The IR schema, compiler, runtime, Playwright adapter, and benchmark harness are all built and tested.
 
 Phase 1 is next: parser, verifier, healer, CLI, and MCP server. The healer is the headline feature. Published false-heal rate is the headline metric.
 
@@ -84,7 +84,7 @@ Invoke-WebRequest -UseBasicParsing "https://get.pnpm.io/install.ps1" -OutFile "$
 & "$env:TEMP\pnpm-install.ps1"
 ```
 
-Open a new terminal after installation so pnpm is on your PATH. This gotcha and its workarounds are also captured in [`docs/development/gotchas.md`](./docs/development/gotchas.md).
+Open a new terminal after installation so pnpm is on your PATH.
 
 ### Clone and install
 
@@ -106,7 +106,7 @@ pnpm format:check
 pnpm test
 ```
 
-All three must pass. If any fails on a fresh clone, something has broken that should not have; check [`docs/development/gotchas.md`](./docs/development/gotchas.md) for known issues and fixes.
+All three must pass. If any fails on a fresh clone, something has broken that should not have.
 
 ### Common commands
 
@@ -127,16 +127,10 @@ Any TypeScript-aware editor works. VS Code picks up `tsconfig.base.json` and the
 
 ### Where to start contributing
 
-1. Read [`CLAUDE.md`](./CLAUDE.md) for the working rules (documentation style, baseline-green requirement, no em dashes, how the ToDo list is maintained).
-2. Read [`docs/planning/ToDo.md`](./docs/planning/ToDo.md) to see the current build state. Pick the lowest unchecked item in the current phase unless you have a specific reason to work out of order.
+1. Read [`CONTRIBUTING.md`](./CONTRIBUTING.md) for conventions and the baseline-green requirement.
+2. Pick an open issue or propose a change.
 3. Make the change. Keep `pnpm typecheck + format:check + test` green on every commit.
-4. If you make an architectural decision, add an ADR in [`docs/architecture/decisions/`](./docs/architecture/decisions/). If you hit and fix an unusual bug, add a dated entry to [`docs/development/gotchas.md`](./docs/development/gotchas.md).
 
-## Documentation map
+## Documentation
 
-| Where                                                            | What                                                                                            |
-| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| [`docs/planning/ToDo.md`](./docs/planning/ToDo.md)               | Current build state and the full MVP plan, phased. Start here if you are picking up work.       |
-| [`docs/architecture/decisions/`](./docs/architecture/decisions/) | Architecture Decision Records. Every load-bearing design choice is numbered and dated here.     |
-| [`docs/development/gotchas.md`](./docs/development/gotchas.md)   | Issues hit, root causes, and fixes. Read this before re-debugging anything strange.             |
-| [`CLAUDE.md`](./CLAUDE.md)                                       | Local-only operating manual. |
+See [`docs/reference/ir-schema.md`](./docs/reference/ir-schema.md) for the IR schema reference. Package-level docs live under each `packages/<name>/README.md`.
