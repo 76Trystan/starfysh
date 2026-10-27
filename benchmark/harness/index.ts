@@ -26,6 +26,6 @@ await browser.close();
 
 const path = await writeReport(results, Date.now() - start);
 const passed = results.filter((r) => r.status === 'ok').length;
-console.log(`\n${passed}/${results.length} passed — results at ${path}`);
+console.log(`\n${passed}/${results.length} passed, results at ${path}`);
 
 if (results.some((r) => r.status === 'failed')) process.exit(1);
