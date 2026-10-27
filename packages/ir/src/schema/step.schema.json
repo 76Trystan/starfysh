@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://asc.dev/schemas/v1/step.json",
+  "$id": "https://sfysh.dev/schemas/v1/step.json",
   "title": "Step",
   "description": "A single step in a workflow. Every step carries an id, a natural-language intent (used by the healer when the step fails), and action-specific fields enforced by the discriminator on the 'action' property.",
   "type": "object",

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://asc.dev/schemas/v1/workflow.json",
+  "$id": "https://sfysh.dev/schemas/v1/workflow.json",
   "title": "Workflow",
   "description": "A compiled browser-automation workflow in Starfysh's intermediate representation (IR). This document is the single source of truth. The compiler emits Playwright code from it; the healer patches it; the verifier replays it.",
   "type": "object",

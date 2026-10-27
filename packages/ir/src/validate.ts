@@ -31,7 +31,7 @@ addFormats(ajv);
 // Register the step schema under the URL that workflow's `./step.schema.json`
 // $ref resolves to (relative to workflow's $id). This makes the cross-file
 // reference resolvable without changing either schema file.
-ajv.addSchema(stepSchema, 'https://asc.dev/schemas/v1/step.schema.json');
+ajv.addSchema(stepSchema, 'https://sfysh.dev/schemas/v1/step.schema.json');
 
 const compiledWorkflow = ajv.compile<Workflow>(workflowSchema);
 const compiledStep = ajv.compile<Step>(stepSchema);
