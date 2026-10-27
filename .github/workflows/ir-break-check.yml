@@ -1,0 +1,39 @@
+name: IR break check
+
+on:
+  pull_request:
+
+jobs:
+  ir-break-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fail if IR schema changed without IR_VERSION bump
+        run: |
+          BASE=${{ github.event.pull_request.base.sha }}
+          HEAD=${{ github.event.pull_request.head.sha }}
+
+          SCHEMA_CHANGED=$(git diff --name-only "$BASE" "$HEAD" | grep -E '^packages/ir/src/schema/(workflow|step)\.schema\.json$' || true)
+
+          if [ -z "$SCHEMA_CHANGED" ]; then
+            echo "No IR schema changes detected. Check passed."
+            exit 0
+          fi
+
+          echo "IR schema files changed:"
+          echo "$SCHEMA_CHANGED"
+
+          VERSION_CHANGED=$(git diff "$BASE" "$HEAD" -- packages/ir/src/index.ts | grep '^+.*IR_VERSION' || true)
+
+          if [ -z "$VERSION_CHANGED" ]; then
+            echo ""
+            echo "ERROR: IR schema changed without a matching IR_VERSION bump in packages/ir/src/index.ts."
+            echo "Breaking schema changes require a major version bump; non-breaking additions require at least a minor bump."
+            echo "Update IR_VERSION in packages/ir/src/index.ts before merging."
+            exit 1
+          fi
+
+          echo "IR_VERSION bumped. Check passed."
