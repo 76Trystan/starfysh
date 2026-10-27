@@ -2,7 +2,7 @@
 
 The typed intermediate representation at the centre of Starfysh. Every other package in the workspace depends on this one; this package depends on nothing else in the workspace.
 
-If you are new to the project, read [ADR 0001](../../docs/architecture/decisions/0001-ir-first.md) and [ADR 0007](../../docs/architecture/decisions/0007-schema-as-source-of-truth.md) first for the design rationale.
+If you are new to the project, see ADR 0001 (IR-first architecture) and ADR 0007 (JSON Schema as source of truth) in `docs/architecture/decisions/` for the design rationale.
 
 ## What is in the box
 

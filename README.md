@@ -51,9 +51,9 @@ If those numbers are good, this is a real product. If they are not, no amount of
 
 ## Status
 
-Phase 0 of the MVP build is in progress. The IR schema (`packages/ir`) is drafted, validated, and type-safe; the compiler, verifier, healer, CLI, benchmark, and MCP server are all still to come. Current build state lives in [`docs/planning/ToDo.md`](./docs/planning/ToDo.md).
+Phase 0 (foundations) is complete. The IR schema, compiler, runtime, Playwright adapter, and benchmark harness are all built and tested. Current build state lives in [`docs/planning/ToDo.md`](./docs/planning/ToDo.md).
 
-Order of landing, in priority: compiler + runtime + benchmark harness (Phase 0), then parser + verifier + healer + CLI + MCP server (Phase 1). The healer is the headline feature. Published false-heal rate is the headline metric.
+Phase 1 is next: parser, verifier, healer, CLI, and MCP server. The healer is the headline feature. Published false-heal rate is the headline metric.
 
 ## Local development
 
@@ -89,8 +89,8 @@ Open a new terminal after installation so pnpm is on your PATH. This gotcha and 
 ### Clone and install
 
 ```sh
-git clone https://github.com/<your-fork>/agent-script-compiler.git
-cd agent-script-compiler
+git clone https://github.com/<your-fork>/starfysh.git
+cd starfysh
 pnpm install
 ```
 
