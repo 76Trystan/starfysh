@@ -4,7 +4,9 @@
 
 Please do not report security vulnerabilities through public GitHub issues.
 
-Email **trystan.frederick@gmail.com** with the subject line `[Security] Starfysh` and include:
+Use GitHub's **[private vulnerability reporting](https://github.com/76Trystan/starfysh/security/advisories/new)** to open a confidential advisory. If you cannot access that form (for example, you do not have a GitHub account), open a public issue titled only `security contact request` and we will arrange an off-platform channel.
+
+When you file an advisory, please include:
 
 - A description of the vulnerability and its potential impact
 - Steps to reproduce or a proof-of-concept
