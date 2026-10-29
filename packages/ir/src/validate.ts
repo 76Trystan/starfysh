@@ -59,7 +59,7 @@ export interface ValidationResult<T> {
 }
 
 /**
- * Validate an unknown value as an ASC Workflow.
+ * Validate an unknown value as a Starfysh Workflow.
  * On success, `value` is typed as `Workflow` and `errors` is empty.
  * On failure, `value` is `undefined` and `errors` lists each problem.
  */
