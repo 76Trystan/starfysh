@@ -89,7 +89,7 @@ Open a new terminal after installation so pnpm is on your PATH.
 ### Clone and install
 
 ```sh
-git clone https://github.com/<your-fork>/starfysh.git
+git clone https://github.com/76Trystan/starfysh.git
 cd starfysh
 pnpm install
 ```
