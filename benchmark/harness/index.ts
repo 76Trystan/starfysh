@@ -16,6 +16,7 @@ const browser = await chromium.launch({ headless: true });
 const results = [];
 for (const id of listWorkflows()) {
   process.stdout.write(`  ${id}... `);
+  // NOSONAR: sequential by design, shared browser and clean per-task timings
   const result = await runTask(browser, id);
   results.push(result);
   const label = result.status === 'ok' ? 'ok' : `FAILED (${result.error?.kind ?? 'unknown'})`;
