@@ -20,6 +20,9 @@ Thumbs.db
 .idea/
 .claude/
 
+# local git backups made before history rewrites
+.git.backup-*/
+
 # local-only documents, not published
 docs/scope/
 docs/planning/
