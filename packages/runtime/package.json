@@ -1,6 +1,7 @@
 {
   "name": "@sfysh/runtime",
   "version": "0.0.0",
+  "description": "Starfysh runtime: workflow runner, vault, assertions, and emit helpers used by compiled Starfysh scripts.",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -15,6 +16,10 @@
       ".": "./dist/index.js"
     }
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",
