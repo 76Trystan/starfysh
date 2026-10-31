@@ -2,7 +2,24 @@
 
 A browser-automation compiler that turns one AI-recorded session into a deterministic, self-healing script. The agent authors the code once, the runtime runs it indefinitely.
 
-## What this is
+> **Status at `0.1.0`.** The paragraph above is the vision. Phase 0 (the IR, compiler, runtime, and Playwright adapter) is shipped on npm. Phase 1 (recorder, verifier, healer, CLI, MCP server) is in progress. The sections below separate what you can use today from what is coming.
+
+## What ships today
+
+The four `@sfysh/*` packages on npm give you the deterministic middle of the pipeline: an IR schema with validators, a templated compiler, a browser-backend-agnostic runtime, and a Playwright bridge.
+
+| Package                     | What it does                                                                                                                                                 |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `@sfysh/ir`                 | JSON-Schema-first IR for Starfysh workflows, with Ajv validators and generated TypeScript types.                                                             |
+| `@sfysh/compiler`           | Takes a validated IR workflow and emits deterministic TypeScript, byte-stable across runs.                                                                   |
+| `@sfysh/runtime`            | The `workflow()` runner, `vault()` secret resolver, assertions, extraction helpers, and the `Page`/`Locator` interfaces that generated code targets.         |
+| `@sfysh/playwright-adapter` | Casts Playwright's `Page` and `Locator` to the runtime's structural interfaces so Playwright-driven tests can run Starfysh workflows without rewriting them. |
+
+**What this means in practice.** You can hand-author a workflow IR today following the schema in `@sfysh/ir`, compile it with `@sfysh/compiler`, and execute the result via `@sfysh/runtime` plus Playwright. That is a working, deterministic path from JSON to a running browser automation.
+
+**What is not here yet.** The recorder that turns an agent session into IR, the verifier that proves a workflow replays cleanly, and the healer that patches broken steps when sites change all land in Phase 1. Those are the components that take Starfysh from "a well-typed Playwright toolkit" to "an automation you can actually leave running". See the [roadmap](#roadmap).
+
+## What this grows into
 
 Browser automation has a trust problem. Hand-written scripts break every time a site redesigns, and someone has to fix them by hand. Live AI agents cost real money on every run and still fail in confident, unexplained ways. Neither of those is something you can leave running without a person watching it.
 
@@ -35,25 +52,39 @@ flowchart LR
     G -->|You reject| A
 ```
 
+_Shipped in `0.1.0`: step C (compiler) and step E (scheduled runtime execution, via `@sfysh/runtime` and `@sfysh/playwright-adapter`). Steps A, B, D, F, and G are Phase 1 scope._
+
 Two things in that diagram are the whole point. First, the self-loop at `E`: ordinary runs never touch the agent, so they are fast, cheap, and predictable. Second, the path through `F` and `G`: when something breaks, you do not get a mysterious failure and a rewritten script. You get a diagnosis, the smallest possible patch, fresh evidence that it works, and a diff you can read in ten seconds before accepting.
 
 ## What we measure
 
-Reliability only means something if it is measurable. The numbers we care about, and intend to publish honestly, are:
+Reliability only means something if it is measurable. The numbers Phase 1 tracks across every workflow and run:
 
 - **Mean time between heals.** How long a script survives in the wild before something breaks.
 - **Heal success rate.** Of failures the healer attempts, how many produce a patch that verifies.
-- **False-heal rate.** Of patches that verify, how many silently do the wrong thing. This is the number that matters most, and the one nobody in this space wants to talk about.
+- **False-heal rate.** Of patches that verify, how many silently do the wrong thing.
 - **Time-to-heal.** Wall clock from breakage detected to patched script running again.
 - **Human intervention rate.** What percentage of heals need a person to weigh in before shipping.
 
-If those numbers are good, this is a real product. If they are not, no amount of architecture around them fixes it.
+The intent is to report these honestly rather than selectively.
 
-## Status
+## Roadmap
 
-Phase 0 (foundations) is complete. The IR schema, compiler, runtime, Playwright adapter, and benchmark harness are all built and tested.
+### Phase 0: Foundations (shipped at `0.1.0`)
 
-Phase 1 is next: parser, verifier, healer, CLI, and MCP server. The healer is the headline feature. Published false-heal rate is the headline metric.
+The deterministic core, published on npm. See [What ships today](#what-ships-today) for the per-package detail. The baseline (typecheck, format, 82 tests) is green and a benchmark harness runs five real-site tasks.
+
+### Phase 1: Healer-first MVP (in progress)
+
+The pieces that take Starfysh from "foundations" to "an automation you can actually leave running": a parser that lifts existing Playwright scripts into IR, a verifier that replays workflows against the live site to prove they still work, a healer that patches broken steps with reviewable diffs, and the CLI and MCP tooling so humans and coding agents can both drive the stack. A synthetic-drift benchmark will stress-test the healer and produce the reliability numbers the measurement section describes.
+
+### Phase 2: Beta and polish
+
+Private beta with real users, additional vault backends (Doppler, AWS Secrets Manager), a minimal docs site, and the public announcement.
+
+## Longer-term direction
+
+The healing stack at the centre of Starfysh is designed to be surface-agnostic. Browser workflows come first because they are the hardest unsolved healing surface. The architecture is kept deliberately open to extending to other surfaces with observable postconditions and cheap replay once the browser case is proven, but that is not what is being built this quarter.
 
 ## Local development
 
