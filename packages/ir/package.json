@@ -2,6 +2,29 @@
   "name": "@sfysh/ir",
   "version": "0.1.0",
   "description": "Starfysh IR schema, generated TypeScript types, and Ajv-based validators for workflow and step documents.",
+  "keywords": [
+    "starfysh",
+    "ir",
+    "intermediate-representation",
+    "json-schema",
+    "ajv",
+    "workflow",
+    "browser-automation"
+  ],
+  "homepage": "https://github.com/76Trystan/starfysh#readme",
+  "bugs": {
+    "url": "https://github.com/76Trystan/starfysh/issues"
+  },
+  "license": "Apache-2.0",
+  "author": "Trystan Frederick",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/76Trystan/starfysh.git",
+    "directory": "packages/ir"
+  },
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -22,6 +45,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/copy-schemas.mjs",
+    "prepublishOnly": "npm run build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "regen-types": "node scripts/regen-types.mjs"

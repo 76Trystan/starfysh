@@ -2,6 +2,27 @@
   "name": "@sfysh/playwright-adapter",
   "version": "0.1.0",
   "description": "Playwright compatibility adapter for Starfysh. Bridges Playwright Page and Locator types to the Starfysh runtime interfaces so existing Playwright scripts and infrastructure can run Starfysh workflows without migration.",
+  "keywords": [
+    "starfysh",
+    "playwright",
+    "adapter",
+    "browser-automation",
+    "workflow"
+  ],
+  "homepage": "https://github.com/76Trystan/starfysh#readme",
+  "bugs": {
+    "url": "https://github.com/76Trystan/starfysh/issues"
+  },
+  "license": "Apache-2.0",
+  "author": "Trystan Frederick",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/76Trystan/starfysh.git",
+    "directory": "packages/playwright-adapter"
+  },
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -22,6 +43,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

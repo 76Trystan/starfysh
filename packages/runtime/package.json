@@ -2,6 +2,28 @@
   "name": "@sfysh/runtime",
   "version": "0.1.0",
   "description": "Starfysh runtime: workflow runner, vault, assertions, and emit helpers used by compiled Starfysh scripts.",
+  "keywords": [
+    "starfysh",
+    "runtime",
+    "workflow",
+    "browser-automation",
+    "scheduler",
+    "page-automation"
+  ],
+  "homepage": "https://github.com/76Trystan/starfysh#readme",
+  "bugs": {
+    "url": "https://github.com/76Trystan/starfysh/issues"
+  },
+  "license": "Apache-2.0",
+  "author": "Trystan Frederick",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/76Trystan/starfysh.git",
+    "directory": "packages/runtime"
+  },
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -22,6 +44,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
