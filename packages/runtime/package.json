@@ -1,6 +1,6 @@
 {
   "name": "@sfysh/runtime",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Starfysh runtime: workflow runner, vault, assertions, and emit helpers used by compiled Starfysh scripts.",
   "keywords": [
     "starfysh",
