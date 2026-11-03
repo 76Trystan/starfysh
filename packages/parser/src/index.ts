@@ -8,6 +8,9 @@
 
 import type { Workflow } from '@sfysh/ir';
 
+export { walkFile } from './walker.js';
+export type { WalkedTest, CallChain, ChainLink, SourcePos } from './walker.js';
+
 export class ParserNotImplementedError extends Error {
   constructor() {
     super(
