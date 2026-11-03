@@ -1,3 +1,15 @@
+# Release workflow: publishes @sfysh/* packages via npm Trusted Publishing (OIDC).
+#
+# Prerequisite (one-off, done on npmjs.com):
+#   For each of @sfysh/ir, @sfysh/compiler, @sfysh/runtime, @sfysh/playwright-adapter:
+#     Settings -> Trusted Publishers -> add this repository (76Trystan/starfysh),
+#     workflow (.github/workflows/release.yml), environment (none).
+#   Until all four are configured, this workflow will fail with 404/EOIDC on publish.
+#   See docs/planning/Blockers.md for the history of why this replaced NPM_TOKEN auth.
+#
+# After configuration, every merge of a "Version Packages" PR auto-publishes with
+# build provenance attached, no secrets stored in the repo.
+
 name: Release
 
 on:
@@ -13,6 +25,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      id-token: write
 
     steps:
       - uses: actions/checkout@v4
@@ -25,6 +38,12 @@ jobs:
           cache: 'pnpm'
           registry-url: 'https://registry.npmjs.org'
 
+      # pnpm 9.x delegates provenance signing to the npm CLI it shells out to.
+      # Node 22 LTS ships with npm 10.x; upgrade to the latest npm so OIDC
+      # token exchange and --provenance are both supported.
+      - name: Upgrade npm for OIDC and provenance
+        run: npm install -g npm@latest
+
       - run: pnpm install --frozen-lockfile
 
       - name: Create release PR or publish
@@ -35,5 +54,4 @@ jobs:
           publish: pnpm release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: 'true'

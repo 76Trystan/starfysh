@@ -1,5 +1,9 @@
 # Starfysh
 
+[![CI](https://github.com/76Trystan/starfysh/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/76Trystan/starfysh/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org/)
+
 A browser-automation compiler that turns one AI-recorded session into a deterministic, self-healing script. The agent authors the code once, the runtime runs it indefinitely.
 
 > **Status at `0.1.0`.** The paragraph above is the vision. Phase 0 (the IR, compiler, runtime, and Playwright adapter) is shipped on npm. Phase 1 (recorder, verifier, healer, CLI, MCP server) is in progress. The sections below separate what you can use today from what is coming.
@@ -8,16 +12,92 @@ A browser-automation compiler that turns one AI-recorded session into a determin
 
 The four `@sfysh/*` packages on npm give you the deterministic middle of the pipeline: an IR schema with validators, a templated compiler, a browser-backend-agnostic runtime, and a Playwright bridge.
 
-| Package                     | What it does                                                                                                                                                 |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `@sfysh/ir`                 | JSON-Schema-first IR for Starfysh workflows, with Ajv validators and generated TypeScript types.                                                             |
-| `@sfysh/compiler`           | Takes a validated IR workflow and emits deterministic TypeScript, byte-stable across runs.                                                                   |
-| `@sfysh/runtime`            | The `workflow()` runner, `vault()` secret resolver, assertions, extraction helpers, and the `Page`/`Locator` interfaces that generated code targets.         |
-| `@sfysh/playwright-adapter` | Casts Playwright's `Page` and `Locator` to the runtime's structural interfaces so Playwright-driven tests can run Starfysh workflows without rewriting them. |
+| Package                                                                                                                                                                                                              | What it does                                                                                                                                                 |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`@sfysh/ir`](https://www.npmjs.com/package/@sfysh/ir) [![npm](https://img.shields.io/npm/v/@sfysh/ir.svg)](https://www.npmjs.com/package/@sfysh/ir)                                                                 | JSON-Schema-first IR for Starfysh workflows, with Ajv validators and generated TypeScript types.                                                             |
+| [`@sfysh/compiler`](https://www.npmjs.com/package/@sfysh/compiler) [![npm](https://img.shields.io/npm/v/@sfysh/compiler.svg)](https://www.npmjs.com/package/@sfysh/compiler)                                         | Takes a validated IR workflow and emits deterministic TypeScript, byte-stable across runs.                                                                   |
+| [`@sfysh/runtime`](https://www.npmjs.com/package/@sfysh/runtime) [![npm](https://img.shields.io/npm/v/@sfysh/runtime.svg)](https://www.npmjs.com/package/@sfysh/runtime)                                             | The `workflow()` runner, `vault()` secret resolver, assertions, extraction helpers, and the `Page`/`Locator` interfaces that generated code targets.         |
+| [`@sfysh/playwright-adapter`](https://www.npmjs.com/package/@sfysh/playwright-adapter) [![npm](https://img.shields.io/npm/v/@sfysh/playwright-adapter.svg)](https://www.npmjs.com/package/@sfysh/playwright-adapter) | Casts Playwright's `Page` and `Locator` to the runtime's structural interfaces so Playwright-driven tests can run Starfysh workflows without rewriting them. |
 
 **What this means in practice.** You can hand-author a workflow IR today following the schema in `@sfysh/ir`, compile it with `@sfysh/compiler`, and execute the result via `@sfysh/runtime` plus Playwright. That is a working, deterministic path from JSON to a running browser automation.
 
 **What is not here yet.** The recorder that turns an agent session into IR, the verifier that proves a workflow replays cleanly, and the healer that patches broken steps when sites change all land in Phase 1. Those are the components that take Starfysh from "a well-typed Playwright toolkit" to "an automation you can actually leave running". See the [roadmap](#roadmap).
+
+## Try it in 5 minutes
+
+Prerequisites: Node 22+ and the Playwright Chromium binary.
+
+```sh
+mkdir starfysh-demo && cd starfysh-demo
+npm init -y
+npm pkg set type=module
+npm install @sfysh/runtime @sfysh/playwright-adapter playwright tsx
+npx playwright install chromium
+```
+
+Create `demo.ts`:
+
+```ts
+import { chromium } from 'playwright';
+import { workflow, run, emit, drainOutputs } from '@sfysh/runtime';
+import { asPage } from '@sfysh/playwright-adapter';
+
+workflow('books-category-count', async (page) => {
+  await page.goto('https://books.toscrape.com/catalogue/category/books/travel_2/index.html', {
+    waitUntil: 'domcontentloaded',
+  });
+  const count = await page.locator('article.product_pod').count();
+  emit.output({ category: 'travel', count });
+});
+
+const browser = await chromium.launch();
+const context = await browser.newContext();
+const page = await context.newPage();
+
+const result = await run('books-category-count', asPage(page));
+console.log(result);
+console.log('outputs:', drainOutputs());
+
+await browser.close();
+```
+
+Run it:
+
+```sh
+npx tsx demo.ts
+```
+
+Expected output: a `RunResult` with `status: 'ok'`, and `outputs: [ { category: 'travel', count: 11 } ]` (give or take a book, since the site occasionally updates).
+
+### Where `@sfysh/compiler` fits in
+
+The `workflow()` call above was hand-written. The point of Starfysh is that the agent writes it. Given an IR document, `@sfysh/compiler` emits exactly this kind of file, byte-stable across runs. The simplest valid IR:
+
+```json
+{
+  "irVersion": "1.0.0",
+  "id": "books_category_count",
+  "name": "Count books in Travel category",
+  "steps": [
+    {
+      "id": "step_01_navigate",
+      "intent": "Open the Travel category page.",
+      "action": "navigate",
+      "url": "https://books.toscrape.com/catalogue/category/books/travel_2/index.html"
+    }
+  ]
+}
+```
+
+```ts
+import { compile } from '@sfysh/compiler';
+import ir from './workflow.json' with { type: 'json' };
+
+const { source } = await compile(ir);
+console.log(source);
+```
+
+In Phase 1, the recorder authors these IR documents from a single AI-driven browser session. Today they are hand-authored or scripted from your own traces.
 
 ## What this grows into
 
