@@ -1,33 +1,61 @@
-// @sfysh/parser lifts hand-written Playwright TypeScript scripts into the
-// Starfysh IR, so existing scripts can be verified and healed by the same
-// toolchain that handles agent-authored workflows.
-//
-// Status: scaffold only. The ts-morph AST walker, selector extraction, and
-// pre/post condition inference land as follow-up items under Phase 1 in
-// docs/planning/ToDo.md. Importing parse() today throws.
-
-import type { Workflow } from '@sfysh/ir';
+import type { Workflow, Step } from '@sfysh/ir';
+import { IR_VERSION } from '@sfysh/ir';
+import { walkFile } from './walker.js';
+import { chainsToSteps } from './steps.js';
 
 export { walkFile } from './walker.js';
 export type { WalkedTest, CallChain, ChainLink, SourcePos } from './walker.js';
 
-export { extractCandidate, extractTarget, isLocatorLink } from './selectors.js';
+export { extractCandidate, extractTarget, isLocatorLink, unquote } from './selectors.js';
 
-export class ParserNotImplementedError extends Error {
-  constructor() {
-    super(
-      '@sfysh/parser is scaffolded but not yet implemented. See Phase 1 in docs/planning/ToDo.md.',
-    );
-    this.name = 'ParserNotImplementedError';
+export { extractCondition } from './conditions.js';
+
+export { chainsToSteps } from './steps.js';
+
+export class ParseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ParseError';
   }
 }
 
 /**
  * Parse a Playwright TypeScript source string into a Starfysh workflow IR.
  *
- * Not yet implemented. The signature is fixed so dependents can be written
- * against it; the body throws until the real walker lands.
+ * Extracts the first `test()` call, maps its Playwright actions (goto, click,
+ * fill, waitFor*) to IR steps, and converts `expect()` assertions into
+ * postconditions on the preceding step or standalone assert steps.
  */
-export function parse(_source: string): Workflow {
-  throw new ParserNotImplementedError();
+export function parse(source: string): Workflow {
+  const tests = walkFile(source);
+  if (tests.length === 0) {
+    throw new ParseError('No test() calls found in source');
+  }
+
+  const test = tests[0]!;
+  const steps = chainsToSteps(test.calls);
+
+  if (steps.length === 0) {
+    throw new ParseError(`No recognizable Playwright actions found in test '${test.name}'`);
+  }
+
+  return {
+    irVersion: IR_VERSION,
+    id: slugify(test.name),
+    name: test.name,
+    steps: steps as [Step, ...Step[]],
+    metadata: { source: 'parser' },
+  };
+}
+
+function slugify(name: string): string {
+  let slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  if (!slug || !/^[a-z]/.test(slug)) slug = `wf_${slug}`;
+  if (slug.length < 3) slug = `wf_${slug}`;
+
+  return slug.slice(0, 64);
 }

@@ -95,7 +95,7 @@ function extractRole(args: string[]): SelectorCandidate | undefined {
  * Returns undefined if the string is not a quoted literal (e.g. a variable
  * reference or complex expression).
  */
-function unquote(raw: string): string | undefined {
+export function unquote(raw: string): string | undefined {
   const trimmed = raw.trim();
   for (const q of ["'", '"', '`']) {
     if (trimmed.startsWith(q) && trimmed.endsWith(q) && trimmed.length >= 2) {
