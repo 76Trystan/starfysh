@@ -107,6 +107,15 @@ importers:
         specifier: ^3.0.0
         version: 3.0.1(ajv@8.20.0)
 
+  packages/verifier:
+    dependencies:
+      '@sfysh/ir':
+        specifier: workspace:*
+        version: link:../ir
+      '@sfysh/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+
 packages:
 
   '@apidevtools/json-schema-ref-parser@11.9.3':
