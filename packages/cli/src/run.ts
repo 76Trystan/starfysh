@@ -137,6 +137,8 @@ async function verifyCommand(args: string[], ctx: RunContext): Promise<number> {
       runs: { type: 'string', short: 'n' },
       json: { type: 'boolean' },
       out: { type: 'string', short: 'o' },
+      record: { type: 'string' },
+      cassette: { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     },
     allowPositionals: true,
@@ -190,7 +192,14 @@ async function verifyCommand(args: string[], ctx: RunContext): Promise<number> {
 
   const file = positionals[0]!;
   const out = typeof parsed.values.out === 'string' ? parsed.values.out : undefined;
+  const record = typeof parsed.values.record === 'string' ? parsed.values.record : undefined;
+  const cassette = typeof parsed.values.cassette === 'string' ? parsed.values.cassette : undefined;
   const format = parsed.values.json ? 'json' : 'human';
+
+  if (record && cassette) {
+    ctx.stderr.write('compile verify: --record and --cassette are mutually exclusive\n');
+    return 1;
+  }
 
   const opts: VerifyCommandOptions = {
     file,
@@ -198,6 +207,8 @@ async function verifyCommand(args: string[], ctx: RunContext): Promise<number> {
     format,
     ...(runs !== undefined ? { runs } : {}),
     ...(out ? { out } : {}),
+    ...(record ? { record } : {}),
+    ...(cassette ? { cassette } : {}),
   };
 
   let result;
@@ -220,6 +231,9 @@ async function verifyCommand(args: string[], ctx: RunContext): Promise<number> {
     ctx.stderr.write(`Wrote ${out}\n`);
   } else {
     ctx.stdout.write(result.output.endsWith('\n') ? result.output : result.output + '\n');
+  }
+  if (result.recordedTo) {
+    ctx.stderr.write(`Recorded cassette: ${result.recordedTo}\n`);
   }
 
   return reportIsGreen(result.report) ? 0 : 2;
@@ -263,6 +277,12 @@ Options:
   -n, --runs <count>     Number of replays (default 3).
       --json             Emit a JSON report instead of a human-readable one.
   -o, --out <path>       Write the report to <path> instead of stdout.
+      --record <path>    Record a cassette from the last live replay and
+                         write it to <path>. Mutually exclusive with
+                         --cassette.
+      --cassette <path>  Replay against an existing cassette instead of a
+                         live site. The backend's 'runner' is still used;
+                         'pageFactory' and 'dispose' are not called.
   -h, --help             Show this message.
 
 Exit codes:

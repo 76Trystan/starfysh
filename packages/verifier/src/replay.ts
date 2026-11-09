@@ -4,15 +4,44 @@
 
 import type { Workflow } from '@sfysh/ir';
 import { drainOutputs } from '@sfysh/runtime';
+import type { Cassette } from './cassette.js';
+import { fakePageFromCassette } from './fake-page.js';
 import { evaluateConditions } from './postconditions.js';
 import { compareOutputs } from './stability.js';
 import type {
   PostconditionResult,
   ReplayOutcome,
+  RunnerFn,
   TimingEnvelope,
+  ToleranceMap,
   VerifyOptions,
   VerifyReport,
 } from './types.js';
+
+export interface ReplayFromCassetteOptions {
+  runner: RunnerFn;
+  runs?: number;
+  tolerance?: ToleranceMap;
+}
+
+/**
+ * Replay a workflow against a cassette instead of a live Page backend. The
+ * runner executes unchanged; FakePage returns the recorded answer for every
+ * query. Useful for regression testing, healer scoring loops, and CI runs
+ * that cannot reach the open internet.
+ */
+export async function replayFromCassette(
+  workflow: Workflow,
+  cassette: Cassette,
+  options: ReplayFromCassetteOptions,
+): Promise<VerifyReport> {
+  return replay(workflow, {
+    pageFactory: () => fakePageFromCassette(cassette),
+    runner: options.runner,
+    ...(options.runs !== undefined ? { runs: options.runs } : {}),
+    ...(options.tolerance ? { tolerance: options.tolerance } : {}),
+  });
+}
 
 export async function replay(workflow: Workflow, options: VerifyOptions): Promise<VerifyReport> {
   const runs = Math.max(1, options.runs ?? 3);

@@ -25,6 +25,7 @@ const backendSuccess = resolvePath(fixturesDir, 'backend-success.mjs');
 const backendFails = resolvePath(fixturesDir, 'backend-fails.mjs');
 const backendDrift = resolvePath(fixturesDir, 'backend-drift.mjs');
 const backendMissingRunner = resolvePath(fixturesDir, 'backend-missing-runner.mjs');
+const backendRecording = resolvePath(fixturesDir, 'backend-recording.mjs');
 
 const minimalWorkflow = {
   irVersion: '1.0.0',
@@ -277,5 +278,170 @@ describe('runVerifyCommand (library form)', () => {
         runs: 1,
       }),
     ).rejects.toBeInstanceOf(VerifyLoadError);
+  });
+});
+
+describe('compile verify (--record and --cassette)', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'sfysh-cli-verify-'));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('records a cassette from a live run and writes it to --record', async () => {
+    const workflow = writeWorkflow(dir);
+    const cassettePath = join(dir, 'recorded.cassette.json');
+    const c = ctx();
+    const code = await run(
+      ['verify', workflow, '--backend', backendRecording, '--runs', '1', '--record', cassettePath],
+      c,
+    );
+
+    expect(code).toBe(0);
+    expect(existsSync(cassettePath)).toBe(true);
+    expect(c.stderr.text).toContain(`Recorded cassette: ${cassettePath}`);
+
+    const cassette = JSON.parse(readFileSync(cassettePath, 'utf8'));
+    expect(cassette.version).toBe(1);
+    expect(cassette.workflowId).toBe('wf_test');
+    expect(cassette.queries).toHaveProperty('url');
+    expect(cassette.queries).toHaveProperty('locator("#submit").isVisible');
+    expect(cassette.queries).toHaveProperty('getByText("Submitted").count');
+    expect(cassette.effects.map((e: { call: string }) => e.call)).toContain(
+      'locator("#submit").click',
+    );
+  });
+
+  it('replays against a recorded cassette with --cassette and reaches green', async () => {
+    const workflow = writeWorkflow(dir);
+    const cassettePath = join(dir, 'recorded.cassette.json');
+
+    const recorded = await runVerifyCommand({
+      file: workflow,
+      backend: backendRecording,
+      runs: 1,
+      record: cassettePath,
+    });
+    expect(recorded.recordedTo).toBe(cassettePath);
+
+    const c = ctx();
+    const code = await run(
+      [
+        'verify',
+        workflow,
+        '--backend',
+        backendRecording,
+        '--runs',
+        '2',
+        '--cassette',
+        cassettePath,
+      ],
+      c,
+    );
+
+    expect(code).toBe(0);
+    expect(c.stdout.text).toContain('Passed: 2');
+    expect(c.stdout.text).toContain('Stability: stable');
+  });
+
+  it('rejects --record and --cassette together at the CLI layer', async () => {
+    const workflow = writeWorkflow(dir);
+    const cassettePath = join(dir, 'c.json');
+    const outCassette = join(dir, 'out.json');
+    const c = ctx();
+    const code = await run(
+      [
+        'verify',
+        workflow,
+        '--backend',
+        backendSuccess,
+        '--record',
+        outCassette,
+        '--cassette',
+        cassettePath,
+      ],
+      c,
+    );
+    expect(code).toBe(1);
+    expect(c.stderr.text).toContain('mutually exclusive');
+  });
+
+  it('rejects --record and --cassette together at the library layer', async () => {
+    const workflow = writeWorkflow(dir);
+    await expect(
+      runVerifyCommand({
+        file: workflow,
+        backend: backendSuccess,
+        runs: 1,
+        record: join(dir, 'out.json'),
+        cassette: join(dir, 'in.json'),
+      }),
+    ).rejects.toBeInstanceOf(VerifyLoadError);
+  });
+
+  it('reports a clear error when the cassette file does not exist', async () => {
+    const workflow = writeWorkflow(dir);
+    const c = ctx();
+    const code = await run(
+      ['verify', workflow, '--backend', backendSuccess, '--cassette', join(dir, 'nope.json')],
+      c,
+    );
+    expect(code).toBe(1);
+    expect(c.stderr.text).toContain('cassette file not found');
+  });
+
+  it('reports a clear error when the cassette file is invalid', async () => {
+    const workflow = writeWorkflow(dir);
+    const bad = join(dir, 'bad.cassette.json');
+    writeFileSync(bad, '{ not: json', 'utf8');
+    const c = ctx();
+    const code = await run(['verify', workflow, '--backend', backendSuccess, '--cassette', bad], c);
+    expect(code).toBe(1);
+    expect(c.stderr.text).toContain('is invalid');
+  });
+
+  it('--cassette replay does not call the backend pageFactory', async () => {
+    const workflow = writeWorkflow(dir);
+    const cassettePath = join(dir, 'recorded.cassette.json');
+
+    // First record a cassette from the recording backend (which has a
+    // real pageFactory).
+    await runVerifyCommand({
+      file: workflow,
+      backend: backendRecording,
+      runs: 1,
+      record: cassettePath,
+    });
+
+    // Build a sentinel backend whose pageFactory throws if called. If the
+    // CLI touches it during --cassette mode, the test fails.
+    const sentinel = join(dir, 'backend-sentinel.mjs');
+    writeFileSync(
+      sentinel,
+      `
+      export const pageFactory = () => {
+        throw new Error('pageFactory should not be invoked in cassette mode');
+      };
+      export const runner = async (page) => {
+        page.url();
+        await page.locator('#submit').isVisible();
+        await page.getByText('Submitted').count();
+        await page.locator('#submit').click();
+      };
+      `,
+      'utf8',
+    );
+
+    const result = await runVerifyCommand({
+      file: workflow,
+      backend: sentinel,
+      runs: 1,
+      cassette: cassettePath,
+    });
+    expect(reportIsGreen(result.report)).toBe(true);
   });
 });

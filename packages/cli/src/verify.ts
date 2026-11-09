@@ -7,6 +7,16 @@
 // follow the contract documented in BackendModule below. This lets the
 // same command verify Playwright-driven workflows today and any other
 // backend Starfysh grows later without churning the CLI itself.
+//
+// Two optional modes change what the Page backend is:
+//
+//   --record <path>    wrap the backend's pageFactory with recordPage so the
+//                      last replay's Page-level queries are captured into a
+//                      cassette written to <path>.
+//   --cassette <path>  load an existing cassette and replay against it with
+//                      FakePage. The backend's pageFactory is not called;
+//                      backend.runner still provides the workflow logic.
+//                      The two flags are mutually exclusive.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -14,11 +24,18 @@ import { resolve as resolvePath } from 'node:path';
 import { validateWorkflow } from '@sfysh/ir';
 import type { Workflow } from '@sfysh/ir';
 import {
+  parseCassette,
+  recordPage,
   replay,
+  replayFromCassette,
   humanReport,
   jsonReport,
+  serialiseCassette,
+  CassetteError,
+  type Cassette,
   type PageDisposer,
   type PageFactory,
+  type RecordingResult,
   type RunnerFn,
   type ToleranceMap,
   type VerifyReport,
@@ -29,6 +46,10 @@ import {
  * mandatory; `dispose` and `tolerance` are optional. Any other exports are
  * ignored. Keeping this a loose named-exports contract (rather than a
  * default export) makes backends trivial to write as plain `.mjs` files.
+ *
+ * In `--cassette` mode, `pageFactory` and `dispose` are not called but the
+ * module must still export a valid `pageFactory` (its shape is validated
+ * eagerly). `runner` is always invoked.
  */
 export interface BackendModule {
   pageFactory: PageFactory;
@@ -44,6 +65,10 @@ export interface VerifyCommandOptions {
   tolerance?: ToleranceMap;
   format?: 'human' | 'json';
   out?: string;
+  /** Path to write a cassette to. Mutually exclusive with `cassette`. */
+  record?: string;
+  /** Path to load a cassette from. Mutually exclusive with `record`. */
+  cassette?: string;
 }
 
 export interface VerifyCommandResult {
@@ -51,6 +76,8 @@ export interface VerifyCommandResult {
   output: string;
   /** Raw report object for callers that want structured access. */
   report: VerifyReport;
+  /** Set when `--record` was used and a cassette was written. */
+  recordedTo?: string;
 }
 
 export class VerifyLoadError extends Error {
@@ -67,17 +94,47 @@ export class VerifyLoadError extends Error {
  * file IO problems. Any backend-runtime exception bubbles up unchanged.
  */
 export async function runVerifyCommand(opts: VerifyCommandOptions): Promise<VerifyCommandResult> {
+  if (opts.record && opts.cassette) {
+    throw new VerifyLoadError('--record and --cassette are mutually exclusive');
+  }
+
   const workflow = loadWorkflow(opts.file);
   const backend = await loadBackend(opts.backend);
   const tolerance = opts.tolerance ?? backend.tolerance;
 
-  const report = await replay(workflow, {
-    pageFactory: backend.pageFactory,
-    runner: backend.runner,
-    ...(backend.dispose ? { dispose: backend.dispose } : {}),
-    ...(opts.runs !== undefined ? { runs: opts.runs } : {}),
-    ...(tolerance ? { tolerance } : {}),
-  });
+  let report: VerifyReport;
+  let recordedTo: string | undefined;
+
+  if (opts.cassette) {
+    const cassette = loadCassette(opts.cassette);
+    report = await replayFromCassette(workflow, cassette, {
+      runner: backend.runner,
+      ...(opts.runs !== undefined ? { runs: opts.runs } : {}),
+      ...(tolerance ? { tolerance } : {}),
+    });
+  } else if (opts.record) {
+    const recorded = withRecordingFactory(backend.pageFactory, workflow);
+    report = await replay(workflow, {
+      pageFactory: recorded.factory,
+      runner: backend.runner,
+      ...(backend.dispose ? { dispose: backend.dispose } : {}),
+      ...(opts.runs !== undefined ? { runs: opts.runs } : {}),
+      ...(tolerance ? { tolerance } : {}),
+    });
+    const cassette = recorded.latest();
+    if (cassette) {
+      writeFileSync(opts.record, serialiseCassette(cassette), 'utf8');
+      recordedTo = opts.record;
+    }
+  } else {
+    report = await replay(workflow, {
+      pageFactory: backend.pageFactory,
+      runner: backend.runner,
+      ...(backend.dispose ? { dispose: backend.dispose } : {}),
+      ...(opts.runs !== undefined ? { runs: opts.runs } : {}),
+      ...(tolerance ? { tolerance } : {}),
+    });
+  }
 
   const format = opts.format ?? 'human';
   const output = format === 'json' ? jsonReport(report) : humanReport(report);
@@ -86,7 +143,7 @@ export async function runVerifyCommand(opts: VerifyCommandOptions): Promise<Veri
     writeFileSync(opts.out, output.endsWith('\n') ? output : output + '\n', 'utf8');
   }
 
-  return { output, report };
+  return { output, report, ...(recordedTo ? { recordedTo } : {}) };
 }
 
 /**
@@ -127,6 +184,27 @@ function loadWorkflow(file: string): Workflow {
   return result.value;
 }
 
+function loadCassette(cassettePath: string): Cassette {
+  let raw: string;
+  try {
+    raw = readFileSync(cassettePath, 'utf8');
+  } catch (err) {
+    const nodeErr = err as NodeJS.ErrnoException;
+    if (nodeErr.code === 'ENOENT') {
+      throw new VerifyLoadError(`cassette file not found: ${cassettePath}`);
+    }
+    throw err;
+  }
+  try {
+    return parseCassette(raw);
+  } catch (err) {
+    if (err instanceof CassetteError) {
+      throw new VerifyLoadError(`cassette '${cassettePath}' is invalid: ${err.message}`);
+    }
+    throw err;
+  }
+}
+
 async function loadBackend(backendPath: string): Promise<BackendModule> {
   const absolute = resolvePath(backendPath);
   let mod: Record<string, unknown>;
@@ -164,5 +242,29 @@ async function loadBackend(backendPath: string): Promise<BackendModule> {
     runner: mod.runner as RunnerFn,
     ...(mod.dispose ? { dispose: mod.dispose as PageDisposer } : {}),
     ...(mod.tolerance ? { tolerance: mod.tolerance as ToleranceMap } : {}),
+  };
+}
+
+/**
+ * Wrap a live pageFactory so every call records to a fresh cassette. The
+ * `latest()` accessor returns the most recent replay's cassette, or null
+ * if the factory was never called (replay with runs=0 would do that).
+ */
+function withRecordingFactory(
+  original: PageFactory,
+  workflow: Workflow,
+): { factory: PageFactory; latest: () => Cassette | null } {
+  let latest: RecordingResult | null = null;
+  const factory: PageFactory = async () => {
+    const live = await original();
+    latest = recordPage(live, {
+      workflowId: workflow.id,
+      workflowName: workflow.name,
+    });
+    return latest.page;
+  };
+  return {
+    factory,
+    latest: () => (latest ? latest.cassette() : null),
   };
 }
