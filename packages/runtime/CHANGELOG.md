@@ -1,5 +1,11 @@
 # @sfysh/runtime
 
+## 0.1.2
+
+### Patch Changes
+
+- 46159c6: Parameterise `WorkflowFn`, `workflow()`, and `getWorkflow()` by context type (`TCtx = Page`). Defaults preserve existing browser-only behaviour; the generic parameter leaves the door open for future surfaces to register workflows against a different context shape without a signature break.
+
 ## 0.1.1
 
 ### Patch Changes
