@@ -53,6 +53,8 @@
   },
   "dependencies": {
     "@sfysh/ir": "workspace:*",
-    "@sfysh/parser": "workspace:*"
+    "@sfysh/parser": "workspace:*",
+    "@sfysh/runtime": "workspace:*",
+    "@sfysh/verifier": "workspace:*"
   }
 }

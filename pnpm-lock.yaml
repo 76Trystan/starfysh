@@ -51,6 +51,12 @@ importers:
       '@sfysh/parser':
         specifier: workspace:*
         version: link:../parser
+      '@sfysh/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+      '@sfysh/verifier':
+        specifier: workspace:*
+        version: link:../verifier
 
   packages/compiler:
     dependencies:

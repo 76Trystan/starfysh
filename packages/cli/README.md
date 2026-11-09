@@ -4,7 +4,7 @@ The Starfysh command-line front end. Exposes a single binary, `compile`, that dr
 
 ## Status
 
-Scaffolded. The only command wired up today is `compile parse`. `verify`, `heal`, `emit`, and `bench` land once their underlying packages exist (see `docs/planning/ToDo.md`).
+Scaffolded. The commands wired up today are `compile parse` and `compile verify`. `heal`, `emit`, and `bench` land once their underlying packages exist (see `docs/planning/ToDo.md`).
 
 The package is private (`"private": true`) until the surface stabilises.
 
@@ -39,6 +39,41 @@ Exit codes:
 
 - `0` on success.
 - `1` on parse errors, missing files, or unknown arguments.
+
+### `compile verify <file>`
+
+Replays a Starfysh IR workflow against a Page backend, evaluates terminal postconditions, and compares outputs across runs. The CLI stays browser-agnostic: the backend is supplied as a path to a module that exports `pageFactory` and `runner` (and optionally `dispose` and `tolerance`). A typical backend wires Playwright through `@sfysh/playwright-adapter` and calls `run(id, page)` from `@sfysh/runtime`.
+
+```sh
+compile verify supplier-portal.workflow.json --backend ./backend.mjs
+compile verify supplier-portal.workflow.json --backend ./backend.mjs --runs 5 --json
+compile verify supplier-portal.workflow.json --backend ./backend.mjs --out report.txt
+```
+
+Backend module contract:
+
+```ts
+import type { PageFactory, RunnerFn, PageDisposer, ToleranceMap } from '@sfysh/verifier';
+
+export const pageFactory: PageFactory;
+export const runner: RunnerFn;
+export const dispose?: PageDisposer;
+export const tolerance?: ToleranceMap;
+```
+
+Options:
+
+- `-b`, `--backend <path>` path to the backend module (required).
+- `-n`, `--runs <count>` number of replays (default 3).
+- `--json` emit a JSON report instead of a human-readable one.
+- `-o`, `--out <path>` write the report to a file instead of stdout.
+- `-h`, `--help` shows usage.
+
+Exit codes:
+
+- `0` when every replay passed and outputs were stable across runs.
+- `1` on usage, IO, or workflow-validation errors.
+- `2` when one or more replays failed or outputs drifted across runs.
 
 ## Design notes
 
