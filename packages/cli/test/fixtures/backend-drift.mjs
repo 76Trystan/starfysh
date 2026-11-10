@@ -1,8 +1,6 @@
 // Backend whose runner emits a different output on each replay, exercising
 // the stability-comparison path (drift detected -> non-zero exit code).
 
-import { emit } from '@sfysh/runtime';
-
 let counter = 0;
 
 function stubPage() {
@@ -19,7 +17,7 @@ function stubPage() {
 }
 
 export const pageFactory = () => stubPage();
-export const runner = async () => {
+export const runner = async (ctx) => {
   counter += 1;
-  emit.output({ run: counter });
+  ctx.emit.output({ run: counter });
 };

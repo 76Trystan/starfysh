@@ -1,6 +1,6 @@
 import type { Browser } from 'playwright-core';
 import { asPage } from '@sfysh/playwright-adapter';
-import { run, drainOutputs } from '@sfysh/runtime';
+import { createWorkflowContext, run } from '@sfysh/runtime';
 
 export interface TaskRun {
   workflowId: string;
@@ -14,8 +14,9 @@ export interface TaskRun {
 export async function runTask(browser: Browser, workflowId: string): Promise<TaskRun> {
   const page = await browser.newPage();
   try {
-    const result = await run(workflowId, asPage(page));
-    const output = drainOutputs();
+    const ctx = createWorkflowContext({ page: asPage(page) });
+    const result = await run(workflowId, ctx);
+    const output = ctx.drainOutputs();
     return {
       workflowId,
       status: result.status,

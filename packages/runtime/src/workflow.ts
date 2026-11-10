@@ -1,31 +1,58 @@
-import type { Page } from './types.js';
+import type { WorkflowContext } from './context.js';
 
 /**
- * Signature of a registered workflow function. Parameterised over context
- * type so Phase 2 can register workflows against a different shape (e.g.
- * `{ page: Page; http: HttpClient }`) without breaking the browser default.
- * All current callers resolve to `WorkflowFn<Page>` implicitly.
+ * Signature of a registered workflow function. Defaults to the Phase 1
+ * browser context; Phase 2 instantiates the same registry under a wider
+ * context type that adds `http: HttpClient`.
  */
-export type WorkflowFn<TCtx = Page> = (ctx: TCtx) => Promise<void>;
+export type WorkflowFn<TCtx = WorkflowContext> = (ctx: TCtx) => Promise<void>;
 
 const registry = new Map<string, WorkflowFn<unknown>>();
 
 /**
+ * Thrown when `workflow(id, fn)` is called with an id that is already
+ * registered. Silent overwrite is a surprising failure mode once replay
+ * loops and healer-driven re-registration become common, so collisions
+ * fail loudly.
+ */
+export class WorkflowIdCollisionError extends Error {
+  public readonly workflowId: string;
+
+  constructor(id: string) {
+    super(
+      `Workflow id "${id}" is already registered. Each id must be unique within a process; ` +
+        `call resetWorkflows() between test cases if you need to re-register.`,
+    );
+    this.name = 'WorkflowIdCollisionError';
+    this.workflowId = id;
+  }
+}
+
+/**
  * Register a named workflow. The Starfysh runner calls this function's
- * registered callback with the appropriate context when executing the
- * workflow. Defaults to a browser Page; callers specify a different
- * context type via the TCtx type parameter.
+ * registered callback with a WorkflowContext when executing the workflow.
+ * Throws WorkflowIdCollisionError if `id` is already registered.
  *
  * Generated code always calls workflow() as its top-level wrapper.
  */
-export function workflow<TCtx = Page>(id: string, fn: WorkflowFn<TCtx>): void {
+export function workflow<TCtx = WorkflowContext>(id: string, fn: WorkflowFn<TCtx>): void {
+  if (registry.has(id)) throw new WorkflowIdCollisionError(id);
   registry.set(id, fn as WorkflowFn<unknown>);
 }
 
-export function getWorkflow<TCtx = Page>(id: string): WorkflowFn<TCtx> | undefined {
+export function getWorkflow<TCtx = WorkflowContext>(id: string): WorkflowFn<TCtx> | undefined {
   return registry.get(id) as WorkflowFn<TCtx> | undefined;
 }
 
 export function listWorkflows(): string[] {
   return Array.from(registry.keys());
+}
+
+/**
+ * Clear every registered workflow. Test helper; production runners never
+ * call this. The registry is a module singleton today, so tests that
+ * register the same id across cases need to drain it between runs.
+ */
+export function resetWorkflows(): void {
+  registry.clear();
 }

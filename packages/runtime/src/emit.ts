@@ -1,8 +1,9 @@
-// Typed extraction and workflow output.
+// Typed extraction helper and output types.
 //
-// Generated code calls:
-//   const rows = await emit.table(page.getByRole('table'), { sku: 'string', qty: 'number' });
-//   emit.output(rows.filter(r => r.qty < 10));
+// Generated code uses `ctx.emit.table(locator, schema)` and
+// `ctx.emit.output(value)`. The emit sink is bound to the per-run
+// WorkflowContext (ADR 0010), so the output buffer and the table
+// extractor live together on the context rather than at module scope.
 //
 // Extraction is the injection boundary: page content flows into typed
 // schema fields with validation, never into a model's action loop.
@@ -11,9 +12,9 @@
 import type { Locator } from './types.js';
 
 /**
- * Column schema for emit.table. Maps column header name to the primitive
- * type the column should coerce to. 'string' is pass-through, 'number' and
- * 'boolean' coerce or fail.
+ * Column schema for `ctx.emit.table`. Maps column header name to the
+ * primitive type the column should coerce to. 'string' is pass-through,
+ * 'number' and 'boolean' coerce or fail.
  */
 export type ColumnSchema = Record<string, 'string' | 'number' | 'boolean'>;
 
@@ -31,51 +32,29 @@ export type TableRow<S extends ColumnSchema> = {
         : never;
 };
 
-const outputs: unknown[] = [];
-
 /**
- * Record a workflow output. Multiple calls accumulate; the full array is
- * flushed to stdout as JSON when `flushOutputs` is called at the end of
- * the workflow. In tests, use `drainOutputs` instead.
+ * Error thrown when extraction fails validation. Carries enough context
+ * for triage to classify the failure precisely.
  */
-function output<T>(value: T): void {
-  outputs.push(value);
-}
-
-/**
- * Flush accumulated outputs to stdout as a single JSON line. Called by
- * generated code at the end of the workflow test. If COMPILE_OUTPUT_FILE
- * is set, writes there instead.
- */
-export async function flushOutputs(): Promise<void> {
-  if (outputs.length === 0) return;
-  const serialised = JSON.stringify(outputs.length === 1 ? outputs[0] : outputs);
-  const outFile = process.env['COMPILE_OUTPUT_FILE'];
-  if (outFile) {
-    const { writeFile } = await import('node:fs/promises');
-    await writeFile(outFile, serialised, 'utf-8');
-  } else {
-    process.stdout.write(serialised + '\n');
+export class ExtractionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ExtractionError';
   }
-  outputs.length = 0;
-}
-
-/**
- * Clear accumulated outputs without writing. Returns the drained values.
- * Intended for test setup/teardown; generated code uses flushOutputs.
- */
-export function drainOutputs(): unknown[] {
-  const copy = outputs.slice();
-  outputs.length = 0;
-  return copy;
 }
 
 /**
  * Extract rows from a table locator using the given column schema.
  * Header row determines column order; data rows are coerced per schema.
  * Missing or unparseable cells raise an ExtractionError.
+ *
+ * Called via `ctx.emit.table(locator, schema)` from generated code; the
+ * context's emit sink delegates here.
  */
-async function table<S extends ColumnSchema>(locator: Locator, schema: S): Promise<TableRow<S>[]> {
+export async function extractTable<S extends ColumnSchema>(
+  locator: Locator,
+  schema: S,
+): Promise<TableRow<S>[]> {
   const headers = await locator.locator('thead th, tr:first-child th').allTextContents();
   const trimmedHeaders = headers.map((h) => h.trim());
   const schemaKeys = Object.keys(schema);
@@ -126,22 +105,3 @@ function coerce(raw: string, type: 'string' | 'number' | 'boolean', field: strin
   }
   throw new ExtractionError(`Unknown field type '${type as string}' for field '${field}'`);
 }
-
-/**
- * Error thrown when extraction fails validation. Carries enough context
- * for the verifier to classify the failure precisely.
- */
-export class ExtractionError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ExtractionError';
-  }
-}
-
-/**
- * The emit namespace: workflow-facing helpers that generated code calls.
- */
-export const emit = {
-  table,
-  output,
-};

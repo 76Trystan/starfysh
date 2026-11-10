@@ -7,19 +7,20 @@
 //
 // Usage in a Playwright test:
 //   import { asPage } from '@sfysh/playwright-adapter';
-//   import { workflow } from '@sfysh/runtime';
+//   import { workflow, createWorkflowContext } from '@sfysh/runtime';
 //   import type { Page } from 'playwright-core';
 //
 //   test('run workflow', async ({ page }) => {
-//     await workflow('wf_my_task', async (sfPage) => { ... });
+//     const ctx = createWorkflowContext({ page: asPage(page) });
+//     await workflow('wf_my_task', async (ctx) => { ... });
 //     // or: run the workflow with a Playwright page:
 //     const fn = getWorkflow('wf_my_task');
-//     await fn?.(asPage(page));
+//     await fn?.(ctx);
 //   });
 
 import type { Page as PlaywrightPage, Locator as PlaywrightLocator } from 'playwright-core';
-import type { Page, Locator } from '@sfysh/runtime';
-import { run } from '@sfysh/runtime';
+import type { Page, Locator, VaultResolver } from '@sfysh/runtime';
+import { createWorkflowContext, run } from '@sfysh/runtime';
 
 /**
  * Cast a Playwright Page to Starfysh's Page interface. Playwright's Page is a
@@ -51,9 +52,10 @@ export type PlaywrightTestFn = (
 
 /**
  * Register a Starfysh workflow as a Playwright test. Pass the `test` object
- * from @playwright/test and the workflow id; the helper runs the workflow
- * against Playwright's page fixture and re-throws any failure so the test
- * is marked failed with the original error.
+ * from @playwright/test and the workflow id; the helper constructs a per-run
+ * WorkflowContext from Playwright's page fixture, executes the workflow, and
+ * re-throws any failure so the test is marked failed with the original
+ * error.
  *
  * Usage:
  *   import { test } from '@playwright/test';
@@ -65,10 +67,14 @@ export type PlaywrightTestFn = (
 export function wrapWorkflowForTest(
   test: PlaywrightTestFn,
   workflowId: string,
-  options?: { title?: string },
+  options?: { title?: string; vaultResolver?: VaultResolver },
 ): void {
   test(options?.title ?? workflowId, async ({ page }) => {
-    const result = await run(workflowId, asPage(page));
+    const ctx = createWorkflowContext({
+      page: asPage(page),
+      ...(options?.vaultResolver ? { vaultResolver: options.vaultResolver } : {}),
+    });
+    const result = await run(workflowId, ctx);
     if (result.status === 'failed') {
       const cause = result.error?.cause;
       throw cause instanceof Error ? cause : new Error(result.error?.message ?? 'Workflow failed');

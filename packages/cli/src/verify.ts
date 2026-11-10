@@ -23,6 +23,7 @@ import { pathToFileURL } from 'node:url';
 import { resolve as resolvePath } from 'node:path';
 import { validateWorkflow } from '@sfysh/ir';
 import type { Workflow } from '@sfysh/ir';
+import type { VaultResolver } from '@sfysh/runtime';
 import {
   parseCassette,
   recordPage,
@@ -43,9 +44,10 @@ import {
 
 /**
  * Shape a `--backend` module must expose. `pageFactory` and `runner` are
- * mandatory; `dispose` and `tolerance` are optional. Any other exports are
- * ignored. Keeping this a loose named-exports contract (rather than a
- * default export) makes backends trivial to write as plain `.mjs` files.
+ * mandatory; `dispose`, `tolerance`, and `vaultResolver` are optional. Any
+ * other exports are ignored. Keeping this a loose named-exports contract
+ * (rather than a default export) makes backends trivial to write as plain
+ * `.mjs` files.
  *
  * In `--cassette` mode, `pageFactory` and `dispose` are not called but the
  * module must still export a valid `pageFactory` (its shape is validated
@@ -56,6 +58,7 @@ export interface BackendModule {
   runner: RunnerFn;
   dispose?: PageDisposer;
   tolerance?: ToleranceMap;
+  vaultResolver?: VaultResolver;
 }
 
 export interface VerifyCommandOptions {
@@ -120,6 +123,7 @@ export async function runVerifyCommand(opts: VerifyCommandOptions): Promise<Veri
       ...(backend.dispose ? { dispose: backend.dispose } : {}),
       ...(opts.runs !== undefined ? { runs: opts.runs } : {}),
       ...(tolerance ? { tolerance } : {}),
+      ...(backend.vaultResolver ? { vaultResolver: backend.vaultResolver } : {}),
     });
     const cassette = recorded.latest();
     if (cassette) {
@@ -133,6 +137,7 @@ export async function runVerifyCommand(opts: VerifyCommandOptions): Promise<Veri
       ...(backend.dispose ? { dispose: backend.dispose } : {}),
       ...(opts.runs !== undefined ? { runs: opts.runs } : {}),
       ...(tolerance ? { tolerance } : {}),
+      ...(backend.vaultResolver ? { vaultResolver: backend.vaultResolver } : {}),
     });
   }
 
@@ -236,12 +241,23 @@ async function loadBackend(backendPath: string): Promise<BackendModule> {
       `backend module '${backendPath}' exported a 'tolerance' that is not an object`,
     );
   }
+  if (
+    mod.vaultResolver !== undefined &&
+    (typeof mod.vaultResolver !== 'object' ||
+      mod.vaultResolver === null ||
+      typeof (mod.vaultResolver as { resolve?: unknown }).resolve !== 'function')
+  ) {
+    throw new VerifyLoadError(
+      `backend module '${backendPath}' exported a 'vaultResolver' that does not implement { resolve(name): string | undefined }`,
+    );
+  }
 
   return {
     pageFactory: mod.pageFactory as PageFactory,
     runner: mod.runner as RunnerFn,
     ...(mod.dispose ? { dispose: mod.dispose as PageDisposer } : {}),
     ...(mod.tolerance ? { tolerance: mod.tolerance as ToleranceMap } : {}),
+    ...(mod.vaultResolver ? { vaultResolver: mod.vaultResolver as VaultResolver } : {}),
   };
 }
 

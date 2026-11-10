@@ -426,7 +426,8 @@ describe('compile verify (--record and --cassette)', () => {
       export const pageFactory = () => {
         throw new Error('pageFactory should not be invoked in cassette mode');
       };
-      export const runner = async (page) => {
+      export const runner = async (ctx) => {
+        const { page } = ctx;
         page.url();
         await page.locator('#submit').isVisible();
         await page.getByText('Submitted').count();

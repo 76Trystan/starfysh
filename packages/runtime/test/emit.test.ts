@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import type { Locator } from '../src/index.js';
-import { emit, drainOutputs, ExtractionError } from '../src/index.js';
+import { describe, it, expect } from 'vitest';
+import type { Locator, Page } from '../src/index.js';
+import { ExtractionError, createWorkflowContext, extractTable } from '../src/index.js';
 
 /**
  * Minimal Locator mock for extraction tests. Supports .locator() chaining
@@ -28,8 +28,19 @@ function mockTableLocator(table: { headers: string[]; rows: string[][] }): Locat
   } as unknown as Locator;
 }
 
-describe('emit.table', () => {
-  it('extracts rows according to the column schema', async () => {
+const stubPage: Page = {
+  goto: async () => undefined,
+  url: () => 'about:blank',
+  locator: () => ({}) as unknown as Locator,
+  getByRole: () => ({}) as unknown as Locator,
+  getByTestId: () => ({}) as unknown as Locator,
+  getByText: () => ({}) as unknown as Locator,
+  getByLabel: () => ({}) as unknown as Locator,
+  waitForTimeout: async () => undefined,
+};
+
+describe('extractTable (pure helper + ctx.emit.table)', () => {
+  it('extracts rows according to the column schema via extractTable', async () => {
     const loc = mockTableLocator({
       headers: ['sku', 'name', 'qty', 'reorderLevel'],
       rows: [
@@ -38,7 +49,7 @@ describe('emit.table', () => {
       ],
     });
 
-    const rows = await emit.table(loc, {
+    const rows = await extractTable(loc, {
       sku: 'string',
       name: 'string',
       qty: 'number',
@@ -51,12 +62,22 @@ describe('emit.table', () => {
     ]);
   });
 
+  it('ctx.emit.table delegates to the same extractor', async () => {
+    const loc = mockTableLocator({
+      headers: ['sku'],
+      rows: [['A-001'], ['A-002']],
+    });
+    const ctx = createWorkflowContext({ page: stubPage });
+    const rows = await ctx.emit.table(loc, { sku: 'string' });
+    expect(rows).toEqual([{ sku: 'A-001' }, { sku: 'A-002' }]);
+  });
+
   it('strips thousands separators from numbers', async () => {
     const loc = mockTableLocator({
       headers: ['label', 'amount'],
       rows: [['Sales', '$1,250.50']],
     });
-    const rows = await emit.table(loc, { label: 'string', amount: 'number' });
+    const rows = await extractTable(loc, { label: 'string', amount: 'number' });
     expect(rows[0]).toEqual({ label: 'Sales', amount: 1250.5 });
   });
 
@@ -69,7 +90,7 @@ describe('emit.table', () => {
         ['C', '1'],
       ],
     });
-    const rows = await emit.table(loc, { item: 'string', active: 'boolean' });
+    const rows = await extractTable(loc, { item: 'string', active: 'boolean' });
     expect(rows.map((r) => r.active)).toEqual([true, false, true]);
   });
 
@@ -78,7 +99,7 @@ describe('emit.table', () => {
       headers: ['sku', 'name'],
       rows: [['A', 'Widget']],
     });
-    await expect(emit.table(loc, { sku: 'string', missingCol: 'string' })).rejects.toThrow(
+    await expect(extractTable(loc, { sku: 'string', missingCol: 'string' })).rejects.toThrow(
       ExtractionError,
     );
   });
@@ -88,31 +109,40 @@ describe('emit.table', () => {
       headers: ['qty'],
       rows: [['twelve']],
     });
-    await expect(emit.table(loc, { qty: 'number' })).rejects.toThrow(ExtractionError);
+    await expect(extractTable(loc, { qty: 'number' })).rejects.toThrow(ExtractionError);
   });
 });
 
-describe('emit.output + drainOutputs', () => {
-  beforeEach(() => {
-    drainOutputs();
-  });
-
-  it('accumulates outputs across multiple calls', () => {
-    emit.output({ a: 1 });
-    emit.output({ b: 2 });
-    expect(drainOutputs()).toEqual([{ a: 1 }, { b: 2 }]);
+describe('WorkflowContext.emit.output + ctx.drainOutputs', () => {
+  it('accumulates outputs across multiple calls on the same context', () => {
+    const ctx = createWorkflowContext({ page: stubPage });
+    ctx.emit.output({ a: 1 });
+    ctx.emit.output({ b: 2 });
+    expect(ctx.drainOutputs()).toEqual([{ a: 1 }, { b: 2 }]);
   });
 
   it('drainOutputs clears the buffer', () => {
-    emit.output('x');
-    drainOutputs();
-    expect(drainOutputs()).toEqual([]);
+    const ctx = createWorkflowContext({ page: stubPage });
+    ctx.emit.output('x');
+    ctx.drainOutputs();
+    expect(ctx.drainOutputs()).toEqual([]);
   });
 
   it('accepts arbitrary serialisable values', () => {
-    emit.output([1, 2, 3]);
-    emit.output('string');
-    emit.output(null);
-    expect(drainOutputs()).toEqual([[1, 2, 3], 'string', null]);
+    const ctx = createWorkflowContext({ page: stubPage });
+    ctx.emit.output([1, 2, 3]);
+    ctx.emit.output('string');
+    ctx.emit.output(null);
+    expect(ctx.drainOutputs()).toEqual([[1, 2, 3], 'string', null]);
+  });
+
+  it('isolates outputs between two concurrent contexts', () => {
+    const ctxA = createWorkflowContext({ page: stubPage });
+    const ctxB = createWorkflowContext({ page: stubPage });
+    ctxA.emit.output('a1');
+    ctxB.emit.output('b1');
+    ctxA.emit.output('a2');
+    expect(ctxA.drainOutputs()).toEqual(['a1', 'a2']);
+    expect(ctxB.drainOutputs()).toEqual(['b1']);
   });
 });

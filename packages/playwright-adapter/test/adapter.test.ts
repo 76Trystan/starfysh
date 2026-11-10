@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { workflow } from '@sfysh/runtime';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { workflow, resetWorkflows } from '@sfysh/runtime';
 import { wrapWorkflowForTest, asPage, asLocator } from '../src/index.js';
 import type { PlaywrightTestFn } from '../src/index.js';
 import type { Page as PlaywrightPage, Locator as PlaywrightLocator } from 'playwright-core';
@@ -15,6 +15,10 @@ describe('asPage / asLocator', () => {
 });
 
 describe('wrapWorkflowForTest', () => {
+  beforeEach(() => {
+    resetWorkflows();
+  });
+
   it('registers a test using the workflow id as the title by default', () => {
     const mockTest = vi.fn() as unknown as PlaywrightTestFn;
     workflow('wrap-default-title', async () => {});

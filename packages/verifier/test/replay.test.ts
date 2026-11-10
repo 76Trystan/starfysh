@@ -1,7 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import type { Workflow } from '@sfysh/ir';
 import { IR_VERSION } from '@sfysh/ir';
-import { emit, drainOutputs } from '@sfysh/runtime';
 import type { Page, Locator } from '@sfysh/runtime';
 import { replay } from '../src/replay.js';
 
@@ -51,10 +50,6 @@ function wf(post: Workflow['steps'][number]['post'] = []): Workflow {
 }
 
 describe('replay', () => {
-  beforeEach(() => {
-    drainOutputs();
-  });
-
   it('runs the requested number of replays', async () => {
     let calls = 0;
     const report = await replay(wf(), {
@@ -102,11 +97,11 @@ describe('replay', () => {
     expect(report.replays[1]?.error?.message).toBe('boom');
   });
 
-  it('captures outputs emitted by the runner', async () => {
+  it('captures outputs emitted by the runner through ctx.emit', async () => {
     const report = await replay(wf(), {
       pageFactory: () => stubPage(),
-      runner: async () => {
-        emit.output({ ok: true });
+      runner: async (ctx) => {
+        ctx.emit.output({ ok: true });
       },
       runs: 2,
     });
@@ -114,12 +109,12 @@ describe('replay', () => {
     expect(report.replays[0]?.outputs[0]).toEqual({ ok: true });
   });
 
-  it('isolates outputs between replays', async () => {
+  it('isolates outputs between replays via fresh contexts', async () => {
     let i = 0;
     const report = await replay(wf(), {
       pageFactory: () => stubPage(),
-      runner: async () => {
-        emit.output({ i: i++ });
+      runner: async (ctx) => {
+        ctx.emit.output({ i: i++ });
       },
       runs: 3,
     });
@@ -130,8 +125,8 @@ describe('replay', () => {
     let i = 0;
     const report = await replay(wf(), {
       pageFactory: () => stubPage(),
-      runner: async () => {
-        emit.output({ value: i++ });
+      runner: async (ctx) => {
+        ctx.emit.output({ value: i++ });
       },
       runs: 3,
     });
@@ -143,8 +138,8 @@ describe('replay', () => {
     let i = 0;
     const report = await replay(wf(), {
       pageFactory: () => stubPage(),
-      runner: async () => {
-        emit.output({ timestamp: i++, value: 1 });
+      runner: async (ctx) => {
+        ctx.emit.output({ timestamp: i++, value: 1 });
       },
       runs: 3,
       tolerance: { '0.timestamp': 'ignore' },
@@ -201,17 +196,20 @@ describe('replay', () => {
     expect(report.timing.meanMs).toBeLessThanOrEqual(report.timing.maxMs);
   });
 
-  it('invokes the disposer after each replay', async () => {
+  it('invokes the disposer after each replay with the WorkflowContext', async () => {
     let disposed = 0;
+    let lastDisposedPage: Page | undefined;
     await replay(wf(), {
       pageFactory: () => stubPage(),
       runner: async () => {},
       runs: 2,
-      dispose: () => {
+      dispose: (ctx) => {
         disposed++;
+        lastDisposedPage = ctx.page;
       },
     });
     expect(disposed).toBe(2);
+    expect(lastDisposedPage).toBeDefined();
   });
 
   it('swallows disposer errors without failing the replay', async () => {

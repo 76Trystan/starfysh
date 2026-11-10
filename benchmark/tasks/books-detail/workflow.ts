@@ -1,6 +1,8 @@
-import { workflow, emit } from '@sfysh/runtime';
+import { workflow } from '@sfysh/runtime';
 
-workflow('books-detail', async (page) => {
+workflow('books-detail', async (ctx) => {
+  const { page, emit } = ctx;
+
   await page.goto('https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html', {
     waitUntil: 'domcontentloaded',
   });

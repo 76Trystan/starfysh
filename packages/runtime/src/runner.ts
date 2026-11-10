@@ -1,5 +1,5 @@
 import { getWorkflow } from './workflow.js';
-import type { Page } from './types.js';
+import type { WorkflowContext } from './context.js';
 import { VaultSecretMissingError } from './vault.js';
 import { AssertionError } from './assert.js';
 import { ExtractionError } from './emit.js';
@@ -18,14 +18,17 @@ export interface RunResult {
 }
 
 /**
- * Execute a registered workflow against the given Page implementation.
+ * Execute a registered workflow against a WorkflowContext.
  *
  * Returns a structured result instead of throwing so callers (scheduler,
- * healer) can branch on failure kind without wrapping every call in
- * try/catch. The one case that does throw is an unregistered workflow id,
- * which is a programmer error, not a runtime failure.
+ * healer, Playwright adapter) can branch on failure kind without wrapping
+ * every call in try/catch. The one case that does throw is an unregistered
+ * workflow id, which is a programmer error, not a runtime failure.
+ *
+ * The error classifier here is a placeholder scheduled for removal under
+ * ADR 0012 (triage ownership moves to @sfysh/triage).
  */
-export async function run(id: string, page: Page): Promise<RunResult> {
+export async function run(id: string, ctx: WorkflowContext): Promise<RunResult> {
   const fn = getWorkflow(id);
   if (fn === undefined) {
     throw new Error(`No workflow registered with id "${id}". Did you import its module?`);
@@ -33,7 +36,7 @@ export async function run(id: string, page: Page): Promise<RunResult> {
 
   const start = Date.now();
   try {
-    await fn(page);
+    await fn(ctx);
     return { workflowId: id, status: 'ok', durationMs: Date.now() - start };
   } catch (err) {
     return {

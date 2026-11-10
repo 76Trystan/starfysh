@@ -39,7 +39,9 @@ describe('compile: end-to-end with reference workflow', () => {
   it('wraps the body in a workflow() call with the workflow id', async () => {
     const { source } = await compile(supplierPortal);
     expect(source).toContain("workflow('wf_acme_stock'");
-    expect(source).toContain('async (page)');
+    expect(source).toContain('async (ctx)');
+    // ADR 0010: generated code pulls page, vault, emit off the per-run ctx.
+    expect(source).toContain('const { page, vault, emit } = ctx;');
   });
 
   it('emits a provenance comment for each step', async () => {

@@ -3,7 +3,7 @@
 // evaluation of the workflow's terminal step.
 
 import type { Workflow } from '@sfysh/ir';
-import { drainOutputs } from '@sfysh/runtime';
+import { createWorkflowContext, type WorkflowContext } from '@sfysh/runtime';
 import type { Cassette } from './cassette.js';
 import { fakePageFromCassette } from './fake-page.js';
 import { evaluateConditions } from './postconditions.js';
@@ -77,16 +77,16 @@ async function runOnce(
   terminalPost: readonly PostconditionResult['condition'][],
   options: VerifyOptions,
 ): Promise<ReplayOutcome> {
-  // Drain any outputs left over from a previous replay so this run's
-  // outputs are captured in isolation. drainOutputs is idempotent on an
-  // empty buffer.
-  drainOutputs();
-
   const page = await options.pageFactory();
+  const ctx: WorkflowContext = createWorkflowContext({
+    page,
+    ...(options.vaultResolver ? { vaultResolver: options.vaultResolver } : {}),
+  });
+
   const start = Date.now();
   let error: ReplayOutcome['error'];
   try {
-    await options.runner(page, workflow);
+    await options.runner(ctx, workflow);
   } catch (err) {
     error = {
       message: err instanceof Error ? err.message : String(err),
@@ -95,12 +95,12 @@ async function runOnce(
   }
   const durationMs = Date.now() - start;
 
-  const outputs = drainOutputs();
+  const outputs = ctx.drainOutputs();
 
   let postconditions: PostconditionResult[] = [];
   if (!error && terminalPost.length > 0) {
     try {
-      postconditions = await evaluateConditions(page, [...terminalPost]);
+      postconditions = await evaluateConditions(ctx.page, [...terminalPost]);
     } catch (err) {
       error = {
         message: `Postcondition evaluation threw: ${err instanceof Error ? err.message : String(err)}`,
@@ -111,7 +111,7 @@ async function runOnce(
 
   if (options.dispose) {
     try {
-      await options.dispose(page);
+      await options.dispose(ctx);
     } catch {
       // Disposer failures are not replay failures; swallow to keep the
       // outcome shape clean. A noisy disposer belongs in the caller's logs.

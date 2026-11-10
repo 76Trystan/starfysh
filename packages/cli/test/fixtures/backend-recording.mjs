@@ -31,7 +31,8 @@ function stubPage() {
 
 export const pageFactory = () => stubPage();
 
-export const runner = async (page) => {
+export const runner = async (ctx) => {
+  const { page } = ctx;
   // Hit a representative set of Page methods so the recorder has at least
   // one entry per cassette-value kind.
   page.url();

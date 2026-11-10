@@ -3,14 +3,18 @@
 // how the workflow was executed.
 
 import type { Condition, Workflow } from '@sfysh/ir';
-import type { Page } from '@sfysh/runtime';
+import type { Page, VaultResolver, WorkflowContext } from '@sfysh/runtime';
 
 /**
- * Callback that executes a workflow once against a given Page. Returning
- * normally means "the workflow ran to completion"; throwing means it
- * failed and the thrown error is attached to the replay result.
+ * Callback that executes a workflow once against a prepared WorkflowContext.
+ * Returning normally means "the workflow ran to completion"; throwing means
+ * it failed and the thrown error is attached to the replay result.
+ *
+ * Signature changed under ADR 0010 from `(page, workflow)` to
+ * `(ctx, workflow)`. The verifier constructs the context from the backend's
+ * pageFactory output before calling the runner.
  */
-export type RunnerFn = (page: Page, workflow: Workflow) => Promise<void>;
+export type RunnerFn = (ctx: WorkflowContext, workflow: Workflow) => Promise<void>;
 
 /**
  * Factory invoked once per replay to produce a fresh Page. Fresh sessions
@@ -21,11 +25,19 @@ export type RunnerFn = (page: Page, workflow: Workflow) => Promise<void>;
 export type PageFactory = () => Page | Promise<Page>;
 
 /**
- * Optional disposer invoked after each replay. Used to close pages, release
- * browser contexts, or flush logs. A thrown disposer error is recorded but
- * does not count as a replay failure.
+ * Optional disposer invoked after each replay. Receives the per-run
+ * context so adapters can clean up their own state (close the page, flush
+ * logs) while still being able to reach `ctx.page` directly.
  */
-export type PageDisposer = (page: Page) => void | Promise<void>;
+export type PageDisposer = (ctx: WorkflowContext) => void | Promise<void>;
+
+/**
+ * Optional vault resolver passed through from the backend module. Threaded
+ * into `createWorkflowContext` so `ctx.vault(name)` resolves against the
+ * backend's chosen secret source. Defaults to the EnvVaultResolver when
+ * absent.
+ */
+export type VaultResolverFactory = VaultResolver;
 
 /**
  * Per-field tolerance rules when comparing outputs across runs. The key
@@ -59,6 +71,11 @@ export interface VerifyOptions {
    * to strict deep equality.
    */
   tolerance?: ToleranceMap;
+  /**
+   * Vault resolver passed through to each run's WorkflowContext. Defaults
+   * to `EnvVaultResolver` when absent.
+   */
+  vaultResolver?: VaultResolver;
 }
 
 export interface TimingEnvelope {
