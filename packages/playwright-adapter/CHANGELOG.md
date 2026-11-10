@@ -1,5 +1,12 @@
 # @sfysh/playwright-adapter
 
+## 0.2.1
+
+### Patch Changes
+
+- Updated dependencies [1587a1b]
+  - @sfysh/runtime@0.3.0
+
 ## 0.2.0
 
 ### Minor Changes
