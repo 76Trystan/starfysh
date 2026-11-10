@@ -1,6 +1,6 @@
 {
   "name": "@sfysh/compiler",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Starfysh compiler: deterministic templated codegen that turns a validated IR workflow into a Starfysh TypeScript script.",
   "keywords": [
     "starfysh",
