@@ -1,14 +1,15 @@
-// Per-run workflow container. Introduced by ADR 0010.
+// Per-run workflow container. Introduced by ADR 0010; extended by ADR 0013
+// to carry a secret scrubber bound to this run's resolved vault values.
 //
 // Every workflow function receives one WorkflowContext per run. The context
-// carries the browser page, a vault resolver bound to this run, and an
-// output sink bound to this run's buffer. No module-level singletons are
-// involved.
+// carries the browser page, a vault resolver bound to this run, an output
+// sink bound to this run's buffer, and a `redact` helper that scrubs
+// registered secret values from string output.
 //
-// Phase 2 adds `http: HttpClient` as a sibling field. The ADR 0013 secret
-// scrubber will attach a per-run list of resolved secrets here.
+// Phase 2 adds `http: HttpClient` as a sibling field.
 
 import type { Locator, Page } from './types.js';
+import { asSecret, type Secret } from './secret.js';
 import type { VaultResolver } from './vault.js';
 import { EnvVaultResolver, VaultSecretMissingError } from './vault.js';
 import { extractTable, type ColumnSchema, type TableRow } from './emit.js';
@@ -23,11 +24,22 @@ export interface WorkflowContext {
   page: Page;
   /**
    * Resolve a vault secret by name. Throws `VaultSecretMissingError` when
-   * the secret is missing or empty. The resolver is bound to this run only.
+   * the secret is missing or empty. The resolver is bound to this run
+   * only. The returned value is branded `Secret` so callers can be flagged
+   * by lint rules if they stringify it directly; the hard redaction
+   * guarantee comes from `ctx.redact` on output boundaries.
    */
-  vault: (name: string) => string;
+  vault: (name: string) => Secret;
   /** Typed extraction and output sink, bound to this run's output buffer. */
   emit: EmitSink;
+  /**
+   * Replace every registered secret value in `input` with
+   * `[REDACTED:<name>]`. Values are sorted longest-first so that a secret
+   * which is a substring of another secret does not leave fragments. Safe
+   * to call with an empty string or with an input that contains no
+   * registered values. Introduced by ADR 0013.
+   */
+  redact: (input: string) => string;
   /**
    * Flush this run's outputs. Writes to `process.env.COMPILE_OUTPUT_FILE`
    * if set, otherwise to stdout as a single JSON line. Called by generated
@@ -69,13 +81,26 @@ export interface WorkflowContextInit {
 export function createWorkflowContext(init: WorkflowContextInit): WorkflowContext {
   const resolver = init.vaultResolver ?? new EnvVaultResolver();
   const outputs: unknown[] = [];
+  const secrets = new Map<string, string>();
 
-  const vault = (name: string): string => {
+  const vault = (name: string): Secret => {
     const value = resolver.resolve(name);
     if (value === undefined || value === '') {
       throw new VaultSecretMissingError(name);
     }
-    return value;
+    secrets.set(name, value);
+    return asSecret(value);
+  };
+
+  const redact = (input: string): string => {
+    if (input.length === 0 || secrets.size === 0) return input;
+    const entries = [...secrets.entries()].sort(([, a], [, b]) => b.length - a.length);
+    let result = input;
+    for (const [name, value] of entries) {
+      if (value.length === 0) continue;
+      result = result.split(value).join(`[REDACTED:${name}]`);
+    }
+    return result;
   };
 
   const emit: EmitSink = {
@@ -108,6 +133,7 @@ export function createWorkflowContext(init: WorkflowContextInit): WorkflowContex
     page: init.page,
     vault,
     emit,
+    redact,
     flushOutputs,
     drainOutputs,
   };

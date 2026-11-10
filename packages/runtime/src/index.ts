@@ -11,6 +11,9 @@ export { WorkflowIdCollisionError } from './workflow.js';
 export { createWorkflowContext } from './context.js';
 export type { WorkflowContext, WorkflowContextInit, EmitSink } from './context.js';
 
+export { asSecret } from './secret.js';
+export type { Secret } from './secret.js';
+
 export { assert, poll, AssertionError } from './assert.js';
 
 export { EnvVaultResolver, VaultSecretMissingError } from './vault.js';

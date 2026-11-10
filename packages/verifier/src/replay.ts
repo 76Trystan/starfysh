@@ -88,8 +88,9 @@ async function runOnce(
   try {
     await options.runner(ctx, workflow);
   } catch (err) {
+    const rawMessage = err instanceof Error ? err.message : String(err);
     error = {
-      message: err instanceof Error ? err.message : String(err),
+      message: ctx.redact(rawMessage),
       name: err instanceof Error ? err.name : 'Error',
     };
   }
@@ -102,8 +103,9 @@ async function runOnce(
     try {
       postconditions = await evaluateConditions(ctx.page, [...terminalPost]);
     } catch (err) {
+      const rawMessage = err instanceof Error ? err.message : String(err);
       error = {
-        message: `Postcondition evaluation threw: ${err instanceof Error ? err.message : String(err)}`,
+        message: ctx.redact(`Postcondition evaluation threw: ${rawMessage}`),
         name: err instanceof Error ? err.name : 'Error',
       };
     }

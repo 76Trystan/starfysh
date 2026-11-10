@@ -39,13 +39,14 @@ export async function run(id: string, ctx: WorkflowContext): Promise<RunResult> 
     await fn(ctx);
     return { workflowId: id, status: 'ok', durationMs: Date.now() - start };
   } catch (err) {
+    const rawMessage = err instanceof Error ? err.message : String(err);
     return {
       workflowId: id,
       status: 'failed',
       durationMs: Date.now() - start,
       error: {
         kind: classifyError(err),
-        message: err instanceof Error ? err.message : String(err),
+        message: ctx.redact(rawMessage),
         cause: err,
       },
     };

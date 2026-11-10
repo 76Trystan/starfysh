@@ -129,4 +129,36 @@ describe('run', () => {
     const result = await run('run-timing', newCtx());
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
   });
+
+  it('scrubs registered secrets out of error.message (ADR 0013)', async () => {
+    workflow('run-secret-leak', async (ctx) => {
+      const pwd = ctx.vault('portal_pass');
+      throw new Error(`login failed for user with password ${pwd}`);
+    });
+    const ctx = createWorkflowContext({
+      page: stubPage,
+      vaultResolver: { resolve: () => 'hunter2' },
+    });
+    const result = await run('run-secret-leak', ctx);
+    expect(result.status).toBe('failed');
+    expect(result.error?.message).toBe(
+      'login failed for user with password [REDACTED:portal_pass]',
+    );
+    expect(result.error?.message).not.toContain('hunter2');
+  });
+
+  it('leaves error.cause pointing at the raw Error for downstream inspection', async () => {
+    const raw = new Error('contains hunter2 verbatim');
+    workflow('run-cause-raw', async (ctx) => {
+      ctx.vault('portal_pass');
+      throw raw;
+    });
+    const ctx = createWorkflowContext({
+      page: stubPage,
+      vaultResolver: { resolve: () => 'hunter2' },
+    });
+    const result = await run('run-cause-raw', ctx);
+    expect(result.error?.cause).toBe(raw);
+    expect(result.error?.message).toBe('contains [REDACTED:portal_pass] verbatim');
+  });
 });

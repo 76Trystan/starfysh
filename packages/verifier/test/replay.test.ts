@@ -223,4 +223,20 @@ describe('replay', () => {
     });
     expect(report.replays[0]?.status).toBe('ok');
   });
+
+  it('scrubs registered secrets out of replay error messages (ADR 0013)', async () => {
+    const report = await replay(wf(), {
+      pageFactory: () => stubPage(),
+      runner: async (ctx) => {
+        const pwd = ctx.vault('portal_pass');
+        throw new Error(`auth failed with password ${pwd}`);
+      },
+      runs: 1,
+      vaultResolver: { resolve: () => 'hunter2' },
+    });
+    expect(report.replays[0]?.error?.message).toBe(
+      'auth failed with password [REDACTED:portal_pass]',
+    );
+    expect(report.replays[0]?.error?.message).not.toContain('hunter2');
+  });
 });
