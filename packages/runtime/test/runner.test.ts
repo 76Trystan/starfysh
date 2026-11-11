@@ -7,6 +7,7 @@ import {
   VaultSecretMissingError,
   AssertionError,
   ExtractionError,
+  PostconditionViolation,
 } from '../src/index.js';
 import type { Page, Locator } from '../src/index.js';
 
@@ -145,6 +146,32 @@ describe('run', () => {
       'login failed for user with password [REDACTED:portal_pass]',
     );
     expect(result.error?.message).not.toContain('hunter2');
+  });
+
+  it('surfaces stepId and phase when PostconditionViolation is thrown (ADR 0011)', async () => {
+    workflow('run-post-violation', async () => {
+      throw new PostconditionViolation({
+        stepId: 'step_submit_login',
+        phase: 'post',
+        condition: { urlMatches: '/dashboard' },
+        reason: "URL 'https://example.com/login' did not match '/dashboard'",
+      });
+    });
+    const result = await run('run-post-violation', newCtx());
+    expect(result.status).toBe('failed');
+    expect(result.error?.kind).toBe('site');
+    expect(result.error?.stepId).toBe('step_submit_login');
+    expect(result.error?.phase).toBe('post');
+    expect(result.error?.message).toContain('step_submit_login');
+  });
+
+  it('leaves stepId and phase undefined when the thrown error is not a PostconditionViolation', async () => {
+    workflow('run-plain-error', async () => {
+      throw new Error('unrelated failure');
+    });
+    const result = await run('run-plain-error', newCtx());
+    expect(result.error?.stepId).toBeUndefined();
+    expect(result.error?.phase).toBeUndefined();
   });
 
   it('leaves error.cause pointing at the raw Error for downstream inspection', async () => {

@@ -108,6 +108,13 @@ export interface ReplayOutcome {
   error?: {
     message: string;
     name: string;
+    /**
+     * Step id attributed to the failure when the thrown error is a
+     * `PostconditionViolation` (ADR 0011). Undefined otherwise.
+     */
+    stepId?: string;
+    /** Condition slot that failed. Populated alongside `stepId`. */
+    phase?: 'pre' | 'post';
   };
 }
 

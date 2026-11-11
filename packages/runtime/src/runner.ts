@@ -3,6 +3,7 @@ import type { WorkflowContext } from './context.js';
 import { VaultSecretMissingError } from './vault.js';
 import { AssertionError } from './assert.js';
 import { ExtractionError } from './emit.js';
+import { PostconditionViolation } from './conditions.js';
 
 export type FailureKind = 'flake' | 'auth' | 'site' | 'unknown';
 
@@ -14,6 +15,17 @@ export interface RunResult {
     kind: FailureKind;
     message: string;
     cause: unknown;
+    /**
+     * Step id attributed to the failure. Populated when the thrown error
+     * is a `PostconditionViolation` (ADR 0011); undefined otherwise.
+     */
+    stepId?: string;
+    /**
+     * Which condition slot failed. Populated alongside `stepId`. `'pre'`
+     * means the step's world assumption was wrong before it ran; `'post'`
+     * means the step completed but left bad state.
+     */
+    phase?: 'pre' | 'post';
   };
 }
 
@@ -40,6 +52,8 @@ export async function run(id: string, ctx: WorkflowContext): Promise<RunResult> 
     return { workflowId: id, status: 'ok', durationMs: Date.now() - start };
   } catch (err) {
     const rawMessage = err instanceof Error ? err.message : String(err);
+    const attribution =
+      err instanceof PostconditionViolation ? { stepId: err.stepId, phase: err.phase } : {};
     return {
       workflowId: id,
       status: 'failed',
@@ -48,6 +62,7 @@ export async function run(id: string, ctx: WorkflowContext): Promise<RunResult> 
         kind: classifyError(err),
         message: ctx.redact(rawMessage),
         cause: err,
+        ...attribution,
       },
     };
   }
@@ -56,6 +71,7 @@ export async function run(id: string, ctx: WorkflowContext): Promise<RunResult> 
 function classifyError(err: unknown): FailureKind {
   if (err instanceof VaultSecretMissingError) return 'auth';
   if (err instanceof ExtractionError) return 'site';
+  if (err instanceof PostconditionViolation) return 'site';
   if (err instanceof AssertionError) return 'site';
   if (err instanceof Error) {
     const msg = err.message.toLowerCase();

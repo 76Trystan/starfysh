@@ -3,7 +3,11 @@
 // evaluation of the workflow's terminal step.
 
 import type { Workflow } from '@sfysh/ir';
-import { createWorkflowContext, type WorkflowContext } from '@sfysh/runtime';
+import {
+  createWorkflowContext,
+  PostconditionViolation,
+  type WorkflowContext,
+} from '@sfysh/runtime';
 import type { Cassette } from './cassette.js';
 import { fakePageFromCassette } from './fake-page.js';
 import { evaluateConditions } from './postconditions.js';
@@ -89,9 +93,12 @@ async function runOnce(
     await options.runner(ctx, workflow);
   } catch (err) {
     const rawMessage = err instanceof Error ? err.message : String(err);
+    const attribution =
+      err instanceof PostconditionViolation ? { stepId: err.stepId, phase: err.phase } : {};
     error = {
       message: ctx.redact(rawMessage),
       name: err instanceof Error ? err.name : 'Error',
+      ...attribution,
     };
   }
   const durationMs = Date.now() - start;

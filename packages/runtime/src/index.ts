@@ -16,6 +16,9 @@ export type { Secret } from './secret.js';
 
 export { assert, poll, AssertionError } from './assert.js';
 
+export { evaluateCondition, assertCondition, PostconditionViolation } from './conditions.js';
+export type { ConditionEvaluation } from './conditions.js';
+
 export { EnvVaultResolver, VaultSecretMissingError } from './vault.js';
 export type { VaultResolver } from './vault.js';
 

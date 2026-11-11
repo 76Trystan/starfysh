@@ -421,6 +421,126 @@ describe('compile: loop step rendering', () => {
   });
 });
 
+describe('compile: pre/post condition asserts (ADR 0011)', () => {
+  it('emits an assertCondition call for each post condition on the reference workflow', async () => {
+    const { source } = await compile(supplierPortal);
+    // supplier-portal has two `post` conditions on step_06 (urlMatches and selectorVisible).
+    expect(source).toContain(
+      "await assertCondition(ctx, 'step_06_open_stock_report', 'post', { urlMatches: '/reports/stock' });",
+    );
+    // The selectorVisible call is long enough that Prettier wraps it; assert on
+    // the stable fragments the compiler must still emit.
+    expect(source).toMatch(
+      /assertCondition\(ctx, 'step_06_open_stock_report', 'post',[\s\n]*\{[\s\n]*selectorVisible: 'table\.report-rows'/,
+    );
+  });
+
+  it('imports assertCondition when any step has pre or post conditions', async () => {
+    const { source } = await compile(supplierPortal);
+    expect(source).toContain('assertCondition');
+    expect(source).toMatch(/from '@sfysh\/runtime'/);
+  });
+
+  it('omits assertCondition from the import list when no step has pre or post', async () => {
+    const workflow: Workflow = {
+      irVersion: '1.0.0',
+      id: 'test_no_conditions',
+      name: 'No conditions',
+      steps: [
+        {
+          id: 'nav_home',
+          intent: 'Open home.',
+          action: 'navigate',
+          url: 'https://example.com',
+        },
+      ],
+    };
+    const { source } = await compile(workflow);
+    expect(source).not.toContain('assertCondition');
+  });
+
+  it('emits a pre-condition assert before the step body', async () => {
+    const workflow: Workflow = {
+      irVersion: '1.0.0',
+      id: 'test_pre',
+      name: 'Pre condition',
+      steps: [
+        {
+          id: 'clk_submit',
+          intent: 'Click submit.',
+          action: 'click',
+          pre: [{ urlMatches: '/dashboard' }],
+          target: { candidates: [{ kind: 'role', value: "button[name='Submit']" }] },
+        },
+      ],
+    };
+    const { source } = await compile(workflow);
+    const preIdx = source.indexOf("assertCondition(ctx, 'clk_submit', 'pre',");
+    const bodyIdx = source.indexOf("page.getByRole('button', { name: 'Submit' }).click()");
+    expect(preIdx).toBeGreaterThan(-1);
+    expect(bodyIdx).toBeGreaterThan(preIdx);
+  });
+
+  it('emits post-condition asserts for steps nested inside a guard branch', async () => {
+    const workflow: Workflow = {
+      irVersion: '1.0.0',
+      id: 'test_nested_guard',
+      name: 'Nested guard',
+      steps: [
+        {
+          id: 'grd_cookie',
+          intent: 'Dismiss banner.',
+          action: 'guard',
+          if: { selectorVisible: '.cookie-banner' },
+          then: [
+            {
+              id: 'clk_accept',
+              intent: 'Accept.',
+              action: 'click',
+              post: [{ selectorAbsent: '.cookie-banner' }],
+              target: { candidates: [{ kind: 'role', value: "button[name='Accept']" }] },
+            },
+          ],
+        },
+      ],
+    };
+    const { source } = await compile(workflow);
+    expect(source).toContain(
+      "await assertCondition(ctx, 'clk_accept', 'post', { selectorAbsent: '.cookie-banner' });",
+    );
+    expect(source).toContain('assertCondition');
+  });
+
+  it('emits post-condition asserts for steps nested inside a loop', async () => {
+    const workflow: Workflow = {
+      irVersion: '1.0.0',
+      id: 'test_nested_loop',
+      name: 'Nested loop',
+      steps: [
+        {
+          id: 'lp_rows',
+          intent: 'Iterate rows.',
+          action: 'loop',
+          foreach: { candidates: [{ kind: 'role', value: 'row' }] },
+          do: [
+            {
+              id: 'clk_row',
+              intent: 'Click row.',
+              action: 'click',
+              post: [{ textPresent: 'Updated' }],
+              target: { candidates: [{ kind: 'role', value: 'button' }] },
+            },
+          ],
+        },
+      ],
+    };
+    const { source } = await compile(workflow);
+    expect(source).toContain(
+      "await assertCondition(ctx, 'clk_row', 'post', { textPresent: 'Updated' });",
+    );
+  });
+});
+
 describe('formatTypeScript', () => {
   it('normalises whitespace and semicolons', async () => {
     const dirty = 'const  x=1\nconst y    = 2';

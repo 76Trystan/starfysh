@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { Workflow } from '@sfysh/ir';
 import { IR_VERSION } from '@sfysh/ir';
 import type { Page, Locator } from '@sfysh/runtime';
+import { PostconditionViolation } from '@sfysh/runtime';
 import { replay } from '../src/replay.js';
 
 function stubLocator(overrides: Partial<Locator> = {}): Locator {
@@ -222,6 +223,25 @@ describe('replay', () => {
       },
     });
     expect(report.replays[0]?.status).toBe('ok');
+  });
+
+  it('surfaces stepId and phase when a PostconditionViolation escapes the runner (ADR 0011)', async () => {
+    const report = await replay(wf(), {
+      pageFactory: () => stubPage(),
+      runner: async () => {
+        throw new PostconditionViolation({
+          stepId: 'step_submit_login',
+          phase: 'pre',
+          condition: { urlMatches: '/dashboard' },
+          reason: "URL 'https://example.com/login' did not match '/dashboard'",
+        });
+      },
+      runs: 1,
+    });
+    const err = report.replays[0]?.error;
+    expect(err?.stepId).toBe('step_submit_login');
+    expect(err?.phase).toBe('pre');
+    expect(err?.message).toContain('step_submit_login');
   });
 
   it('scrubs registered secrets out of replay error messages (ADR 0013)', async () => {
