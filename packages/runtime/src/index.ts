@@ -28,4 +28,4 @@ export type { ColumnSchema, TableRow } from './emit.js';
 export { guard } from './guard.js';
 
 export { run } from './runner.js';
-export type { RunResult, FailureKind } from './runner.js';
+export type { RunResult } from './runner.js';

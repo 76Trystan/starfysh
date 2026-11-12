@@ -32,6 +32,9 @@ importers:
       '@sfysh/runtime':
         specifier: workspace:*
         version: link:../packages/runtime
+      '@sfysh/triage':
+        specifier: workspace:*
+        version: link:../packages/triage
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
@@ -112,6 +115,15 @@ importers:
       ajv-formats:
         specifier: ^3.0.0
         version: 3.0.1(ajv@8.20.0)
+
+  packages/triage:
+    dependencies:
+      '@sfysh/ir':
+        specifier: workspace:*
+        version: link:../ir
+      '@sfysh/runtime':
+        specifier: workspace:*
+        version: link:../runtime
 
   packages/verifier:
     dependencies:

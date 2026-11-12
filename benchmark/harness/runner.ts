@@ -1,6 +1,7 @@
 import type { Browser } from 'playwright-core';
 import { asPage } from '@sfysh/playwright-adapter';
 import { createWorkflowContext, run } from '@sfysh/runtime';
+import { classify, type FailureKind } from '@sfysh/triage';
 
 export interface TaskRun {
   workflowId: string;
@@ -8,7 +9,7 @@ export interface TaskRun {
   durationMs: number;
   costUsd: number;
   output: unknown[];
-  error?: { kind: string; message: string };
+  error?: { kind: FailureKind; message: string };
 }
 
 export async function runTask(browser: Browser, workflowId: string): Promise<TaskRun> {
@@ -23,7 +24,12 @@ export async function runTask(browser: Browser, workflowId: string): Promise<Tas
       durationMs: result.durationMs,
       costUsd: 0,
       output,
-      error: result.error ? { kind: result.error.kind, message: result.error.message } : undefined,
+      error: result.error
+        ? {
+            kind: classify({ error: result.error.cause }).kind,
+            message: result.error.message,
+          }
+        : undefined,
     };
   } finally {
     await page.close();

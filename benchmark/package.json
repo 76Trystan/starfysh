@@ -8,7 +8,8 @@
   },
   "dependencies": {
     "@sfysh/playwright-adapter": "workspace:*",
-    "@sfysh/runtime": "workspace:*"
+    "@sfysh/runtime": "workspace:*",
+    "@sfysh/triage": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

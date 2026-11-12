@@ -22,7 +22,8 @@ This package is deliberately small. Every export here propagates to every genera
 | --------------- | -------------------------------------------------------------------------------------------------------- |
 | `run(id, page)` | Executes a registered workflow and returns a structured `RunResult`. Does not throw on workflow failure. |
 | `RunResult`     | `{ workflowId, status, durationMs, error? }`. Status is `'ok'` or `'failed'`.                            |
-| `FailureKind`   | Classification used by the healer's triage: `'flake' \| 'auth' \| 'site' \| 'unknown'`.                  |
+
+Failure classification lives in `@sfysh/triage`, not here. `RunResult.error` carries the raw `{ message, cause, stepId?, phase? }` shape; callers pass it to `triage.classify()` to decide a `FailureKind`.
 
 ### Assertions and polling
 
@@ -30,7 +31,7 @@ This package is deliberately small. Every export here propagates to every genera
 | ------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `assert(cond, msg)` | Throws `AssertionError` with the given message if the condition is false. Used by step pre/postconditions. |
 | `poll(fn, opts)`    | Polls until `fn` returns a truthy value or the timeout fires. Returns the value.                           |
-| `AssertionError`    | Thrown by `assert`. Classified as a `site` failure by `run`.                                               |
+| `AssertionError`    | Thrown by `assert`. `@sfysh/triage` classifies it as a `site` failure.                                     |
 
 ### Secrets
 
@@ -40,18 +41,18 @@ This package is deliberately small. Every export here propagates to every genera
 | `setVaultResolver(r)`     | Swaps the active resolver. Call once at startup if you are not using the default.                            |
 | `EnvVaultResolver`        | Default resolver. Reads secrets from `process.env`.                                                          |
 | `VaultResolver`           | Interface for custom resolvers (`{ resolve(name): string \| undefined }`).                                   |
-| `VaultSecretMissingError` | Thrown when a secret cannot be resolved. Classified as an `auth` failure by `run`.                           |
+| `VaultSecretMissingError` | Thrown when a secret cannot be resolved. `@sfysh/triage` classifies it as an `auth` failure.                 |
 
 ### Extraction
 
-| Export            | Purpose                                                                                            |
-| ----------------- | -------------------------------------------------------------------------------------------------- |
-| `emit(row)`       | Buffers a row for later flush. Generated extraction steps call this.                               |
-| `flushOutputs()`  | Returns the buffered rows and clears the buffer. Call this at workflow end.                        |
-| `drainOutputs()`  | Alias used by some adapters.                                                                       |
-| `ExtractionError` | Thrown when an extracted value fails its declared schema. Classified as a `site` failure by `run`. |
-| `ColumnSchema`    | Row-column type union.                                                                             |
-| `TableRow`        | Shape of a buffered row.                                                                           |
+| Export            | Purpose                                                                                                      |
+| ----------------- | ------------------------------------------------------------------------------------------------------------ |
+| `emit(row)`       | Buffers a row for later flush. Generated extraction steps call this.                                         |
+| `flushOutputs()`  | Returns the buffered rows and clears the buffer. Call this at workflow end.                                  |
+| `drainOutputs()`  | Alias used by some adapters.                                                                                 |
+| `ExtractionError` | Thrown when an extracted value fails its declared schema. `@sfysh/triage` classifies it as a `site` failure. |
+| `ColumnSchema`    | Row-column type union.                                                                                       |
+| `TableRow`        | Shape of a buffered row.                                                                                     |
 
 ### Control flow
 
@@ -95,7 +96,7 @@ import './supplier-portal-daily-pull.js'; // registers the workflow as a side ef
 
 const result = await run('supplier-portal-daily-pull', page);
 if (result.status === 'failed') {
-  console.error(`${result.error.kind}: ${result.error.message}`);
+  console.error(result.error.message);
   process.exit(1);
 }
 ```
@@ -109,13 +110,13 @@ src/
   index.ts        # barrel: public API only
   types.ts        # Page and Locator interfaces
   workflow.ts     # registry (workflow, getWorkflow, listWorkflows)
-  runner.ts       # run(), error classification into FailureKind
+  runner.ts       # run() executor; raw error shape only, classification lives in @sfysh/triage
   assert.ts       # assert, poll, AssertionError
   vault.ts        # resolvers and vault()
   emit.ts         # extraction buffering
   guard.ts        # conditional step execution
 test/
-  runner.test.ts  # success and all four failure classifications
+  runner.test.ts  # success, failure attribution, secret redaction
   vault.test.ts   # resolver swap, missing-secret error
   emit.test.ts    # buffering and schema validation
   guard.test.ts   # conditional execution
@@ -125,4 +126,4 @@ test/
 
 - **Backend-agnostic by design.** `Page` and `Locator` are structural interfaces, not Playwright types. A Playwright page satisfies them because Playwright is a structural superset; CDP, Puppeteer, or an in-house driver can satisfy them too. See `@sfysh/playwright-adapter` for the Playwright bridge.
 - **Secrets never materialise in generated code.** Templates emit `vault('NAME')` calls; the resolver reads from the environment (or a custom source) at run time. Compiled scripts can be committed and reviewed safely.
-- **Errors are classified, not just thrown.** The healer triages failures by `FailureKind` without re-executing the script. The runner's classifier is the single source of truth for that mapping; add a new kind here before the healer learns about it.
+- **Errors are reported, not classified here.** The runner returns the raw error shape (`message`, `cause`, `stepId?`, `phase?`). Triage lives in `@sfysh/triage` so classification rules can stay surface-agnostic and extend to the HTTP surface in Phase 2 without touching the runtime.

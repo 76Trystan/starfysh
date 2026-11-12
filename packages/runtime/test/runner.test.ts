@@ -4,9 +4,6 @@ import {
   run,
   resetWorkflows,
   createWorkflowContext,
-  VaultSecretMissingError,
-  AssertionError,
-  ExtractionError,
   PostconditionViolation,
 } from '../src/index.js';
 import type { Page, Locator } from '../src/index.js';
@@ -55,64 +52,12 @@ describe('run', () => {
     await expect(run('run-not-registered', newCtx())).rejects.toThrow('run-not-registered');
   });
 
-  it('classifies VaultSecretMissingError as auth', async () => {
-    workflow('run-auth', async () => {
-      throw new VaultSecretMissingError('my_secret');
-    });
-    const result = await run('run-auth', newCtx());
-    expect(result.status).toBe('failed');
-    expect(result.error?.kind).toBe('auth');
-  });
-
-  it('classifies AssertionError as site', async () => {
-    workflow('run-assert', async () => {
-      throw new AssertionError('postcondition failed');
-    });
-    const result = await run('run-assert', newCtx());
-    expect(result.status).toBe('failed');
-    expect(result.error?.kind).toBe('site');
-  });
-
-  it('classifies ExtractionError as site', async () => {
-    workflow('run-extract', async () => {
-      throw new ExtractionError('column not found');
-    });
-    const result = await run('run-extract', newCtx());
-    expect(result.status).toBe('failed');
-    expect(result.error?.kind).toBe('site');
-  });
-
-  it('classifies timeout errors as flake', async () => {
-    workflow('run-timeout', async () => {
-      throw new Error('Navigation timeout exceeded');
-    });
-    const result = await run('run-timeout', newCtx());
-    expect(result.status).toBe('failed');
-    expect(result.error?.kind).toBe('flake');
-  });
-
-  it('classifies network errors as flake', async () => {
-    workflow('run-net', async () => {
-      throw new Error('net::ERR_CONNECTION_REFUSED');
-    });
-    const result = await run('run-net', newCtx());
-    expect(result.error?.kind).toBe('flake');
-  });
-
-  it('classifies unrecognised errors as unknown', async () => {
-    workflow('run-unknown', async () => {
-      throw new Error('Something unexpected happened');
-    });
-    const result = await run('run-unknown', newCtx());
-    expect(result.status).toBe('failed');
-    expect(result.error?.kind).toBe('unknown');
-  });
-
   it('captures the error message', async () => {
     workflow('run-msg', async () => {
       throw new Error('specific failure message');
     });
     const result = await run('run-msg', newCtx());
+    expect(result.status).toBe('failed');
     expect(result.error?.message).toBe('specific failure message');
   });
 
@@ -131,7 +76,7 @@ describe('run', () => {
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
   });
 
-  it('scrubs registered secrets out of error.message (ADR 0013)', async () => {
+  it('scrubs registered secrets out of error.message', async () => {
     workflow('run-secret-leak', async (ctx) => {
       const pwd = ctx.vault('portal_pass');
       throw new Error(`login failed for user with password ${pwd}`);
@@ -148,7 +93,7 @@ describe('run', () => {
     expect(result.error?.message).not.toContain('hunter2');
   });
 
-  it('surfaces stepId and phase when PostconditionViolation is thrown (ADR 0011)', async () => {
+  it('surfaces stepId and phase when PostconditionViolation is thrown', async () => {
     workflow('run-post-violation', async () => {
       throw new PostconditionViolation({
         stepId: 'step_submit_login',
@@ -159,7 +104,6 @@ describe('run', () => {
     });
     const result = await run('run-post-violation', newCtx());
     expect(result.status).toBe('failed');
-    expect(result.error?.kind).toBe('site');
     expect(result.error?.stepId).toBe('step_submit_login');
     expect(result.error?.phase).toBe('post');
     expect(result.error?.message).toContain('step_submit_login');
