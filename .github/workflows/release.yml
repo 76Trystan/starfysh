@@ -1,10 +1,10 @@
 # Release workflow: publishes @sfysh/* packages via npm Trusted Publishing (OIDC).
 #
 # Prerequisite (one-off, done on npmjs.com):
-#   For each of @sfysh/ir, @sfysh/compiler, @sfysh/runtime, @sfysh/playwright-adapter:
+#   For each of @sfysh/ir, @sfysh/compiler, @sfysh/runtime, @sfysh/playwright-adapter, @sfysh/parser:
 #     Settings -> Trusted Publishers -> add this repository (76Trystan/starfysh),
 #     workflow (.github/workflows/release.yml), environment (none).
-#   Until all four are configured, this workflow will fail with 404/EOIDC on publish.
+#   Until every published package is configured, this workflow will fail with 404/EOIDC on publish.
 #   See docs/planning/Blockers.md for the history of why this replaced NPM_TOKEN auth.
 #
 # After configuration, every merge of a "Version Packages" PR auto-publishes with
