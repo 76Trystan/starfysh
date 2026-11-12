@@ -1,6 +1,6 @@
 {
   "name": "@sfysh/parser",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Parser that lifts hand-written Playwright TypeScript scripts into the Starfysh IR, so existing scripts can be verified and healed by the Starfysh toolchain.",
   "keywords": [
     "starfysh",
