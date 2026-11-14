@@ -22,11 +22,11 @@ Five `@sfysh/*` packages are published on npm today. The Phase 0 core gives you 
 
 Three more packages are in the repo but not yet published:
 
-| Package              | What it does                                                                                                                                                  |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@sfysh/triage`      | Deterministic failure classifier. Maps a failed run to a `FailureKind` (flake, auth, site, unknown) so the healer can route failures without invoking a model. |
-| `@sfysh/verifier`    | Replays a workflow N times against a live page, evaluates postconditions, checks output stability, and produces human or JSON reports.                         |
-| `@sfysh/cli`         | Command-line front end for the toolchain: parse, compile, verify, and (soon) heal.                                                                            |
+| Package           | What it does                                                                                                                                                   |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@sfysh/triage`   | Deterministic failure classifier. Maps a failed run to a `FailureKind` (flake, auth, site, unknown) so the healer can route failures without invoking a model. |
+| `@sfysh/verifier` | Replays a workflow N times against a live page, evaluates postconditions, checks output stability, and produces human or JSON reports.                         |
+| `@sfysh/cli`      | Command-line front end for the toolchain: parse, compile, verify, and (soon) heal.                                                                             |
 
 **What this means in practice.** You can hand-author a workflow IR following the schema in `@sfysh/ir`, compile it with `@sfysh/compiler`, and execute the result via `@sfysh/runtime` plus Playwright. Or start from an existing Playwright script, lift it into IR with `@sfysh/parser`, and feed it into the same pipeline. That is a working, deterministic path from JSON (or TypeScript) to a running browser automation.
 
