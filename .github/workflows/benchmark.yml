@@ -20,7 +20,12 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: npx playwright install --with-deps chromium
+      # Install both the full Chromium browser and the dedicated
+      # chrome-headless-shell binary. Playwright 1.49+ launches via
+      # chrome-headless-shell when `headless: true` is set, so installing
+      # only `chromium` leaves the launch call looking at an empty
+      # cache directory (see 2026-11-15 gotcha).
+      - run: npx playwright install --with-deps chromium chromium-headless-shell
 
       - run: pnpm --filter @sfysh/benchmark bench
 
