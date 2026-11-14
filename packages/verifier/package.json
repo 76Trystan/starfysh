@@ -1,7 +1,6 @@
 {
   "name": "@sfysh/verifier",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "description": "Replay a Starfysh workflow N times against a Page backend, evaluate postconditions, check output stability, and produce a human or JSON report. The gate that turns an IR workflow into something trusted to run on schedule.",
   "keywords": [
     "starfysh",
