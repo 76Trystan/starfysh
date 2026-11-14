@@ -78,4 +78,24 @@ describe('walkFile', () => {
     const [walked] = walkFile(source);
     expect(walked?.calls[0]?.text).toBe("page.getByRole('button', { name: 'Submit' }).click()");
   });
+
+  it('captures the bind identifier from const x = await <chain>', () => {
+    const source = `test('t', async ({ page }) => {\n  const name = await page.getByTestId('user').textContent();\n});\n`;
+    const [walked] = walkFile(source);
+    expect(walked?.calls).toHaveLength(1);
+    expect(walked?.calls[0]?.bind).toBe('name');
+    expect(walked?.calls[0]?.text).toBe("page.getByTestId('user').textContent()");
+  });
+
+  it('leaves bind undefined on bare expression statements', () => {
+    const source = `test('t', async ({ page }) => {\n  await page.goto('https://example.com');\n});\n`;
+    const [walked] = walkFile(source);
+    expect(walked?.calls[0]?.bind).toBeUndefined();
+  });
+
+  it('ignores multi-declaration variable statements and destructuring binds', () => {
+    const source = `test('t', async ({ page }) => {\n  const a = 1, b = await page.getByTestId('x').textContent();\n  const { c } = await page.getByTestId('y').textContent();\n});\n`;
+    const [walked] = walkFile(source);
+    expect(walked?.calls).toEqual([]);
+  });
 });

@@ -183,6 +183,68 @@ describe('parse', () => {
     });
   });
 
+  describe('extract steps', () => {
+    it('maps textContent on a locator chain to an extract step with string schema', () => {
+      const source = `test('t', async ({ page }) => {\n  await page.getByTestId('user-name').textContent();\n});\n`;
+      const { workflow } = parse(source);
+      expect(workflow.steps).toHaveLength(1);
+      expect(workflow.steps[0]).toMatchObject({
+        action: 'extract',
+        target: { candidates: [{ kind: 'testid', value: 'user-name' }] },
+        schema: { type: 'string' },
+      });
+      expect((workflow.steps[0] as { bind?: string }).bind).toBeUndefined();
+    });
+
+    it('captures the identifier as bind for const name = await locator.textContent()', () => {
+      const source = `test('t', async ({ page }) => {\n  const name = await page.getByTestId('user-name').textContent();\n});\n`;
+      const { workflow } = parse(source);
+      expect(workflow.steps[0]).toMatchObject({
+        action: 'extract',
+        bind: 'name',
+        schema: { type: 'string' },
+      });
+      expect(workflow.steps[0]?.intent).toContain('name');
+    });
+
+    it('maps innerText and inputValue to extract steps with string schema', () => {
+      const source = `test('t', async ({ page }) => {\n  const label = await page.getByRole('heading').innerText();\n  const email = await page.getByLabel('Email').inputValue();\n});\n`;
+      const { workflow } = parse(source);
+      expect(workflow.steps).toHaveLength(2);
+      expect(workflow.steps[0]).toMatchObject({ action: 'extract', bind: 'label' });
+      expect(workflow.steps[1]).toMatchObject({ action: 'extract', bind: 'email' });
+      expect(workflow.steps[0]?.intent).toMatch(/text of/);
+      expect(workflow.steps[1]?.intent).toMatch(/input value of/);
+    });
+
+    it('maps allTextContents to an extract step with array schema', () => {
+      const source = `test('t', async ({ page }) => {\n  const items = await page.locator('.row').allTextContents();\n});\n`;
+      const { workflow } = parse(source);
+      expect(workflow.steps[0]).toMatchObject({
+        action: 'extract',
+        bind: 'items',
+        schema: { type: 'array', items: { type: 'string' } },
+      });
+      expect(workflow.steps[0]?.intent).toMatch(/all text contents/);
+    });
+
+    it('drops only the bind when the identifier does not match the IR pattern', () => {
+      const source = `test('t', async ({ page }) => {\n  const $weird = await page.getByTestId('x').textContent();\n});\n`;
+      const { workflow } = parse(source);
+      expect(workflow.steps[0]).toMatchObject({ action: 'extract' });
+      expect((workflow.steps[0] as { bind?: string }).bind).toBeUndefined();
+    });
+
+    it('surfaces locator.evaluate as unsupported rather than silently dropping it', () => {
+      const source = `test('t', async ({ page }) => {\n  await page.goto('https://example.com');\n  await page.locator('.item').evaluate((el) => el.textContent);\n});\n`;
+      const { workflow, unsupported } = parse(source);
+      expect(workflow.steps).toHaveLength(1);
+      expect(workflow.steps[0]?.action).toBe('navigate');
+      expect(unsupported).toHaveLength(1);
+      expect(unsupported[0]?.method).toBe('evaluate');
+    });
+  });
+
   describe('unsupported Playwright calls', () => {
     it('returns an empty unsupported list when every page call is recognised', () => {
       const source = `test('t', async ({ page }) => {\n  await page.goto('https://example.com');\n  await page.getByRole('button').click();\n});\n`;

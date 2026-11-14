@@ -28,7 +28,24 @@ const SUPPORTED_PAGE_METHODS: ReadonlySet<string> = new Set([
   'waitForTimeout',
   'waitForSelector',
   'waitForURL',
+  'textContent',
+  'innerText',
+  'inputValue',
+  'allTextContents',
 ]);
+
+// Playwright locator terminals that read data out of the page. The parser
+// emits an `extract` IR step for each, with a weak default schema. Column-
+// type inference lands in a later ToDo item; today the schemas are the
+// loosest shape that still gates output-stability comparisons.
+const EXTRACT_SCHEMAS: ReadonlyMap<string, { readonly type: 'string' | 'array' }> = new Map([
+  ['textContent', { type: 'string' as const }],
+  ['innerText', { type: 'string' as const }],
+  ['inputValue', { type: 'string' as const }],
+  ['allTextContents', { type: 'array' as const }],
+]);
+
+const BIND_RE = /^[a-zA-Z][a-zA-Z0-9_]*$/;
 
 export function chainsToSteps(chains: CallChain[]): ChainsToStepsResult {
   const steps: Step[] = [];
@@ -66,7 +83,7 @@ export function chainsToSteps(chains: CallChain[]): ChainsToStepsResult {
         });
         continue;
       }
-      const step = pageChainToStep(chain.links, ++counter);
+      const step = pageChainToStep(chain, ++counter);
       if (step) steps.push(step);
     }
   }
@@ -74,7 +91,8 @@ export function chainsToSteps(chains: CallChain[]): ChainsToStepsResult {
   return { steps, unsupported };
 }
 
-function pageChainToStep(links: CallChain['links'], n: number): Step | undefined {
+function pageChainToStep(chain: CallChain, n: number): Step | undefined {
+  const { links } = chain;
   const terminal = links[links.length - 1];
   if (!terminal) return undefined;
 
@@ -91,9 +109,49 @@ function pageChainToStep(links: CallChain['links'], n: number): Step | undefined
       return waitSelectorStep(terminal.args, n);
     case 'waitForURL':
       return waitUrlStep(terminal.args, n);
+    case 'textContent':
+    case 'innerText':
+    case 'inputValue':
+    case 'allTextContents':
+      return extractStep(chain, terminal.method, n);
     default:
       return undefined;
   }
+}
+
+function extractStep(chain: CallChain, method: string, n: number): Step | undefined {
+  const target = extractTarget(chain.links);
+  if (!target) return undefined;
+
+  const shape = EXTRACT_SCHEMAS.get(method);
+  if (!shape) return undefined;
+
+  const schema =
+    shape.type === 'array' ? { type: 'array', items: { type: 'string' } } : { type: 'string' };
+
+  const base: Record<string, unknown> = {
+    id: stepId('extract', n),
+    intent: describeExtract(method, target, chain.bind),
+    action: 'extract' as const,
+    target,
+    schema,
+  };
+  if (chain.bind && BIND_RE.test(chain.bind)) {
+    base.bind = chain.bind;
+  }
+  return base as Step;
+}
+
+function describeExtract(method: string, target: Target, bind?: string): string {
+  const what = describeTarget(target);
+  const action =
+    method === 'allTextContents'
+      ? `Extract all text contents of ${what}`
+      : method === 'inputValue'
+        ? `Extract input value of ${what}`
+        : `Extract text of ${what}`;
+  if (bind && BIND_RE.test(bind)) return `${action} into ${bind}`;
+  return action;
 }
 
 function gotoStep(args: string[], n: number): Step | undefined {

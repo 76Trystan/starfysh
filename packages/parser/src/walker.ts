@@ -36,12 +36,18 @@ export interface ChainLink {
  * `text` is the raw TypeScript source of the call expression with any
  * surrounding `await` stripped, so downstream layers can quote user source
  * when reporting unsupported methods.
+ *
+ * `bind` is the variable name when the chain is the initializer of a
+ * `const`/`let`/`var` declaration (e.g. `const name = await locator.textContent()`).
+ * Downstream code uses this for extract-step binding; absent for bare
+ * expression statements.
  */
 export interface CallChain {
   root: string;
   links: ChainLink[];
   position: SourcePos;
   text: string;
+  bind?: string;
 }
 
 /** One `test('name', async ({ page }) => { ... })` call found at file scope. */
@@ -113,6 +119,10 @@ function tryWalkTestCall(call: CallExpression): WalkedTest | undefined {
 }
 
 function extractChain(statement: Node): CallChain | undefined {
+  return extractFromExpressionStatement(statement) ?? extractFromVariableStatement(statement);
+}
+
+function extractFromExpressionStatement(statement: Node): CallChain | undefined {
   const exprStmt = statement.asKind(SyntaxKind.ExpressionStatement);
   if (!exprStmt) return undefined;
 
@@ -126,6 +136,42 @@ function extractChain(statement: Node): CallChain | undefined {
   const built = buildChain(call);
   if (!built) return undefined;
   return { ...built, position: positionOf(statement), text: expr.getText() };
+}
+
+// Picks up `const name = await locator.textContent()` so the resulting
+// CallChain carries the identifier as `bind`. Only single-declaration,
+// non-destructuring patterns are supported in v1; `const { a, b } = ...`
+// and `const [x] = ...` return undefined and fall through to the dropped
+// path like any other unrecognised statement.
+function extractFromVariableStatement(statement: Node): CallChain | undefined {
+  const varStmt = statement.asKind(SyntaxKind.VariableStatement);
+  if (!varStmt) return undefined;
+
+  const decls = varStmt.getDeclarationList().getDeclarations();
+  if (decls.length !== 1) return undefined;
+  const decl = decls[0]!;
+
+  const ident = decl.getNameNode().asKind(SyntaxKind.Identifier);
+  if (!ident) return undefined;
+
+  let init: Node | undefined = decl.getInitializer();
+  if (!init) return undefined;
+
+  const awaitExpr = init.asKind(SyntaxKind.AwaitExpression);
+  if (awaitExpr) init = awaitExpr.getExpression();
+
+  const call = init.asKind(SyntaxKind.CallExpression);
+  if (!call) return undefined;
+
+  const built = buildChain(call);
+  if (!built) return undefined;
+
+  return {
+    ...built,
+    position: positionOf(statement),
+    text: init.getText(),
+    bind: ident.getText(),
+  };
 }
 
 function buildChain(call: CallExpression): { root: string; links: ChainLink[] } | undefined {
