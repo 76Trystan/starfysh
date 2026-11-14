@@ -1,11 +1,38 @@
 import type { Step, Target, Condition } from '@sfysh/ir';
-import type { CallChain } from './walker.js';
+import type { CallChain, SourcePos } from './walker.js';
 import { extractTarget } from './selectors.js';
 import { unquote } from './selectors.js';
 import { extractCondition } from './conditions.js';
 
-export function chainsToSteps(chains: CallChain[]): Step[] {
+/**
+ * A `page.<method>(...)` call whose terminal method is not in the parser's
+ * supported set. Surfaced so downstream tooling can tell the user which
+ * actions were dropped rather than silently producing an incomplete workflow.
+ * Phase 2 reuses this shape for unrecognised HTTP-library calls.
+ */
+export interface UnsupportedCall {
+  method: string;
+  position: SourcePos;
+  text: string;
+}
+
+export interface ChainsToStepsResult {
+  steps: Step[];
+  unsupported: UnsupportedCall[];
+}
+
+const SUPPORTED_PAGE_METHODS: ReadonlySet<string> = new Set([
+  'goto',
+  'click',
+  'fill',
+  'waitForTimeout',
+  'waitForSelector',
+  'waitForURL',
+]);
+
+export function chainsToSteps(chains: CallChain[]): ChainsToStepsResult {
   const steps: Step[] = [];
+  const unsupported: UnsupportedCall[] = [];
   let counter = 0;
 
   for (const chain of chains) {
@@ -30,12 +57,21 @@ export function chainsToSteps(chains: CallChain[]): Step[] {
     }
 
     if (chain.root === 'page') {
+      const terminal = chain.links[chain.links.length - 1];
+      if (terminal && !SUPPORTED_PAGE_METHODS.has(terminal.method)) {
+        unsupported.push({
+          method: terminal.method,
+          position: chain.position,
+          text: chain.text,
+        });
+        continue;
+      }
       const step = pageChainToStep(chain.links, ++counter);
       if (step) steps.push(step);
     }
   }
 
-  return steps;
+  return { steps, unsupported };
 }
 
 function pageChainToStep(links: CallChain['links'], n: number): Step | undefined {

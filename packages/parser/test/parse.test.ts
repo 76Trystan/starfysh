@@ -19,22 +19,22 @@ describe('parse', () => {
   describe('workflow metadata', () => {
     it('sets irVersion from the IR package', () => {
       const source = `test('basic', async ({ page }) => {\n  await page.goto('https://example.com');\n});\n`;
-      expect(parse(source).irVersion).toBe(IR_VERSION);
+      expect(parse(source).workflow.irVersion).toBe(IR_VERSION);
     });
 
     it('derives workflow id from the test name', () => {
       const source = `test('loads the homepage', async ({ page }) => {\n  await page.goto('https://example.com');\n});\n`;
-      expect(parse(source).id).toBe('loads_the_homepage');
+      expect(parse(source).workflow.id).toBe('loads_the_homepage');
     });
 
     it('uses the test name as the workflow name', () => {
       const source = `test('my test', async ({ page }) => {\n  await page.goto('https://example.com');\n});\n`;
-      expect(parse(source).name).toBe('my test');
+      expect(parse(source).workflow.name).toBe('my test');
     });
 
     it('handles short test names by padding the id', () => {
       const source = `test('go', async ({ page }) => {\n  await page.goto('https://example.com');\n});\n`;
-      const id = parse(source).id;
+      const id = parse(source).workflow.id;
       expect(id.length).toBeGreaterThanOrEqual(3);
       expect(id).toMatch(/^[a-z][a-z0-9_-]{2,63}$/);
     });
@@ -44,14 +44,14 @@ describe('parse', () => {
         `test('first', async ({ page }) => { await page.goto('https://a.com'); });`,
         `test('second', async ({ page }) => { await page.goto('https://b.com'); });`,
       ].join('\n');
-      expect(parse(source).name).toBe('first');
+      expect(parse(source).workflow.name).toBe('first');
     });
   });
 
   describe('navigate steps', () => {
     it('maps page.goto to a navigate step', () => {
       const source = `test('t', async ({ page }) => {\n  await page.goto('https://example.com');\n});\n`;
-      const wf = parse(source);
+      const { workflow: wf } = parse(source);
       expect(wf.steps).toHaveLength(1);
       expect(wf.steps[0]).toMatchObject({
         action: 'navigate',
@@ -63,7 +63,7 @@ describe('parse', () => {
   describe('click steps', () => {
     it('maps getByRole + click to a click step with role target', () => {
       const source = `test('t', async ({ page }) => {\n  await page.goto('https://example.com');\n  await page.getByRole('button', { name: 'Submit' }).click();\n});\n`;
-      const wf = parse(source);
+      const { workflow: wf } = parse(source);
       expect(wf.steps[1]).toMatchObject({
         action: 'click',
         target: { candidates: [{ kind: 'role', value: "button[name='Submit']" }] },
@@ -72,7 +72,7 @@ describe('parse', () => {
 
     it('maps getByTestId + click to a click step', () => {
       const source = `test('t', async ({ page }) => {\n  await page.goto('https://example.com');\n  await page.getByTestId('login-btn').click();\n});\n`;
-      const wf = parse(source);
+      const { workflow: wf } = parse(source);
       expect(wf.steps[1]).toMatchObject({
         action: 'click',
         target: { candidates: [{ kind: 'testid', value: 'login-btn' }] },
@@ -83,7 +83,7 @@ describe('parse', () => {
   describe('fill steps', () => {
     it('maps getByLabel + fill to a fill step', () => {
       const source = `test('t', async ({ page }) => {\n  await page.goto('https://example.com');\n  await page.getByLabel('Email').fill('test@example.com');\n});\n`;
-      const wf = parse(source);
+      const { workflow: wf } = parse(source);
       expect(wf.steps[1]).toMatchObject({
         action: 'fill',
         target: { candidates: [{ kind: 'label', value: 'Email' }] },
@@ -95,7 +95,7 @@ describe('parse', () => {
   describe('wait steps', () => {
     it('maps waitForTimeout to a wait step with millis', () => {
       const source = `test('t', async ({ page }) => {\n  await page.goto('https://example.com');\n  await page.waitForTimeout(2000);\n});\n`;
-      const wf = parse(source);
+      const { workflow: wf } = parse(source);
       expect(wf.steps[1]).toMatchObject({
         action: 'wait',
         millis: 2000,
@@ -104,7 +104,7 @@ describe('parse', () => {
 
     it('maps waitForSelector to a wait step with selectorVisible condition', () => {
       const source = `test('t', async ({ page }) => {\n  await page.goto('https://example.com');\n  await page.waitForSelector('.loaded');\n});\n`;
-      const wf = parse(source);
+      const { workflow: wf } = parse(source);
       expect(wf.steps[1]).toMatchObject({
         action: 'wait',
         forCondition: { selectorVisible: '.loaded' },
@@ -113,7 +113,7 @@ describe('parse', () => {
 
     it('maps waitForURL to a wait step with urlMatches condition', () => {
       const source = `test('t', async ({ page }) => {\n  await page.goto('https://example.com');\n  await page.waitForURL('**/dashboard');\n});\n`;
-      const wf = parse(source);
+      const { workflow: wf } = parse(source);
       expect(wf.steps[1]).toMatchObject({
         action: 'wait',
         forCondition: { urlMatches: '**/dashboard' },
@@ -127,7 +127,7 @@ describe('parse', () => {
   await page.goto('https://example.com');
   await expect(page).toHaveURL('https://example.com/home');
 });\n`;
-      const wf = parse(source);
+      const { workflow: wf } = parse(source);
       expect(wf.steps).toHaveLength(1);
       expect(wf.steps[0]?.post).toEqual([{ urlEquals: 'https://example.com/home' }]);
     });
@@ -138,7 +138,7 @@ describe('parse', () => {
   await expect(page).toHaveURL('https://example.com/done');
   await expect(page.getByText('Success')).toBeVisible();
 });\n`;
-      const wf = parse(source);
+      const { workflow: wf } = parse(source);
       expect(wf.steps).toHaveLength(1);
       expect(wf.steps[0]?.post).toEqual([
         { urlEquals: 'https://example.com/done' },
@@ -151,7 +151,7 @@ describe('parse', () => {
   await expect(page.getByText('Welcome')).toBeVisible();
   await page.goto('https://example.com');
 });\n`;
-      const wf = parse(source);
+      const { workflow: wf } = parse(source);
       expect(wf.steps).toHaveLength(2);
       expect(wf.steps[0]).toMatchObject({
         action: 'assert',
@@ -167,7 +167,7 @@ describe('parse', () => {
   await page.getByLabel('Email').fill('a@b.com');
   await page.getByRole('button', { name: 'Go' }).click();
 });\n`;
-      const wf = parse(source);
+      const { workflow: wf } = parse(source);
       const ids = wf.steps.map((s) => s.id);
       expect(ids).toEqual(['navigate_001', 'fill_002', 'click_003']);
     });
@@ -177,9 +177,53 @@ describe('parse', () => {
   await page.goto('https://example.com');
   await page.getByRole('button', { name: 'Submit' }).click();
 });\n`;
-      const wf = parse(source);
+      const { workflow: wf } = parse(source);
       expect(wf.steps[0]?.intent).toBe('Navigate to https://example.com');
       expect(wf.steps[1]?.intent).toContain('Submit');
+    });
+  });
+
+  describe('unsupported Playwright calls', () => {
+    it('returns an empty unsupported list when every page call is recognised', () => {
+      const source = `test('t', async ({ page }) => {\n  await page.goto('https://example.com');\n  await page.getByRole('button').click();\n});\n`;
+      expect(parse(source).unsupported).toEqual([]);
+    });
+
+    it('records page.hover as unsupported with method, position, and raw text', () => {
+      const source = `test('t', async ({ page }) => {\n  await page.goto('https://example.com');\n  await page.hover('.menu');\n});\n`;
+      const { workflow, unsupported } = parse(source);
+      expect(workflow.steps).toHaveLength(1);
+      expect(unsupported).toHaveLength(1);
+      expect(unsupported[0]?.method).toBe('hover');
+      expect(unsupported[0]?.position.line).toBe(3);
+      expect(unsupported[0]?.text).toBe("page.hover('.menu')");
+    });
+
+    it('records multiple unsupported calls in source order', () => {
+      const source = `test('t', async ({ page }) => {\n  await page.goto('https://example.com');\n  await page.hover('.menu');\n  await page.screenshot({ path: 'o.png' });\n  await page.dragAndDrop('.a', '.b');\n});\n`;
+      const { unsupported } = parse(source);
+      expect(unsupported.map((u) => u.method)).toEqual(['hover', 'screenshot', 'dragAndDrop']);
+    });
+
+    it('does not drop recognised steps when later steps are unsupported', () => {
+      const source = `test('t', async ({ page }) => {\n  await page.goto('https://example.com');\n  await page.hover('.menu');\n  await page.getByRole('button', { name: 'Submit' }).click();\n});\n`;
+      const { workflow, unsupported } = parse(source);
+      expect(workflow.steps.map((s) => s.action)).toEqual(['navigate', 'click']);
+      expect(unsupported).toHaveLength(1);
+      expect(unsupported[0]?.method).toBe('hover');
+    });
+
+    it('records chained unsupported terminals (e.g. locator.hover) by terminal method', () => {
+      const source = `test('t', async ({ page }) => {\n  await page.goto('https://example.com');\n  await page.locator('.item').hover();\n});\n`;
+      const { unsupported } = parse(source);
+      expect(unsupported).toHaveLength(1);
+      expect(unsupported[0]?.method).toBe('hover');
+      expect(unsupported[0]?.text).toBe("page.locator('.item').hover()");
+    });
+
+    it('still throws ParseError when no recognised actions remain', () => {
+      const source = `test('t', async ({ page }) => {\n  await page.hover('.menu');\n  await page.screenshot({ path: 'o.png' });\n});\n`;
+      expect(() => parse(source)).toThrow(/No recognizable Playwright actions/);
     });
   });
 
@@ -197,7 +241,7 @@ test('login to dashboard', async ({ page }) => {
   await expect(page.getByText('Welcome back')).toBeVisible();
 });
 `;
-      const wf = parse(source);
+      const { workflow: wf } = parse(source);
 
       expect(wf.irVersion).toBe(IR_VERSION);
       expect(wf.id).toBe('login_to_dashboard');
@@ -234,7 +278,7 @@ test('submit contact form', async ({ page }) => {
   await expect(page.locator('.error')).toBeHidden();
 });
 `;
-      const wf = parse(source);
+      const { workflow: wf } = parse(source);
 
       expect(wf.steps).toHaveLength(4);
       expect(wf.steps[3]?.post).toEqual([
@@ -257,7 +301,7 @@ test('checkout flow', async ({ page }) => {
   await expect(page.getByText('Order confirmed')).toBeVisible();
 });
 `;
-      const wf = parse(source);
+      const { workflow: wf } = parse(source);
 
       expect(wf.steps).toHaveLength(6);
       expect(wf.steps[0]).toMatchObject({ action: 'navigate' });

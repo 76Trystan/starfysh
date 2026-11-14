@@ -152,6 +152,33 @@ describe('compile parse', () => {
     expect(code).toBe(1);
     expect(c.stderr.text).toContain('No test() calls found');
   });
+
+  it('prints unsupported Playwright calls to stderr but still exits 0', () => {
+    const file = join(dir, 'with-hover.spec.ts');
+    const src = `
+import { test } from '@playwright/test';
+
+test('mixed', async ({ page }) => {
+  await page.goto('https://example.com');
+  await page.hover('.menu');
+  await page.screenshot({ path: 'out.png' });
+});
+`;
+    writeFileSync(file, src, 'utf8');
+
+    const c = ctx();
+    const code = run(['parse', file], c);
+
+    expect(code).toBe(0);
+    expect(c.stderr.text).toContain('Unsupported Playwright calls');
+    expect(c.stderr.text).toContain('(2)');
+    expect(c.stderr.text).toContain('page.hover');
+    expect(c.stderr.text).toContain('page.screenshot');
+
+    const parsed = JSON.parse(c.stdout.text);
+    expect(parsed.steps).toHaveLength(1);
+    expect(parsed.steps[0].action).toBe('navigate');
+  });
 });
 
 describe('runParseCommand', () => {
@@ -170,20 +197,40 @@ describe('runParseCommand', () => {
     writeFileSync(file, samplePlaywright, 'utf8');
 
     const result = runParseCommand({ file });
-    const parsed = JSON.parse(result);
+    const parsed = JSON.parse(result.output);
     expect(parsed.name).toBe('submit a report');
+    expect(result.unsupported).toEqual([]);
   });
 
-  it('writes to disk and returns empty string when out path given', () => {
+  it('writes to disk and returns empty output when out path given', () => {
     const file = join(dir, 'report.spec.ts');
     const out = join(dir, 'report.workflow.json');
     writeFileSync(file, samplePlaywright, 'utf8');
 
     const result = runParseCommand({ file, out });
-    expect(result).toBe('');
+    expect(result.output).toBe('');
     expect(existsSync(out)).toBe(true);
     const disk = readFileSync(out, 'utf8');
     expect(disk.endsWith('\n')).toBe(true);
     expect(JSON.parse(disk).name).toBe('submit a report');
+  });
+
+  it('reports unsupported Playwright methods on the result', () => {
+    const file = join(dir, 'with-hover.spec.ts');
+    const src = `
+import { test } from '@playwright/test';
+
+test('mixed', async ({ page }) => {
+  await page.goto('https://example.com');
+  await page.hover('.menu');
+  await page.screenshot({ path: 'out.png' });
+});
+`;
+    writeFileSync(file, src, 'utf8');
+
+    const result = runParseCommand({ file });
+    expect(result.unsupported.map((u) => u.method)).toEqual(['hover', 'screenshot']);
+    expect(result.unsupported[0]?.position.line).toBeGreaterThan(0);
+    expect(result.unsupported[0]?.text).toContain('page.hover');
   });
 });

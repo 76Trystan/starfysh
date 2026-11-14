@@ -5,7 +5,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { parseArgs, type ParseArgsConfig } from 'node:util';
-import { parse, ParseError } from '@sfysh/parser';
+import { parse, ParseError, type UnsupportedCall } from '@sfysh/parser';
 import {
   runVerifyCommand,
   reportIsGreen,
@@ -47,23 +47,42 @@ export interface ParseCommandOptions {
   out?: string;
 }
 
+export interface ParseCommandResult {
+  /**
+   * Formatted workflow JSON. Empty string when `out` is set, because the JSON
+   * was written to disk instead of returned to the caller.
+   */
+  output: string;
+  unsupported: UnsupportedCall[];
+}
+
 /**
  * Pure form of the parse command. Reads the given file, parses it into IR,
- * and returns the formatted JSON. If `out` is supplied, writes the JSON to
- * disk and returns an empty string. Throws ParseError on parse failure and
- * standard Node errors on file IO failure.
+ * and returns the formatted JSON alongside any unsupported Playwright calls
+ * the parser could not map to IR steps. If `out` is supplied, writes the
+ * JSON to disk and returns an empty `output`. Throws ParseError on parse
+ * failure and standard Node errors on file IO failure.
  */
-export function runParseCommand(opts: ParseCommandOptions): string {
+export function runParseCommand(opts: ParseCommandOptions): ParseCommandResult {
   const source = readFileSync(opts.file, 'utf8');
-  const workflow = parse(source);
+  const { workflow, unsupported } = parse(source);
   const json = JSON.stringify(workflow, null, 2);
 
   if (opts.out) {
     writeFileSync(opts.out, json + '\n', 'utf8');
-    return '';
+    return { output: '', unsupported };
   }
 
-  return json;
+  return { output: json, unsupported };
+}
+
+function formatUnsupported(unsupported: UnsupportedCall[]): string {
+  const lines: string[] = [];
+  lines.push(`Unsupported Playwright calls dropped from workflow (${unsupported.length}):`);
+  for (const call of unsupported) {
+    lines.push(`  line ${call.position.line}:${call.position.column}  ${call.text}`);
+  }
+  return lines.join('\n') + '\n';
 }
 
 function parseCommand(args: string[], ctx: RunContext): number {
@@ -108,11 +127,14 @@ function parseCommand(args: string[], ctx: RunContext): number {
   const out = typeof parsed.values.out === 'string' ? parsed.values.out : undefined;
 
   try {
-    const output = runParseCommand({ file, out });
+    const result = runParseCommand({ file, out });
     if (out) {
       ctx.stderr.write(`Wrote ${out}\n`);
     } else {
-      ctx.stdout.write(output + '\n');
+      ctx.stdout.write(result.output + '\n');
+    }
+    if (result.unsupported.length > 0) {
+      ctx.stderr.write(formatUnsupported(result.unsupported));
     }
     return 0;
   } catch (err) {

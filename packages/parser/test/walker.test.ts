@@ -72,4 +72,10 @@ describe('walkFile', () => {
     const [walked] = walkFile(source);
     expect(walked?.position).toEqual({ line: 3, column: 3 });
   });
+
+  it('captures the raw call text on each chain with await stripped', () => {
+    const source = `test('t', async ({ page }) => {\n  await page.getByRole('button', { name: 'Submit' }).click();\n});\n`;
+    const [walked] = walkFile(source);
+    expect(walked?.calls[0]?.text).toBe("page.getByRole('button', { name: 'Submit' }).click()");
+  });
 });

@@ -32,11 +32,16 @@ export interface ChainLink {
  *   ],
  * }
  * ```
+ *
+ * `text` is the raw TypeScript source of the call expression with any
+ * surrounding `await` stripped, so downstream layers can quote user source
+ * when reporting unsupported methods.
  */
 export interface CallChain {
   root: string;
   links: ChainLink[];
   position: SourcePos;
+  text: string;
 }
 
 /** One `test('name', async ({ page }) => { ... })` call found at file scope. */
@@ -120,7 +125,7 @@ function extractChain(statement: Node): CallChain | undefined {
 
   const built = buildChain(call);
   if (!built) return undefined;
-  return { ...built, position: positionOf(statement) };
+  return { ...built, position: positionOf(statement), text: expr.getText() };
 }
 
 function buildChain(call: CallExpression): { root: string; links: ChainLink[] } | undefined {
