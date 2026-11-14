@@ -6,27 +6,27 @@
 
 A browser-automation compiler that turns one AI-recorded session into a deterministic, self-healing script. The agent authors the code once, the runtime runs it indefinitely.
 
-> **Status: Phase 1 in progress.** The paragraph above is the vision. Phase 0 (IR, compiler, runtime, Playwright adapter) shipped on npm at 0.1.x and has since seen several minor releases. Phase 1 (parser, triage, verifier, healer, CLI, MCP server) is in progress -- the parser is published on npm, the triage classifier and verifier are functional but not yet published, and the CLI drives the toolchain locally. The sections below separate what you can use today from what is coming.
+> **Status: Phase 1 in progress.** The paragraph above is the vision. Phase 0 (IR, compiler, runtime, Playwright adapter) shipped on npm at 0.1.x and has since seen several minor releases. Phase 1 (parser, triage, verifier, healer, CLI, MCP server) is in progress -- the parser and verifier are published on npm, the triage classifier is functional but not yet published, and the CLI drives the toolchain locally. The sections below separate what you can use today from what is coming.
 
 ## What ships today
 
-Five `@sfysh/*` packages are published on npm today. The Phase 0 core gives you the deterministic middle of the pipeline; the parser is the first Phase 1 package to ship.
+Six `@sfysh/*` packages are published on npm today. The Phase 0 core gives you the deterministic middle of the pipeline; the parser and verifier are the first Phase 1 packages to ship.
 
-| Package                                                                                                                                                                                                              | What it does                                                                                                                                                 |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`@sfysh/ir`](https://www.npmjs.com/package/@sfysh/ir) [![npm](https://img.shields.io/npm/v/@sfysh/ir.svg)](https://www.npmjs.com/package/@sfysh/ir)                                                                 | JSON-Schema-first IR for Starfysh workflows, with Ajv validators and generated TypeScript types.                                                             |
-| [`@sfysh/compiler`](https://www.npmjs.com/package/@sfysh/compiler) [![npm](https://img.shields.io/npm/v/@sfysh/compiler.svg)](https://www.npmjs.com/package/@sfysh/compiler)                                         | Takes a validated IR workflow and emits deterministic TypeScript, byte-stable across runs.                                                                   |
-| [`@sfysh/runtime`](https://www.npmjs.com/package/@sfysh/runtime) [![npm](https://img.shields.io/npm/v/@sfysh/runtime.svg)](https://www.npmjs.com/package/@sfysh/runtime)                                             | The `workflow()` runner, `vault()` secret resolver, assertions, extraction helpers, and the `Page`/`Locator` interfaces that generated code targets.         |
-| [`@sfysh/playwright-adapter`](https://www.npmjs.com/package/@sfysh/playwright-adapter) [![npm](https://img.shields.io/npm/v/@sfysh/playwright-adapter.svg)](https://www.npmjs.com/package/@sfysh/playwright-adapter) | Casts Playwright's `Page` and `Locator` to the runtime's structural interfaces so Playwright-driven tests can run Starfysh workflows without rewriting them. |
-| [`@sfysh/parser`](https://www.npmjs.com/package/@sfysh/parser) [![npm](https://img.shields.io/npm/v/@sfysh/parser.svg)](https://www.npmjs.com/package/@sfysh/parser)                                                 | Lifts existing Playwright TypeScript scripts into the Starfysh IR so they can be verified and healed by the toolchain.                                       |
+| Package                                                                                                                                                                                                              | What it does                                                                                                                                                                               |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`@sfysh/ir`](https://www.npmjs.com/package/@sfysh/ir) [![npm](https://img.shields.io/npm/v/@sfysh/ir.svg)](https://www.npmjs.com/package/@sfysh/ir)                                                                 | JSON-Schema-first IR for Starfysh workflows, with Ajv validators and generated TypeScript types.                                                                                           |
+| [`@sfysh/compiler`](https://www.npmjs.com/package/@sfysh/compiler) [![npm](https://img.shields.io/npm/v/@sfysh/compiler.svg)](https://www.npmjs.com/package/@sfysh/compiler)                                         | Takes a validated IR workflow and emits deterministic TypeScript, byte-stable across runs.                                                                                                 |
+| [`@sfysh/runtime`](https://www.npmjs.com/package/@sfysh/runtime) [![npm](https://img.shields.io/npm/v/@sfysh/runtime.svg)](https://www.npmjs.com/package/@sfysh/runtime)                                             | The `workflow()` runner, `vault()` secret resolver, assertions, extraction helpers, and the `Page`/`Locator` interfaces that generated code targets.                                       |
+| [`@sfysh/playwright-adapter`](https://www.npmjs.com/package/@sfysh/playwright-adapter) [![npm](https://img.shields.io/npm/v/@sfysh/playwright-adapter.svg)](https://www.npmjs.com/package/@sfysh/playwright-adapter) | Casts Playwright's `Page` and `Locator` to the runtime's structural interfaces so Playwright-driven tests can run Starfysh workflows without rewriting them.                               |
+| [`@sfysh/parser`](https://www.npmjs.com/package/@sfysh/parser) [![npm](https://img.shields.io/npm/v/@sfysh/parser.svg)](https://www.npmjs.com/package/@sfysh/parser)                                                 | Lifts existing Playwright TypeScript scripts into the Starfysh IR so they can be verified and healed by the toolchain.                                                                     |
+| [`@sfysh/verifier`](https://www.npmjs.com/package/@sfysh/verifier) [![npm](https://img.shields.io/npm/v/@sfysh/verifier.svg)](https://www.npmjs.com/package/@sfysh/verifier)                                         | Replays a workflow N times against a live page, evaluates postconditions, checks output stability, and produces human or JSON reports. Supports cassette replay for deterministic CI runs. |
 
-Three more packages are in the repo but not yet published:
+Two more packages are in the repo but not yet published:
 
-| Package           | What it does                                                                                                                                                   |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@sfysh/triage`   | Deterministic failure classifier. Maps a failed run to a `FailureKind` (flake, auth, site, unknown) so the healer can route failures without invoking a model. |
-| `@sfysh/verifier` | Replays a workflow N times against a live page, evaluates postconditions, checks output stability, and produces human or JSON reports.                         |
-| `@sfysh/cli`      | Command-line front end for the toolchain: parse, compile, verify, and (soon) heal.                                                                             |
+| Package         | What it does                                                                                                                                                   |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@sfysh/triage` | Deterministic failure classifier. Maps a failed run to a `FailureKind` (flake, auth, site, unknown) so the healer can route failures without invoking a model. |
+| `@sfysh/cli`    | Command-line front end for the toolchain: parse, verify, and (soon) heal.                                                                                      |
 
 **What this means in practice.** You can hand-author a workflow IR following the schema in `@sfysh/ir`, compile it with `@sfysh/compiler`, and execute the result via `@sfysh/runtime` plus Playwright. Or start from an existing Playwright script, lift it into IR with `@sfysh/parser`, and feed it into the same pipeline. That is a working, deterministic path from JSON (or TypeScript) to a running browser automation.
 
@@ -48,10 +48,10 @@ Create `demo.ts`:
 
 ```ts
 import { chromium } from 'playwright';
-import { workflow, run, emit, drainOutputs } from '@sfysh/runtime';
+import { workflow, run, createWorkflowContext } from '@sfysh/runtime';
 import { asPage } from '@sfysh/playwright-adapter';
 
-workflow('books-category-count', async (page) => {
+workflow('books-category-count', async ({ page, emit }) => {
   await page.goto('https://books.toscrape.com/catalogue/category/books/travel_2/index.html', {
     waitUntil: 'domcontentloaded',
   });
@@ -63,9 +63,10 @@ const browser = await chromium.launch();
 const context = await browser.newContext();
 const page = await context.newPage();
 
-const result = await run('books-category-count', asPage(page));
+const ctx = createWorkflowContext({ page: asPage(page) });
+const result = await run('books-category-count', ctx);
 console.log(result);
-console.log('outputs:', drainOutputs());
+console.log('outputs:', ctx.drainOutputs());
 
 await browser.close();
 ```
@@ -141,7 +142,7 @@ flowchart LR
     G -->|You reject| A
 ```
 
-_Shipped: step C (compiler) and step E (scheduled runtime execution, via `@sfysh/runtime` and `@sfysh/playwright-adapter`). Step D (verifier) is functional in-repo. Steps A, B, F, and G are remaining Phase 1 scope._
+_Shipped: step C (compiler), step D (verifier, published on npm with live and cassette replay), and step E (scheduled runtime execution, via `@sfysh/runtime` and `@sfysh/playwright-adapter`). Steps A, B, F, and G are remaining Phase 1 scope._
 
 Two things in that diagram are the whole point. First, the self-loop at `E`: ordinary runs never touch the agent, so they are fast, cheap, and predictable. Second, the path through `F` and `G`: when something breaks, you do not get a mysterious failure and a rewritten script. You get a diagnosis, the smallest possible patch, fresh evidence that it works, and a diff you can read in ten seconds before accepting.
 
@@ -161,11 +162,11 @@ The intent is to report these honestly rather than selectively.
 
 ### Phase 0: Foundations (shipped)
 
-The deterministic core, published on npm. See [What ships today](#what-ships-today) for the per-package detail. The baseline (typecheck, format, 226 tests) is green and a benchmark harness runs five real-site tasks.
+The deterministic core, published on npm. See [What ships today](#what-ships-today) for the per-package detail. The baseline (typecheck, format, growing Vitest suite) is green and a benchmark harness runs five real-site tasks.
 
 ### Phase 1: Healer-first MVP (in progress)
 
-The pieces that take Starfysh from "foundations" to "an automation you can actually leave running." Progress so far: `@sfysh/parser` is published on npm and lifts Playwright scripts into IR; `@sfysh/triage` classifies failures deterministically without a model; `@sfysh/verifier` replays workflows N times with postcondition evaluation and output-stability checks; and `@sfysh/cli` drives parse, compile, and verify from the command line. Remaining: the healer that patches broken steps with reviewable diffs, the MCP server so coding agents can drive the stack, and a synthetic-drift benchmark to stress-test the healer and produce the reliability numbers the measurement section describes.
+The pieces that take Starfysh from "foundations" to "an automation you can actually leave running." Progress so far: `@sfysh/parser` is published and lifts Playwright scripts into IR (including unsupported-call reporting and `extract` steps for data-read patterns); `@sfysh/verifier` is published and replays workflows N times with postcondition evaluation, output-stability checks, and cassette replay; `@sfysh/triage` classifies failures deterministically without a model (postcondition-first, then typed runtime errors, then HTTP status rules reserved for Phase 2); and `@sfysh/cli` drives parse and verify from the command line. Remaining: the healer that patches broken steps with reviewable diffs, the MCP server so coding agents can drive the stack, and a synthetic-drift benchmark to stress-test the healer and produce the reliability numbers the measurement section describes.
 
 ### Phase 2: Beta and polish
 
