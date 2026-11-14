@@ -1,0 +1,7 @@
+# Normalise all text files to LF in the repo and in working trees.
+# Changesets release merges on Windows machines had reintroduced CRLF into the
+# generated CHANGELOG.md and package.json files, which fails `pnpm format:check`
+# because Prettier defaults to `endOfLine: 'lf'`. With `* text=auto eol=lf`,
+# git detects text files and keeps them LF regardless of a contributor's
+# `core.autocrlf` setting.
+* text=auto eol=lf
