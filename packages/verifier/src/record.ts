@@ -7,6 +7,16 @@
 // locator and the live page returns different answers, the cassette stores
 // the second answer (last-write-wins). That mirrors FakePage, which has one
 // entry per key.
+//
+// Redaction: `setRedact(fn)` registers a scrubber that runs lazily at
+// `cassette()` time over effect call strings and string-valued query
+// results. Typically wired to `WorkflowContext.redact` so vault-resolved
+// secrets do not leak into a committed cassette. Query keys are
+// intentionally not redacted: FakePage computes lookup keys the same way
+// the recorder does, and scrubbing a key would cause the replay side's
+// still-raw key to miss. In practice secrets rarely appear in selector
+// strings; they land in `fill(...)` args (effects) or in response-derived
+// query values (string / string-array), both of which are covered.
 
 import type { Locator, Page } from '@sfysh/runtime';
 import {
@@ -28,6 +38,14 @@ export interface RecordOptions {
 export interface RecordingResult {
   page: Page;
   /**
+   * Register a redaction function. Applied lazily when `cassette()` is
+   * called, over every effect call string and every string-valued query
+   * result. Typically wired to `WorkflowContext.redact` so vault-resolved
+   * secrets do not leak into a committed cassette. If never called,
+   * `cassette()` returns raw strings.
+   */
+  setRedact(fn: (s: string) => string): void;
+  /**
    * Snapshot the current cassette. Call after the runner has finished.
    * Returned cassette is a new object each call; mutating it does not
    * disturb the recorder's internal state.
@@ -39,20 +57,51 @@ export function recordPage(live: Page, options: RecordOptions): RecordingResult 
   const queries: Record<string, CassetteValue> = {};
   const effects: CassetteEffect[] = [];
   const now = options.now ?? (() => new Date());
+  let redact: (s: string) => string = identity;
 
   const page = new RecordingPage(live, queries, effects);
 
   return {
     page,
+    setRedact(fn: (s: string) => string): void {
+      redact = fn;
+    },
     cassette: (): Cassette => ({
       version: CASSETTE_VERSION,
       workflowId: options.workflowId,
       workflowName: options.workflowName,
       recordedAt: now().toISOString(),
-      queries: { ...queries },
-      effects: effects.slice(),
+      queries: redactQueries(queries, redact),
+      effects: effects.map((e) => ({ call: redact(e.call) })),
     }),
   };
+}
+
+function identity(s: string): string {
+  return s;
+}
+
+function redactQueries(
+  source: Record<string, CassetteValue>,
+  redact: (s: string) => string,
+): Record<string, CassetteValue> {
+  const out: Record<string, CassetteValue> = {};
+  for (const [key, value] of Object.entries(source)) {
+    out[key] = redactValue(value, redact);
+  }
+  return out;
+}
+
+function redactValue(value: CassetteValue, redact: (s: string) => string): CassetteValue {
+  switch (value.kind) {
+    case 'string':
+      return { kind: 'string', value: redact(value.value) };
+    case 'string-array':
+      return { kind: 'string-array', value: value.value.map(redact) };
+    case 'boolean':
+    case 'number':
+      return value;
+  }
 }
 
 class RecordingPage implements Page {

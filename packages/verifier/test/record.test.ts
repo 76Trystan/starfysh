@@ -182,4 +182,143 @@ describe('recordPage', () => {
     const r = recordPage(stubPage(), meta);
     expect(r.cassette().version).toBe(CASSETTE_VERSION);
   });
+
+  describe('setRedact', () => {
+    // A minimal substring scrubber in the shape of WorkflowContext.redact:
+    // register a secret value under a name, replace occurrences with
+    // `[REDACTED:name]`. Longest-first so overlapping secrets scrub cleanly.
+    function redactor(secrets: Record<string, string>): (s: string) => string {
+      const entries = Object.entries(secrets).sort(([, a], [, b]) => b.length - a.length);
+      return (input) => {
+        let out = input;
+        for (const [name, value] of entries) {
+          if (value.length === 0) continue;
+          out = out.split(value).join(`[REDACTED:${name}]`);
+        }
+        return out;
+      };
+    }
+
+    it('default behaviour is identity: cassette strings are unchanged when setRedact is not called', async () => {
+      const r = recordPage(
+        stubPage({
+          locator: () => stubLocator({ fill: async () => {} }),
+        }),
+        meta,
+      );
+      await r.page.locator('#pw').fill('hunter2');
+      expect(r.cassette().effects.map((e) => e.call)).toEqual(['locator("#pw").fill("hunter2")']);
+    });
+
+    it('scrubs fill args in effects after setRedact is registered', async () => {
+      const r = recordPage(
+        stubPage({
+          locator: () => stubLocator({ fill: async () => {} }),
+        }),
+        meta,
+      );
+      r.setRedact(redactor({ pw: 'hunter2' }));
+      await r.page.locator('#pw').fill('hunter2');
+      expect(r.cassette().effects.map((e) => e.call)).toEqual([
+        'locator("#pw").fill("[REDACTED:pw]")',
+      ]);
+    });
+
+    it('applies lazily: setRedact after the recording still scrubs the already-captured effect', async () => {
+      const r = recordPage(
+        stubPage({
+          locator: () => stubLocator({ fill: async () => {} }),
+        }),
+        meta,
+      );
+      await r.page.locator('#pw').fill('hunter2');
+      r.setRedact(redactor({ pw: 'hunter2' }));
+      expect(r.cassette().effects.map((e) => e.call)).toEqual([
+        'locator("#pw").fill("[REDACTED:pw]")',
+      ]);
+    });
+
+    it('scrubs goto args that embed a secret', async () => {
+      const r = recordPage(stubPage({ goto: async () => {} }), meta);
+      r.setRedact(redactor({ token: 'abc123' }));
+      await r.page.goto('https://example.com/callback?token=abc123');
+      expect(r.cassette().effects[0]?.call).toBe(
+        'goto("https://example.com/callback?token=[REDACTED:token]")',
+      );
+    });
+
+    it('scrubs string query values (e.g. url() returning a URL with a session token)', () => {
+      const r = recordPage(stubPage({ url: () => 'https://example.com/?session=s3cr3t' }), meta);
+      r.setRedact(redactor({ session: 's3cr3t' }));
+      r.page.url();
+      expect(r.cassette().queries.url).toEqual({
+        kind: 'string',
+        value: 'https://example.com/?session=[REDACTED:session]',
+      });
+    });
+
+    it('scrubs each entry of string-array query values', async () => {
+      const r = recordPage(
+        stubPage({
+          locator: () => stubLocator({ allTextContents: async () => ['hunter2', 'visible'] }),
+        }),
+        meta,
+      );
+      r.setRedact(redactor({ pw: 'hunter2' }));
+      await r.page.locator('.items').allTextContents();
+      expect(r.cassette().queries['locator(".items").allTextContents']).toEqual({
+        kind: 'string-array',
+        value: ['[REDACTED:pw]', 'visible'],
+      });
+    });
+
+    it('does not redact query keys (FakePage replay must still match raw keys)', async () => {
+      const r = recordPage(
+        stubPage({
+          locator: () => stubLocator({ isVisible: async () => true }),
+        }),
+        meta,
+      );
+      r.setRedact(redactor({ pw: 'hunter2' }));
+      await r.page.locator('input[value="hunter2"]').isVisible();
+      // Key preserved verbatim; the replay-side callKey() matches it.
+      expect(r.cassette().queries).toHaveProperty(
+        'locator("input[value=\\"hunter2\\"]").isVisible',
+      );
+    });
+
+    it('leaves number and boolean query values untouched', async () => {
+      const r = recordPage(
+        stubPage({
+          locator: () =>
+            stubLocator({
+              isVisible: async () => true,
+              count: async () => 42,
+            }),
+        }),
+        meta,
+      );
+      r.setRedact(redactor({ pw: 'hunter2' }));
+      await r.page.locator('#a').isVisible();
+      await r.page.locator('#b').count();
+      expect(r.cassette().queries['locator("#a").isVisible']).toEqual({
+        kind: 'boolean',
+        value: true,
+      });
+      expect(r.cassette().queries['locator("#b").count']).toEqual({ kind: 'number', value: 42 });
+    });
+
+    it('subsequent setRedact calls replace the active function', async () => {
+      const r = recordPage(
+        stubPage({
+          locator: () => stubLocator({ fill: async () => {} }),
+        }),
+        meta,
+      );
+      r.setRedact(redactor({ first: 'wrong' }));
+      r.setRedact(redactor({ pw: 'hunter2' }));
+      await r.page.locator('#pw').fill('hunter2');
+      expect(r.cassette().effects[0]?.call).toBe('locator("#pw").fill("[REDACTED:pw]")');
+    });
+  });
 });

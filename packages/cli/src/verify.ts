@@ -116,10 +116,10 @@ export async function runVerifyCommand(opts: VerifyCommandOptions): Promise<Veri
       ...(tolerance ? { tolerance } : {}),
     });
   } else if (opts.record) {
-    const recorded = withRecordingFactory(backend.pageFactory, workflow);
+    const recorded = withRecording(backend.pageFactory, backend.runner, workflow);
     report = await replay(workflow, {
       pageFactory: recorded.factory,
-      runner: backend.runner,
+      runner: recorded.runner,
       ...(backend.dispose ? { dispose: backend.dispose } : {}),
       ...(opts.runs !== undefined ? { runs: opts.runs } : {}),
       ...(tolerance ? { tolerance } : {}),
@@ -262,14 +262,24 @@ async function loadBackend(backendPath: string): Promise<BackendModule> {
 }
 
 /**
- * Wrap a live pageFactory so every call records to a fresh cassette. The
- * `latest()` accessor returns the most recent replay's cassette, or null
- * if the factory was never called (replay with runs=0 would do that).
+ * Wrap a live pageFactory + runner pair so every replay records to a fresh
+ * cassette and secrets resolved through the workflow's vault are scrubbed
+ * before the cassette is serialised. The `latest()` accessor returns the
+ * most recent replay's cassette, or null if the factory was never called
+ * (replay with runs=0 would do that).
+ *
+ * The runner wrapper is the plumbing point for redaction: the recorder is
+ * built inside `factory()` before the verifier creates the `WorkflowContext`,
+ * so the context's `redact` function cannot be captured at recorder-build
+ * time. Wrapping the runner lets us register `ctx.redact` with the recorder
+ * once the context exists and before any workflow step runs (so before any
+ * `fill(secret)` lands in `effects`).
  */
-function withRecordingFactory(
+function withRecording(
   original: PageFactory,
+  originalRunner: RunnerFn,
   workflow: Workflow,
-): { factory: PageFactory; latest: () => Cassette | null } {
+): { factory: PageFactory; runner: RunnerFn; latest: () => Cassette | null } {
   let latest: RecordingResult | null = null;
   const factory: PageFactory = async () => {
     const live = await original();
@@ -279,8 +289,13 @@ function withRecordingFactory(
     });
     return latest.page;
   };
+  const runner: RunnerFn = async (ctx, wf) => {
+    if (latest) latest.setRedact(ctx.redact);
+    return originalRunner(ctx, wf);
+  };
   return {
     factory,
+    runner,
     latest: () => (latest ? latest.cassette() : null),
   };
 }
