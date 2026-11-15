@@ -11,11 +11,12 @@ const DEFAULT_MODEL = 'gpt-4o';
 const DEFAULT_MAX_TOKENS = 16_000;
 
 export class OpenAIProvider implements Provider {
-  readonly name = 'openai';
-  private readonly client: OpenAI;
-  private readonly model: string;
+  readonly name: string;
+  protected readonly client: OpenAI;
+  protected readonly model: string;
 
-  constructor(config: OpenAIConfig = {}) {
+  constructor(config: OpenAIConfig = {}, providerName = 'openai') {
+    this.name = providerName;
     this.model = config.model ?? DEFAULT_MODEL;
     this.client = new OpenAI({
       apiKey: config.apiKey,
@@ -47,48 +48,36 @@ export class OpenAIProvider implements Provider {
         model: response.model,
       };
     } catch (error) {
-      throw toProviderError(error);
+      throw toProviderError(error, this.name);
     }
   }
 }
 
-function toProviderError(error: unknown): ProviderError {
+function toProviderError(error: unknown, provider: string): ProviderError {
   if (error instanceof OpenAI.AuthenticationError) {
-    return new ProviderError(error.message, { code: 'auth', provider: 'openai', cause: error });
+    return new ProviderError(error.message, { code: 'auth', provider, cause: error });
   }
   if (error instanceof OpenAI.RateLimitError) {
-    return new ProviderError(error.message, {
-      code: 'rate_limit',
-      provider: 'openai',
-      cause: error,
-    });
+    return new ProviderError(error.message, { code: 'rate_limit', provider, cause: error });
   }
   if (error instanceof OpenAI.BadRequestError) {
     const code = classifyBadRequest(error.message);
-    return new ProviderError(error.message, { code, provider: 'openai', cause: error });
+    return new ProviderError(error.message, { code, provider, cause: error });
   }
   if (error instanceof OpenAI.NotFoundError) {
-    return new ProviderError(error.message, {
-      code: 'model_not_found',
-      provider: 'openai',
-      cause: error,
-    });
+    return new ProviderError(error.message, { code: 'model_not_found', provider, cause: error });
   }
   if (error instanceof OpenAI.APIConnectionError) {
-    return new ProviderError(error.message, {
-      code: 'network',
-      provider: 'openai',
-      cause: error,
-    });
+    return new ProviderError(error.message, { code: 'network', provider, cause: error });
   }
   if (error instanceof OpenAI.APIError) {
     const code: ProviderErrorCode =
       error.status !== undefined && error.status >= 500 ? 'server_error' : 'unknown';
-    return new ProviderError(error.message, { code, provider: 'openai', cause: error });
+    return new ProviderError(error.message, { code, provider, cause: error });
   }
 
   const message = error instanceof Error ? error.message : String(error);
-  return new ProviderError(message, { code: 'unknown', provider: 'openai', cause: error });
+  return new ProviderError(message, { code: 'unknown', provider, cause: error });
 }
 
 function classifyBadRequest(message: string): ProviderErrorCode {
