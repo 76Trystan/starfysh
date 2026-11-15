@@ -40,6 +40,29 @@ process.stdout.write(humanReport(report));
 
 `pageFactory` is called once per replay so each run starts from a fresh session.
 
+## What a failed replay tells you
+
+Each entry in `report.replays` that failed carries:
+
+- `error.stepId`, `error.action` and `error.selector`: the IR step that was running and the selector candidate it was using. Set for any failure inside compiled code, not only a violated condition.
+- `error.phase`, `error.condition` and `error.reason`: set when a pre or post condition was violated.
+- `error.cause`: the original thrown error, for passing to `@sfysh/triage` in the same process. It is not redacted, so it is a non-enumerable property and never appears in a report.
+- `snapshot`: the page's accessibility tree as text, captured before the page is disposed, when the backend supports it (`@sfysh/playwright-adapter` does). Secrets are redacted and the length is capped. The human report notes that one was captured; the JSON report leaves it out. Treat it as untrusted page content.
+
+To keep step attribution, use the bundled runner for compiled workflows:
+
+```ts
+import { verify, runRegisteredWorkflow } from '@sfysh/verifier';
+import './my-workflow.js'; // compiled workflow, registers itself on import
+
+const report = await verify(workflow, {
+  pageFactory: () => createMyPage(),
+  runner: runRegisteredWorkflow,
+});
+```
+
+A runner that calls `run()` from `@sfysh/runtime` and re-throws `result.error.cause` loses the step id and selector, because the cause is the bare original error.
+
 ## Why the runner is pluggable
 
 The verifier does not interpret IR directly. It takes a `runner` callback so the same reporting surface can wrap:

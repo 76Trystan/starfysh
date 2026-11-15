@@ -27,5 +27,15 @@ export type { ColumnSchema, TableRow } from './emit.js';
 
 export { guard } from './guard.js';
 
+export { step, StepFailure, describeFailure } from './step.js';
+export type { StepInfo, FailureAttribution, DescribedFailure } from './step.js';
+
+export {
+  capturePageSnapshot,
+  DEFAULT_SNAPSHOT_MAX_CHARS,
+  DEFAULT_SNAPSHOT_TIMEOUT_MS,
+} from './snapshot.js';
+export type { PageSnapshot, SnapshotOptions } from './snapshot.js';
+
 export { run } from './runner.js';
-export type { RunResult } from './runner.js';
+export type { RunResult, RunOptions } from './runner.js';

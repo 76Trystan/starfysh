@@ -2,6 +2,7 @@ import {
   AssertionError,
   ExtractionError,
   PostconditionViolation,
+  StepFailure,
   VaultSecretMissingError,
 } from '@sfysh/runtime';
 import type { ClassifyInput, ClassifyResult } from './types.js';
@@ -25,7 +26,11 @@ const NETWORK_MARKERS = [
  * alongside a passing-but-stale postcondition set still classifies as `site`.
  */
 export function classify(input: ClassifyInput): ClassifyResult {
-  const { error, postconditions, response } = input;
+  const { postconditions, response } = input;
+  // Generated code wraps step failures in a StepFailure carrier. run() and
+  // the verifier unwrap it, but a caller that executes a workflow function
+  // directly may pass the wrapper, so look through it here as well.
+  const error: unknown = input.error instanceof StepFailure ? input.error.cause : input.error;
 
   if (postconditions?.some((p) => p.status === 'violated')) {
     return { kind: 'site', reason: 'postcondition violated' };

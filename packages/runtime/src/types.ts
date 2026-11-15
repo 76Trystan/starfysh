@@ -38,4 +38,11 @@ export interface Page {
   getByText(value: string): Locator;
   getByLabel(value: string): Locator;
   waitForTimeout(millis: number): Promise<void>;
+  /**
+   * Return the page's accessibility tree as text. Optional: a backend that
+   * cannot produce one leaves it out, and failed runs then carry no
+   * snapshot. The runtime calls this only after a failure, to record what
+   * the page looked like. The result is untrusted page content.
+   */
+  snapshot?(): Promise<string>;
 }

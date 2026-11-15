@@ -146,6 +146,18 @@ class RecordingPage implements Page {
     await this.live.waitForTimeout(ms);
   }
 
+  // Recorded under the plain key "snapshot" as a string value, so it is
+  // scrubbed by the same redaction pass as every other string. Only called
+  // after a failure, so a cassette recorded from a passing run has no entry.
+  async snapshot(): Promise<string> {
+    if (typeof this.live.snapshot !== 'function') {
+      throw new Error('the recorded Page backend does not support snapshot()');
+    }
+    const value = await this.live.snapshot();
+    this.queries[callKey([], 'snapshot', [])] = { kind: 'string', value };
+    return value;
+  }
+
   locator(selector: string): Locator {
     return new RecordingLocator(this.live.locator(selector), this.queries, this.effects, [
       segment('locator', [selector]),

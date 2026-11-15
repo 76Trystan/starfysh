@@ -1,9 +1,10 @@
 // Starfysh-to-Playwright compatibility adapter.
 //
 // Playwright's Page and Locator types are structural supersets of Starfysh's
-// Page and Locator interfaces, so no wrapper logic is needed at runtime.
-// The adapter's job is to make the type relationship explicit and to give
-// Playwright users a clean import path.
+// Page and Locator interfaces for every action and query method, so those
+// calls pass straight through. The one thing Playwright's Page does not have
+// under Starfysh's name is `snapshot()`, which the runtime calls after a
+// failure to record the page's accessibility tree. `asPage` adds it.
 //
 // Usage in a Playwright test:
 //   import { asPage } from '@sfysh/playwright-adapter';
@@ -22,14 +23,48 @@ import type { Page as PlaywrightPage, Locator as PlaywrightLocator } from 'playw
 import type { Page, Locator, VaultResolver } from '@sfysh/runtime';
 import { createWorkflowContext, run } from '@sfysh/runtime';
 
+const wrapped = new WeakMap<object, Page>();
+
 /**
- * Cast a Playwright Page to Starfysh's Page interface. Playwright's Page is a
- * structural superset -- all Starfysh methods are present -- so this is safe
- * at runtime. The cast exists to satisfy TypeScript when the types are in
- * separate packages.
+ * Present a Playwright Page as Starfysh's Page interface.
+ *
+ * The result is a thin proxy over the Playwright page. Every existing
+ * method and property is forwarded to the real page unchanged, so the
+ * object still works anywhere a Playwright page does. The proxy adds one
+ * method, `snapshot()`, which returns the accessibility tree of the
+ * document body as text (Playwright's ARIA snapshot). The runtime calls it
+ * after a failed run so the failure report records what the page looked
+ * like.
+ *
+ * Calling `asPage` twice with the same page returns the same proxy. A page
+ * that already has a `snapshot` method is returned as is.
  */
 export function asPage(page: PlaywrightPage): Page {
-  return page as unknown as Page;
+  const existing = wrapped.get(page);
+  if (existing) return existing;
+  if (typeof (page as unknown as { snapshot?: unknown }).snapshot === 'function') {
+    return page as unknown as Page;
+  }
+
+  const snapshot = (): Promise<string> => page.locator('body').ariaSnapshot();
+  const proxy = new Proxy(page, {
+    get(target, prop) {
+      if (prop === 'snapshot') return snapshot;
+      // Read with the real page as receiver and bind methods to it.
+      // Playwright's objects keep internal state on the instance, and a
+      // method invoked with the proxy as `this` would not find it.
+      const value: unknown = Reflect.get(target, prop, target);
+      return typeof value === 'function'
+        ? (value as (...args: unknown[]) => unknown).bind(target)
+        : value;
+    },
+    has(target, prop) {
+      return prop === 'snapshot' || Reflect.has(target, prop);
+    },
+  }) as unknown as Page;
+
+  wrapped.set(page, proxy);
+  return proxy;
 }
 
 /**

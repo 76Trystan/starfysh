@@ -425,8 +425,8 @@ describe('compile: pre/post condition asserts (ADR 0011)', () => {
   it('emits an assertCondition call for each post condition on the reference workflow', async () => {
     const { source } = await compile(supplierPortal);
     // supplier-portal has two `post` conditions on step_06 (urlMatches and selectorVisible).
-    expect(source).toContain(
-      "await assertCondition(ctx, 'step_06_open_stock_report', 'post', { urlMatches: '/reports/stock' });",
+    expect(source).toMatch(
+      /assertCondition\(ctx, 'step_06_open_stock_report', 'post',[\s\n]*\{[\s\n]*urlMatches: '\/reports\/stock'/,
     );
     // The selectorVisible call is long enough that Prettier wraps it; assert on
     // the stable fragments the compiler must still emit.
