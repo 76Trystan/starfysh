@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
+import { createWorkflowContext } from '@sfysh/runtime';
 import type { Locator, Page } from '@sfysh/runtime';
 import {
   CASSETTE_VERSION,
+  CassetteError,
   fakePageFromCassette,
   recordPage,
   serialiseCassette,
@@ -272,7 +274,9 @@ describe('recordPage', () => {
       });
     });
 
-    it('does not redact query keys (FakePage replay must still match raw keys)', async () => {
+    it('refuses to produce a cassette when a query key contains a secret', async () => {
+      // Keys cannot be scrubbed (FakePage replay looks them up verbatim), so
+      // a secret inside a selector has no safe form on disk.
       const r = recordPage(
         stubPage({
           locator: () => stubLocator({ isVisible: async () => true }),
@@ -281,10 +285,58 @@ describe('recordPage', () => {
       );
       r.setRedact(redactor({ pw: 'hunter2' }));
       await r.page.locator('input[value="hunter2"]').isVisible();
-      // Key preserved verbatim; the replay-side callKey() matches it.
-      expect(r.cassette().queries).toHaveProperty(
-        'locator("input[value=\\"hunter2\\"]").isVisible',
+      expect(() => r.cassette()).toThrow(CassetteError);
+      expect(() => r.cassette()).toThrow(/contains a vault secret/);
+      try {
+        r.cassette();
+      } catch (err) {
+        expect((err as Error).message).not.toContain('hunter2');
+        expect((err as Error).message).toContain('[REDACTED:pw]');
+      }
+    });
+
+    it('leaves keys verbatim when they contain no secret', async () => {
+      const r = recordPage(
+        stubPage({
+          locator: () => stubLocator({ isVisible: async () => true }),
+        }),
+        meta,
       );
+      r.setRedact(redactor({ pw: 'hunter2' }));
+      await r.page.locator('input[name="password"]').isVisible();
+      expect(r.cassette().queries).toHaveProperty(
+        'locator("input[name=\\"password\\"]").isVisible',
+      );
+    });
+
+    it('scrubs a secret that needs JSON escaping when wired to a real WorkflowContext', async () => {
+      const secret = 'pa"ss\\word';
+      const r = recordPage(
+        stubPage({
+          url: () => `https://example.com/?token=${encodeURIComponent(secret)}`,
+          getByLabel: () => stubLocator({ fill: async () => {} }),
+        }),
+        meta,
+      );
+      const ctx = createWorkflowContext({
+        page: r.page,
+        vaultResolver: { resolve: () => secret },
+      });
+      r.setRedact(ctx.redact);
+      await ctx.page.getByLabel('Password').fill(ctx.vault('portal_pass'));
+      ctx.page.url();
+
+      const cassette = r.cassette();
+      expect(cassette.effects[0]?.call).toBe(
+        'getByLabel("Password").fill("[REDACTED:portal_pass]")',
+      );
+      expect(cassette.queries['url']).toEqual({
+        kind: 'string',
+        value: 'https://example.com/?token=[REDACTED:portal_pass]',
+      });
+      const onDisk = serialiseCassette(cassette);
+      // No form of the secret (raw, JSON-escaped, percent-encoded) survives.
+      expect(onDisk).not.toMatch(/pa.{0,6}ss.{0,6}word/);
     });
 
     it('leaves number and boolean query values untouched', async () => {

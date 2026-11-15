@@ -59,4 +59,40 @@ describe('wrapWorkflowForTest', () => {
 
     await expect(calls[0]!.fn({ page: stubPage })).rejects.toThrow('step broke');
   });
+
+  it('throws a redacted error, never the raw cause', async () => {
+    const calls: Array<{ title: string; fn: (f: { page: PlaywrightPage }) => Promise<void> }> = [];
+    const mockTest: PlaywrightTestFn = (title, fn) => calls.push({ title, fn });
+
+    class TimeoutError extends Error {
+      constructor(message: string) {
+        super(message);
+        this.name = 'TimeoutError';
+      }
+    }
+    const raw = new TimeoutError(
+      'locator.fill: Timeout 30000ms exceeded.\n  - fill("hunter2-secret")',
+    );
+
+    workflow('wrap-secret', async (ctx) => {
+      ctx.vault('portal_pass');
+      throw raw;
+    });
+    wrapWorkflowForTest(mockTest, 'wrap-secret', {
+      vaultResolver: { resolve: () => 'hunter2-secret' },
+    });
+
+    const thrown = await calls[0]!.fn({ page: stubPage }).then(
+      () => undefined,
+      (err: unknown) => err as Error,
+    );
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect(thrown).not.toBe(raw);
+    expect(thrown?.name).toBe('TimeoutError');
+    expect(thrown?.message).toContain('fill("[REDACTED:portal_pass]")');
+    expect(thrown?.message).not.toContain('hunter2-secret');
+    expect(thrown?.stack).not.toContain('hunter2-secret');
+    expect((thrown as { cause?: unknown }).cause).toBeUndefined();
+  });
 });

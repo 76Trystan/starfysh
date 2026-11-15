@@ -8,7 +8,7 @@ export { workflow, getWorkflow, listWorkflows, resetWorkflows } from './workflow
 export type { WorkflowFn } from './workflow.js';
 export { WorkflowIdCollisionError } from './workflow.js';
 
-export { createWorkflowContext } from './context.js';
+export { createWorkflowContext, MIN_REDACTABLE_SECRET_LENGTH } from './context.js';
 export type { WorkflowContext, WorkflowContextInit, EmitSink } from './context.js';
 
 export { asSecret } from './secret.js';

@@ -432,7 +432,11 @@ test('login to dashboard', async ({ page }) => {
         url: 'https://app.example.com/login',
       });
       expect(wf.steps[1]).toMatchObject({ action: 'fill', value: 'user@example.com' });
-      expect(wf.steps[2]).toMatchObject({ action: 'fill', value: 'secret123' });
+      // The literal password is lifted into a vault reference; it must not
+      // appear anywhere in the IR.
+      expect(wf.steps[2]).toMatchObject({ action: 'fill', value: { secret: 'password' } });
+      expect(wf.secrets).toEqual(['password']);
+      expect(JSON.stringify(wf)).not.toContain('secret123');
       expect(wf.steps[3]).toMatchObject({
         action: 'click',
         target: { candidates: [{ kind: 'role', value: "button[name='Sign in']" }] },

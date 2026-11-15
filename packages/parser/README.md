@@ -7,7 +7,7 @@ Parser that reads hand-written Playwright TypeScript scripts and lifts them into
 ```ts
 import { parse } from '@sfysh/parser';
 
-const { workflow, unsupported } = parse(source);
+const { workflow, unsupported, warnings } = parse(source);
 ```
 
 Given a Playwright script like:
@@ -26,6 +26,8 @@ test('submit a report', async ({ page }) => {
 
 - `workflow` is a `Workflow` that validates against `@sfysh/ir`'s schema, built from the first `test()` call in the source. Each recognised Playwright action becomes one IR step with ranked selector candidates (role based first, then test-id, then CSS), and recognised `expect()` assertions become postconditions on the preceding step (or standalone assert steps when nothing precedes them).
 - `unsupported` lists every call the parser recognised syntactically but could not map into the IR, so nothing is dropped silently. Two shapes land here: `page.<method>()` chains whose terminal method is outside the supported set (for example `hover` or `screenshot`), and `expect()` chains whose matcher, subject, or argument could not be translated (for example `toHaveCount`, or `toHaveURL` with a regex argument). Each entry carries the terminal `method` name, the 1-based source `position`, and the raw call `text`.
+
+- `warnings` lists literal values the author should review. A literal typed into a field that looks like a credential (a label or selector containing `password`, `token`, `secret`, `otp`, `pin`, `api key` and similar) is never copied into the IR. The parser replaces it with a vault reference such as `{ secret: 'password' }`, declares the name in `workflow.secrets`, and adds a `literal-secret` warning. You then supply the value through the vault at run time. Every other literal `fill` value is kept and reported as a `literal-fill` warning, in case the field is sensitive and the parser did not recognise it. Warnings carry the step id and source position, never the literal value.
 
 `parse` throws `ParseError` when the source contains no `test()` calls or no recognisable actions at all.
 

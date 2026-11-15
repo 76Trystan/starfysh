@@ -22,7 +22,7 @@ import './workflows/my-workflow.js'; // registers the workflow as a side effect
 wrapWorkflowForTest(test, 'my-workflow');
 ```
 
-`wrapWorkflowForTest` registers a Playwright test that runs the named workflow against Playwright's `page` fixture. If the workflow fails, the test fails with the original error.
+`wrapWorkflowForTest` registers a Playwright test that runs the named workflow against Playwright's `page` fixture. If the workflow fails, the test fails with an error that keeps the original name, message, and stack, with any vault secrets replaced by `[REDACTED:<name>]`. The raw error is not re-thrown, because Playwright quotes filled values in its call log and that text would otherwise reach the test reporter and CI logs.
 
 You can override the test title:
 

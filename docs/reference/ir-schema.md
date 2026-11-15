@@ -231,6 +231,20 @@ if (isWorkflow(json)) {
 
 `validateWorkflow` returns `{ valid: boolean; errors?: ErrorObject[] }`. `isWorkflow` is a plain TypeScript type guard.
 
+### Rules the validator enforces beyond the schema
+
+The validators are stricter than the JSON Schema files. A document can pass a plain JSON Schema check against `workflow.schema.json` and still be rejected by `validateWorkflow`. Three rules apply, and each failure is reported with its own `keyword`:
+
+| Rule | `keyword` | Why |
+| --- | --- | --- |
+| `name`, `description`, and every step `intent` must not contain control characters (U+0000 to U+001F, and U+007F). That covers line breaks and tabs. | `controlCharacter` | The compiler writes these fields into `//` comments. A line break would end the comment and turn the rest of the text into code. |
+| Step ids must be unique across the whole workflow, including steps nested in `guard` and `loop` bodies. | `uniqueStepId` | Patches and diffs address a step by its id. A duplicate makes that address ambiguous. |
+| Every `{ "secret": name }` must be listed in the workflow's `secrets`, and every `{ "param": name }` must be a key of `parameters`. | `undeclaredSecret`, `undeclaredParam` | A workflow should not be able to read a secret it never declared. |
+
+`validateStep` applies the first two rules to the step it is given (and anything nested inside it). It cannot check declarations, because those live on the workflow.
+
+The control-character rule moves into the schema files with the next minor IR version. Until then, use `validateWorkflow` as the source of truth, not a standalone schema validator.
+
 ---
 
 ## Versioning

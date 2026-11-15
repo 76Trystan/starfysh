@@ -7,7 +7,13 @@ export interface RunResult {
   status: 'ok' | 'failed';
   durationMs: number;
   error?: {
+    /** Error message with registered secrets redacted. Safe to log. */
     message: string;
+    /**
+     * The raw thrown value, for triage. Sensitive: it is not redacted and
+     * may contain secret values. The property is non-enumerable, so
+     * `JSON.stringify` and object spread skip it. Do not log it.
+     */
     cause: unknown;
     /**
      * Step id attributed to the failure. Populated when the thrown error
@@ -48,15 +54,20 @@ export async function run(id: string, ctx: WorkflowContext): Promise<RunResult> 
     const rawMessage = err instanceof Error ? err.message : String(err);
     const attribution =
       err instanceof PostconditionViolation ? { stepId: err.stepId, phase: err.phase } : {};
+    const error = {
+      message: ctx.redact(rawMessage),
+      ...attribution,
+    } as NonNullable<RunResult['error']>;
+    // `cause` is the raw thrown value and can contain secrets (a browser
+    // backend may quote a filled value in its error text). Triage needs it,
+    // so it stays reachable, but it is non-enumerable so that serialising or
+    // spreading a RunResult cannot carry it into a log or a report.
+    Object.defineProperty(error, 'cause', { value: err, enumerable: false });
     return {
       workflowId: id,
       status: 'failed',
       durationMs: Date.now() - start,
-      error: {
-        message: ctx.redact(rawMessage),
-        cause: err,
-        ...attribution,
-      },
+      error,
     };
   }
 }

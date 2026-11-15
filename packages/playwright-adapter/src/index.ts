@@ -54,8 +54,8 @@ export type PlaywrightTestFn = (
  * Register a Starfysh workflow as a Playwright test. Pass the `test` object
  * from @playwright/test and the workflow id; the helper constructs a per-run
  * WorkflowContext from Playwright's page fixture, executes the workflow, and
- * re-throws any failure so the test is marked failed with the original
- * error.
+ * throws on failure so the test is marked failed. The thrown error keeps
+ * the original name, message, and stack, with vault secrets redacted.
  *
  * Usage:
  *   import { test } from '@playwright/test';
@@ -76,8 +76,17 @@ export function wrapWorkflowForTest(
     });
     const result = await run(workflowId, ctx);
     if (result.status === 'failed') {
+      // Throw a fresh error built from the redacted message. Re-throwing the
+      // original would hand its unredacted message and stack to the test
+      // reporter, and from there to CI logs. Playwright quotes filled values
+      // in its call log, so that text can contain a vault secret.
       const cause = result.error?.cause;
-      throw cause instanceof Error ? cause : new Error(result.error?.message ?? 'Workflow failed');
+      const failure = new Error(result.error?.message ?? 'Workflow failed');
+      if (cause instanceof Error) {
+        failure.name = cause.name;
+        if (cause.stack) failure.stack = ctx.redact(cause.stack);
+      }
+      throw failure;
     }
   });
 }

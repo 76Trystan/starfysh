@@ -32,7 +32,16 @@ export async function compile(workflow: Workflow): Promise<CompileResult> {
 
   const templater = createTemplater();
   const unformatted = templater.renderWorkflow(workflow);
-  const source = await formatTypeScript(unformatted);
+  let source: string;
+  try {
+    source = await formatTypeScript(unformatted);
+  } catch (err) {
+    // The formatter doubles as a syntax check on the rendered file. A
+    // failure here means a template produced invalid TypeScript, which is a
+    // compiler fault the caller should be able to catch by type.
+    const message = err instanceof Error ? err.message : String(err);
+    throw new CompilerError(`Generated code failed to parse: ${message}`);
+  }
   return { source, workflowId: workflow.id };
 }
 

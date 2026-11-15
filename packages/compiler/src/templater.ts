@@ -21,7 +21,7 @@ export function createTemplater(): Templater {
   hb.registerPartial('renderStep', (context: Step) => {
     return self!.renderStep(context);
   });
-  hb.registerHelper('jsonLiteral', (value: unknown) => new hb.SafeString(JSON.stringify(value)));
+  hb.registerHelper('jsonLiteral', (value: unknown) => new hb.SafeString(jsLiteral(value)));
 
   const entries = Object.entries(STEP_TEMPLATES) as Array<[Step['action'], string]>;
   const stepTemplates = Object.fromEntries(
@@ -83,7 +83,7 @@ function renderConditionAsserts(
   return conditions
     .map(
       (c) =>
-        `await assertCondition(ctx, ${JSON.stringify(stepId)}, ${JSON.stringify(phase)}, ${JSON.stringify(c)});`,
+        `await assertCondition(ctx, ${JSON.stringify(stepId)}, ${JSON.stringify(phase)}, ${jsLiteral(c)});`,
     )
     .join('\n');
 }
@@ -110,15 +110,41 @@ function containsConditionAsserts(steps: readonly Step[]): boolean {
 /**
  * Decide which fields to pull off the WorkflowContext at the top of the
  * generated function. `page` is always present (every workflow uses it);
- * `vault` is included only when the workflow declares secrets; `emit` only
+ * `vault` is included when the workflow declares secrets or any step reads
+ * one; `emit` only
  * when the workflow contains an `extract` step (which is the only step
  * template that calls through the emit sink).
  */
 function computeContextDestructure(workflow: Workflow): string[] {
   const fields = ['page'];
-  if ((workflow.secrets ?? []).length > 0) fields.push('vault');
+  if ((workflow.secrets ?? []).length > 0 || containsSecretValue(workflow.steps)) {
+    fields.push('vault');
+  }
   if (containsExtract(workflow.steps)) fields.push('emit');
   return fields;
+}
+
+/**
+ * True when any step, at any depth, takes its `url` or `value` from a vault
+ * secret. Validation already requires such secrets to be declared, so this
+ * is a second line of defence: generated code never calls `vault()` without
+ * having it in scope.
+ */
+function containsSecretValue(steps: readonly Step[]): boolean {
+  for (const step of steps) {
+    const { url, value } = step as { url?: unknown; value?: unknown };
+    for (const source of [url, value]) {
+      if (typeof source === 'object' && source !== null && 'secret' in source) return true;
+    }
+    if (step.action === 'guard') {
+      if (containsSecretValue(step.then)) return true;
+      if (step.else && containsSecretValue(step.else)) return true;
+    }
+    if (step.action === 'loop') {
+      if (containsSecretValue(step.do)) return true;
+    }
+  }
+  return false;
 }
 
 function containsExtract(steps: readonly Step[]): boolean {
@@ -232,7 +258,12 @@ function renderValueSource(value: ValueSource): string {
     return `vault(${quote(value.secret)})`;
   }
   if ('param' in value) {
-    return `params.${value.param}`;
+    // The runtime context does not carry workflow parameters yet, so there
+    // is nothing correct to emit. Failing here beats generating a script
+    // that throws a ReferenceError on its first run.
+    throw new CompilerError(
+      `Parameter reference '${value.param}' cannot be compiled: workflow parameters are not supported by the runtime yet`,
+    );
   }
   throw new CompilerError('ValueSource must be a string, {param}, or {secret}');
 }
@@ -273,6 +304,7 @@ function buildStepContext(step: Step): Record<string, unknown> {
   const isListExtract = step.action === 'extract' && schema?.type === 'array';
   return {
     ...step,
+    intent: commentText((step as { intent?: string }).intent ?? ''),
     isNavigate: step.action === 'navigate',
     isClick: step.action === 'click',
     isFill: step.action === 'fill',
@@ -287,8 +319,41 @@ function buildStepContext(step: Step): Record<string, unknown> {
   };
 }
 
+// Built with the RegExp constructor so this source file never contains a
+// raw line separator character.
+const LINE_SEPARATOR = new RegExp('\\u2028', 'g');
+const PARAGRAPH_SEPARATOR = new RegExp('\\u2029', 'g');
+const COMMENT_UNSAFE = new RegExp('[\\u0000-\\u001f\\u007f\\u0085\\u2028\\u2029]+', 'g');
+
+/**
+ * Render any JSON-compatible value as a TypeScript literal. `JSON.stringify`
+ * escapes quotes, backslashes, and every control character, so no string
+ * inside the value can end its literal early. U+2028 and U+2029 are escaped
+ * as well: they are legal inside a string literal but count as line breaks
+ * elsewhere, and escaping them keeps the generated file free of raw line
+ * separators. The formatter rewrites the double quotes to the pinned
+ * single-quote style.
+ */
+function jsLiteral(value: unknown): string {
+  return JSON.stringify(value)
+    .replace(LINE_SEPARATOR, '\\u2028')
+    .replace(PARAGRAPH_SEPARATOR, '\\u2029');
+}
+
+/** Render a string as a TypeScript string literal. See `jsLiteral`. */
 function quote(s: string): string {
-  return `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+  return jsLiteral(s);
+}
+
+/**
+ * Make free text safe to place after `//`. A line break of any kind would
+ * end the comment and turn the rest of the text into code, so every control
+ * character and Unicode line separator becomes a single space. The IR
+ * validator already rejects most of these; the compiler does not rely on
+ * that, because the comment is the last point where the text can do harm.
+ */
+function commentText(s: string): string {
+  return s.replace(COMMENT_UNSAFE, ' ');
 }
 
 function indentLines(source: string, indent: string): string {
@@ -358,7 +423,7 @@ const WORKFLOW_TEMPLATE = (tpl: {
   const runtimeImports = ['workflow', 'assert', 'poll'];
   if (tpl.needsAssertCondition) runtimeImports.push('assertCondition');
   return `// GENERATED by @sfysh/compiler v${tpl.compilerVersion} from workflow ${tpl.workflowId}
-// Intent: ${tpl.workflowName}${tpl.description ? '\n// Description: ' + tpl.description : ''}
+// Intent: ${commentText(tpl.workflowName)}${tpl.description ? '\n// Description: ' + commentText(tpl.description) : ''}
 //
 // Do not edit by hand. Changes should be made in the IR workflow source
 // and re-compiled.

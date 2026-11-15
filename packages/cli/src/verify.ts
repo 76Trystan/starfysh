@@ -125,7 +125,13 @@ export async function runVerifyCommand(opts: VerifyCommandOptions): Promise<Veri
       ...(tolerance ? { tolerance } : {}),
       ...(backend.vaultResolver ? { vaultResolver: backend.vaultResolver } : {}),
     });
-    const cassette = recorded.latest();
+    let cassette: Cassette | null;
+    try {
+      cassette = recorded.latest();
+    } catch (err) {
+      if (err instanceof CassetteError) throw new VerifyLoadError(err.message);
+      throw err;
+    }
     if (cassette) {
       writeFileSync(opts.record, serialiseCassette(cassette), 'utf8');
       recordedTo = opts.record;
