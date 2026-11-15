@@ -63,15 +63,49 @@ const report = await verify(workflow, {
 
 A runner that calls `run()` from `@sfysh/runtime` and re-throws `result.error.cause` loses the step id and selector, because the cause is the bare original error.
 
+## Verifying straight from the IR
+
+You do not have to compile a workflow to verify it. The bundled interpreter executes the IR's steps directly:
+
+```ts
+import { verify, interpretWorkflow } from '@sfysh/verifier';
+
+const report = await verify(workflow, {
+  pageFactory: () => createMyPage(),
+  runner: interpretWorkflow,
+});
+```
+
+This is the quickest way to check a workflow you have just edited: no generated file, no loader, and two versions of the same workflow id can run one after the other.
+
+`createInterpreter(options)` builds a runner with options:
+
+| Option       | What it does                                                                                                                                                              |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `candidates` | `'first'` (default) uses each step's first selector candidate, as generated code does. `'fallthrough'` retries a failed `click` or `fill` with the next ranked candidate. |
+| `params`     | Values for `{ param }` references, keyed by parameter name.                                                                                                               |
+| `onStep`     | Called as each step finishes with `{ stepId, action, status, durationMs, selector, candidateIndex, iterations }`.                                                         |
+
+Under `'fallthrough'`, a run that passes with `candidateIndex` above 0 means the primary selector is broken. The compiled workflow only uses the first candidate and would fail, so treat that result as a prompt to fix the selector order, not as a pass.
+
+The interpreter and generated code are kept in step by a test that runs both against the same scripted page and compares every page call. They differ in four deliberate ways. The interpreter:
+
+- enforces `maxIterations` on loops (default 100) and `timeoutMs` on steps, failing with `LoopLimitError` or `StepTimeoutError`;
+- evaluates conditions in `guard`, `wait`, `assert` and `loop.while` with the same evaluator as pre and post checks, so `urlMatches` accepts a substring there as well as a regex;
+- leaves outputs in the context for the caller to drain, where generated code flushes them;
+- accepts `{ param }` values, which the compiler does not support yet.
+
+Generated code is still what ships and what runs on a schedule. If a workflow passes under the interpreter, run the compiled version once before relying on it.
+
 ## Why the runner is pluggable
 
-The verifier does not interpret IR directly. It takes a `runner` callback so the same reporting surface can wrap:
+The verifier takes a `runner` callback so the same reporting surface can wrap:
 
-- the runtime `run()` call against compiled Starfysh scripts,
-- a Playwright test wrapped by `@sfysh/playwright-adapter`,
-- a future IR interpreter introduced by the healer.
+- `interpretWorkflow`, the bundled IR interpreter,
+- `runRegisteredWorkflow`, which executes a compiled workflow registered with the runtime,
+- any function of your own, for example one that drives a hand-written workflow.
 
-Keeping execution behind a callback stops the verifier from accreting a second workflow executor that would drift from the runtime.
+Keeping execution behind a callback means the replay loop, the stability check and the reporters do not care how a workflow is executed.
 
 ## Dependencies
 

@@ -4,6 +4,8 @@
 
 export * from './types.js';
 export * from './validate.js';
+export { parseRoleSelector } from './selectors.js';
+export type { RoleSelector } from './selectors.js';
 
 /**
  * Semantic version of the IR schema this package publishes.

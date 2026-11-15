@@ -9,6 +9,16 @@ export { replay, replayFromCassette, runRegisteredWorkflow } from './replay.js';
 export { replay as verify } from './replay.js';
 export type { ReplayFromCassetteOptions } from './replay.js';
 
+export {
+  createInterpreter,
+  interpretWorkflow,
+  InterpreterError,
+  LoopLimitError,
+  StepTimeoutError,
+  DEFAULT_MAX_ITERATIONS,
+} from './interpreter.js';
+export type { InterpreterOptions, StepTrace } from './interpreter.js';
+
 export { evaluateCondition, evaluateConditions } from './postconditions.js';
 export { compareOutputs } from './stability.js';
 

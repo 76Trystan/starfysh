@@ -5,6 +5,7 @@
 // is a compile error, not silently skipped.
 
 import Handlebars from 'handlebars';
+import { parseRoleSelector } from '@sfysh/ir';
 import type { Step, Target, SelectorCandidate, ValueSource, Condition, Workflow } from '@sfysh/ir';
 import { COMPILER_VERSION } from './version.js';
 
@@ -261,32 +262,14 @@ function renderSelector(sel: SelectorCandidate): string {
  * present.
  */
 function renderRoleSelector(value: string): string {
-  const match = value.match(/^([a-z]+)(?:\[(.+)\])?$/i);
-  if (!match) {
-    return `page.getByRole(${quote(value)})`;
+  // The format is parsed in @sfysh/ir so the interpreter reads it the same way.
+  const { role, options } = parseRoleSelector(value);
+  const entries = Object.entries(options);
+  if (entries.length === 0) {
+    return `page.getByRole(${quote(role)})`;
   }
-  const [, role, attrs] = match;
-  if (!attrs) {
-    return `page.getByRole(${quote(role!)})`;
-  }
-  const parsedOptions = parseRoleAttrs(attrs);
-  if (Object.keys(parsedOptions).length === 0) {
-    return `page.getByRole(${quote(role!)})`;
-  }
-  const optionLiteral = `{ ${Object.entries(parsedOptions)
-    .map(([k, v]) => `${k}: ${quote(v)}`)
-    .join(', ')} }`;
-  return `page.getByRole(${quote(role!)}, ${optionLiteral})`;
-}
-
-function parseRoleAttrs(attrs: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  const re = /(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(attrs)) !== null) {
-    out[m[1]!] = m[2] ?? m[3] ?? '';
-  }
-  return out;
+  const optionLiteral = `{ ${entries.map(([k, v]) => `${k}: ${quote(v)}`).join(', ')} }`;
+  return `page.getByRole(${quote(role)}, ${optionLiteral})`;
 }
 
 function renderValueSource(value: ValueSource): string {
