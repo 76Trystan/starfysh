@@ -27,7 +27,10 @@ export interface Locator {
  * implementation.
  */
 export interface Page {
-  goto(url: string, options?: { waitUntil?: string }): Promise<void>;
+  goto(
+    url: string,
+    options?: { waitUntil?: 'load' | 'domcontentloaded' | 'networkidle' },
+  ): Promise<void>;
   url(): string;
   locator(selector: string): Locator;
   getByRole(role: string, options?: Record<string, unknown>): Locator;

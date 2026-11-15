@@ -44,7 +44,8 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "gen:version": "node scripts/gen-version.mjs",
+    "build": "node scripts/gen-version.mjs && tsc -p tsconfig.json",
     "prepublishOnly": "npm run build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

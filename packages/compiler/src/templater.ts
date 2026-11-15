@@ -6,6 +6,7 @@
 
 import Handlebars from 'handlebars';
 import type { Step, Target, SelectorCandidate, ValueSource, Condition, Workflow } from '@sfysh/ir';
+import { COMPILER_VERSION } from './version.js';
 
 /**
  * Create a fresh Handlebars instance with helpers and templates registered.
@@ -15,8 +16,20 @@ import type { Step, Target, SelectorCandidate, ValueSource, Condition, Workflow 
 export function createTemplater(): Templater {
   const hb = Handlebars.create();
   registerHelpers(hb);
-  const stepTemplates = compileStepTemplates(hb);
-  return new Templater(hb, stepTemplates);
+
+  let self: Templater | null = null;
+  hb.registerPartial('renderStep', (context: Step) => {
+    return self!.renderStep(context);
+  });
+  hb.registerHelper('jsonLiteral', (value: unknown) => new hb.SafeString(JSON.stringify(value)));
+
+  const entries = Object.entries(STEP_TEMPLATES) as Array<[Step['action'], string]>;
+  const stepTemplates = Object.fromEntries(
+    entries.map(([action, source]) => [action, hb.compile(source, { noEscape: true })]),
+  ) as Record<Step['action'], HandlebarsTemplateDelegate>;
+
+  self = new Templater(hb, stepTemplates);
+  return self;
 }
 
 export class Templater {
@@ -122,7 +135,7 @@ function containsExtract(steps: readonly Step[]): boolean {
   return false;
 }
 
-const COMPILER_HEADER_VERSION = '0.0.0';
+const COMPILER_HEADER_VERSION = COMPILER_VERSION;
 
 /**
  * Error thrown for compilation failures: unknown step kinds, missing
@@ -246,7 +259,9 @@ function renderCondition(cond: Condition): string {
     return `(await page.getByText(${quote(cond.textPresent)}).count()) > 0`;
   }
   if ('responseStatus' in cond) {
-    return `/* responseStatus check: ${cond.responseStatus}, not yet implemented */ true`;
+    throw new CompilerError(
+      `responseStatus condition (${cond.responseStatus}) is not supported until Phase 2 response tracking is wired`,
+    );
   }
   throw new CompilerError('Unknown Condition shape');
 }
@@ -322,23 +337,6 @@ if ({{{cond if}}}) {
 {{/each}}
 }{{/if}}`,
 };
-
-function compileStepTemplates(
-  hb: typeof Handlebars,
-): Record<Step['action'], HandlebarsTemplateDelegate> {
-  // Register renderStep as a partial so nested steps (guard, loop) can recurse.
-  hb.registerPartial('renderStep', (context: Step) => {
-    // Delegate recursion by re-creating a templater; cheap for v1.
-    return createTemplater().renderStep(context);
-  });
-
-  hb.registerHelper('jsonLiteral', (value: unknown) => new hb.SafeString(JSON.stringify(value)));
-
-  const entries = Object.entries(STEP_TEMPLATES) as Array<[Step['action'], string]>;
-  return Object.fromEntries(
-    entries.map(([action, source]) => [action, hb.compile(source, { noEscape: true })]),
-  ) as Record<Step['action'], HandlebarsTemplateDelegate>;
-}
 
 const WORKFLOW_TEMPLATE = (tpl: {
   workflowId: string;

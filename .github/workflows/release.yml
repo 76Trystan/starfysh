@@ -5,7 +5,6 @@
 #     Settings -> Trusted Publishers -> add this repository (76Trystan/starfysh),
 #     workflow (.github/workflows/release.yml), environment (none).
 #   Until every published package is configured, this workflow will fail with 404/EOIDC on publish.
-#   See docs/planning/Blockers.md for the history of why this replaced NPM_TOKEN auth.
 #
 # After configuration, every merge of a "Version Packages" PR auto-publishes with
 # build provenance attached, no secrets stored in the repo.

@@ -13,5 +13,4 @@
 export { compile, compileUnknown, type CompileResult } from './compile.js';
 export { createTemplater, CompilerError, Templater } from './templater.js';
 export { formatTypeScript } from './format.js';
-
-export const COMPILER_VERSION = '0.0.0';
+export { COMPILER_VERSION } from './version.js';

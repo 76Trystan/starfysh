@@ -111,7 +111,10 @@ class RecordingPage implements Page {
     private readonly effects: CassetteEffect[],
   ) {}
 
-  async goto(url: string, options?: { waitUntil?: string }): Promise<void> {
+  async goto(
+    url: string,
+    options?: { waitUntil?: 'load' | 'domcontentloaded' | 'networkidle' },
+  ): Promise<void> {
     const args: unknown[] = options === undefined ? [url] : [url, options];
     this.effects.push({ call: callKey([], 'goto', args) });
     await this.live.goto(url, options);
