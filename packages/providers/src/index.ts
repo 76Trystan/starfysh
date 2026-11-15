@@ -10,3 +10,4 @@ export type {
 export { ProviderError } from './types.js';
 
 export { AnthropicProvider, type AnthropicConfig } from './anthropic.js';
+export { OpenAIProvider, type OpenAIConfig } from './openai.js';
