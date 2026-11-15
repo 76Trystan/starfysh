@@ -40,6 +40,13 @@ class FakePage implements Page {
     // no-op in dry-run; the point of a cassette is determinism, not timing
   }
 
+  // Returns the snapshot recorded with the cassette. Throws CassetteMissError
+  // when the recording has none (it was taken from a passing run); the
+  // runtime snapshot capture treats that as "no snapshot available".
+  async snapshot(): Promise<string> {
+    return readString(this.cassette, callKey([], 'snapshot', []));
+  }
+
   locator(selector: string): Locator {
     return new FakeLocator(this.cassette, [segment('locator', [selector])]);
   }

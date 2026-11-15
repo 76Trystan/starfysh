@@ -5,4 +5,5 @@ export type {
   FailureKind,
   PostconditionResult,
   TriageResponse,
+  TriageRule,
 } from './types.js';

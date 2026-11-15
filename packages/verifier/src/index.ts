@@ -5,9 +5,19 @@
 // and healer dev loops, workflows can also be replayed against a cassette
 // recorded from an earlier live run.
 
-export { replay, replayFromCassette } from './replay.js';
+export { replay, replayFromCassette, runRegisteredWorkflow, RunTimeoutError } from './replay.js';
 export { replay as verify } from './replay.js';
 export type { ReplayFromCassetteOptions } from './replay.js';
+
+export {
+  createInterpreter,
+  interpretWorkflow,
+  InterpreterError,
+  LoopLimitError,
+  StepTimeoutError,
+  DEFAULT_MAX_ITERATIONS,
+} from './interpreter.js';
+export type { InterpreterOptions, StepTrace } from './interpreter.js';
 
 export { evaluateCondition, evaluateConditions } from './postconditions.js';
 export { compareOutputs } from './stability.js';

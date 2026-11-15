@@ -78,6 +78,19 @@ Pull structured data out of the page into a typed shape.
 | `schema` | `object` | yes | JSON Schema fragment the extracted value must conform to. The verifier uses this for stability checks. |
 | `bind` | `string` | no | Variable name to bind the result to for use by later steps or as workflow output. |
 
+The `schema` decides how the page is read. The compiler and the interpreter share one rule (`planExtract` in `@sfysh/ir`):
+
+| Schema | Read | Value |
+|---|---|---|
+| `{ "type": "string" }` | Text of the first matched element | `string` or `null` |
+| `{ "type": "array" }`, or with `"items": { "type": "string" }` | Text of every matched element | `string[]` |
+| `{ "type": "array", "items": { "type": "object", "properties": { ... } } }` | The target is read as a table. Each property is a column, matched to a header cell by name. | One object per row |
+| A bare column map, for example `{ "sku": "string", "qty": "number" }` | Same table read | One object per row |
+
+For a table, each property's `type` sets how its cells are coerced: `string`, `number`, `integer` (read as a number) or `boolean`. Any other property type is refused, as is any schema outside this table: the compiler throws `CompilerError` and the interpreter fails the step. Nothing is read from the page in that case.
+
+Every `extract` step adds one entry to the run's outputs: an object with a single key, the `bind` name (or the step `id` when there is no `bind`), holding the extracted value. An extract inside a loop adds one entry per iteration. The entry is added after the step's `post` conditions pass, so a step whose postcondition fails contributes nothing. The verifier's output-stability check compares these entries across runs.
+
 #### `wait`
 
 Wait for a condition or a fixed duration. Prefer `forCondition` over `millis`; fixed waits are brittle.
@@ -230,6 +243,70 @@ if (isWorkflow(json)) {
 ```
 
 `validateWorkflow` returns `{ valid: boolean; errors?: ErrorObject[] }`. `isWorkflow` is a plain TypeScript type guard.
+
+### Rules the validator enforces beyond the schema
+
+The validators are stricter than the JSON Schema files. A document can pass a plain JSON Schema check against `workflow.schema.json` and still be rejected by `validateWorkflow`. Three rules apply, and each failure is reported with its own `keyword`:
+
+| Rule | `keyword` | Why |
+| --- | --- | --- |
+| `name`, `description`, and every step `intent` must not contain control characters (U+0000 to U+001F, and U+007F). That covers line breaks and tabs. | `controlCharacter` | The compiler writes these fields into `//` comments. A line break would end the comment and turn the rest of the text into code. |
+| Step ids must be unique across the whole workflow, including steps nested in `guard` and `loop` bodies. | `uniqueStepId` | Patches and diffs address a step by its id. A duplicate makes that address ambiguous. |
+| Every `{ "secret": name }` must be listed in the workflow's `secrets`, and every `{ "param": name }` must be a key of `parameters`. | `undeclaredSecret`, `undeclaredParam` | A workflow should not be able to read a secret it never declared. |
+
+`validateStep` applies the first two rules to the step it is given (and anything nested inside it). It cannot check declarations, because those live on the workflow.
+
+The control-character rule moves into the schema files with the next minor IR version. Until then, use `validateWorkflow` as the source of truth, not a standalone schema validator.
+
+---
+
+## Patches
+
+A patch is a proposed change to exactly one step. It is its own document type, defined by `patch.schema.json` next to the workflow and step schemas, and it is what a healer produces and a person reviews.
+
+```json
+{
+  "workflowId": "wf_acme_stock",
+  "baseHash": "sha256:4777377e284f...",
+  "stepId": "step_04_submit_login",
+  "op": "replace",
+  "before": { "id": "step_04_submit_login", "...": "the step as it was" },
+  "after": { "id": "step_04_submit_login", "...": "the step as proposed" },
+  "rationale": "The button was renamed from 'Sign in' to 'Log in'.",
+  "confidence": 0.9
+}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `workflowId` | `string` | yes | Workflow the patch applies to. |
+| `baseHash` | `string` | yes | `hashWorkflow` of the workflow the patch was written against, as `sha256:` plus 64 hex characters. |
+| `stepId` | `string` | yes | The step the patch is anchored to. |
+| `op` | `string` | yes | `replace`, `insert_before` or `insert_after`. |
+| `before` | `Step` | for `replace` | The anchored step as it was. Must equal the step currently in the workflow. |
+| `after` | `Step` | yes | The new step. A replacement keeps the id of the step it replaces. An inserted step carries an id not used elsewhere. |
+| `rationale` | `string` | yes | Why the change is proposed, for the reviewer. At most 2,000 characters. |
+| `confidence` | `number` | no | Author's confidence from 0 to 1. |
+
+There is no remove operation. A patch changes or adds one step; it never deletes one.
+
+```ts
+import { applyPatch, diffPatch, hashWorkflow, validatePatch } from '@sfysh/ir';
+
+const result = applyPatch(workflow, patch);
+if (result.ok) {
+  result.workflow; // a new, validated workflow; the input is untouched
+  result.hash; // hashWorkflow of the patched workflow
+} else {
+  result.errors; // why it was refused
+}
+```
+
+`applyPatch` never throws and never mutates its input. It refuses a patch that is not a valid `StepPatch`, names another workflow, has a `baseHash` that does not match the workflow it is applied to, is anchored to a step that does not exist, has a `before` that differs from the current step, or produces a workflow that fails validation. Applying the same patch a second time is refused, because the first application changed the hash.
+
+`hashWorkflow` covers everything that affects behaviour and leaves out `metadata` and `$schema`. Key order does not affect it. `findStep`, `replaceStep`, `insertStep` and `listStepIds` address steps by id through nested `guard` and `loop` bodies. `diffPatch` and `diffStep` return field-level changes as JSON Pointers, ready for a renderer.
+
+`applyPatch` checks that a patch is well formed and applies cleanly. It does not decide whether the change is acceptable. Limits on what an automated healer may change belong to the healer.
 
 ---
 

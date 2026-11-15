@@ -425,8 +425,8 @@ describe('compile: pre/post condition asserts (ADR 0011)', () => {
   it('emits an assertCondition call for each post condition on the reference workflow', async () => {
     const { source } = await compile(supplierPortal);
     // supplier-portal has two `post` conditions on step_06 (urlMatches and selectorVisible).
-    expect(source).toContain(
-      "await assertCondition(ctx, 'step_06_open_stock_report', 'post', { urlMatches: '/reports/stock' });",
+    expect(source).toMatch(
+      /assertCondition\(ctx, 'step_06_open_stock_report', 'post',[\s\n]*\{[\s\n]*urlMatches: '\/reports\/stock'/,
     );
     // The selectorVisible call is long enough that Prettier wraps it; assert on
     // the stable fragments the compiler must still emit.
@@ -607,7 +607,7 @@ describe('compile: extract schema branching', () => {
     expect(source).not.toContain('emit.list');
   });
 
-  it('omits bind for a value extract without a variable name', async () => {
+  it('stores an unbound extract in a local and emits it under the step id', async () => {
     const workflow: Workflow = {
       irVersion: '1.0.0',
       id: 'test_novar',
@@ -623,8 +623,95 @@ describe('compile: extract schema branching', () => {
       ],
     };
     const { source } = await compile(workflow);
-    expect(source).toMatch(/^\s*await emit\.value/m);
-    expect(source).not.toMatch(/const \w+ =.*emit\.value/);
+    expect(source).toContain("const extracted = await emit.value(page.getByTestId('x'));");
+    expect(source).toContain('emit.output({ ext_bare: extracted });');
+    // Nothing is declared outside the wrapper, because nothing later reads it.
+    expect(source).toMatch(/^\s*await step\(/m);
+    expect(source).not.toContain('return extracted');
+  });
+
+  it('emits a bound extract under its bind name, after the post checks', async () => {
+    const workflow = {
+      irVersion: '1.0.0',
+      id: 'test_bound',
+      name: 'Bound',
+      steps: [
+        {
+          id: 'ext_title',
+          intent: 'Read the title.',
+          action: 'extract',
+          target: { candidates: [{ kind: 'css', value: 'h1' }] },
+          schema: { type: 'string' },
+          bind: 'title',
+          post: [{ selectorVisible: 'h1' }],
+        },
+      ],
+    } as unknown as Workflow;
+    const { source } = await compile(workflow);
+    expect(source).toContain('emit.output({ title: title });');
+    expect(source.indexOf('emit.output(')).toBeGreaterThan(source.indexOf("'post'"));
+    expect(source.indexOf('return title;')).toBeGreaterThan(source.indexOf('emit.output('));
+  });
+
+  it('turns an array-of-objects schema into a typed column map for emit.table', async () => {
+    const workflow = {
+      irVersion: '1.0.0',
+      id: 'test_rows',
+      name: 'Rows',
+      steps: [
+        {
+          id: 'ext_rows',
+          intent: 'Read the rows.',
+          action: 'extract',
+          target: { candidates: [{ kind: 'css', value: 'table' }] },
+          schema: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                sku: { type: 'string' },
+                qty: { type: 'integer' },
+                inStock: { type: 'boolean' },
+              },
+            },
+          },
+          bind: 'rows',
+        },
+      ],
+    } as unknown as Workflow;
+    const { source } = await compile(workflow);
+    expect(source).toMatch(
+      /emit\.table\(page\.locator\('table'\), \{\s*sku: 'string',\s*qty: 'number',\s*inStock: 'boolean',?\s*\}\)/,
+    );
+    expect(source).not.toContain("type: 'array'");
+  });
+
+  it('refuses an extract schema it cannot read from a page', async () => {
+    const workflow = {
+      irVersion: '1.0.0',
+      id: 'test_bad_schema',
+      name: 'Bad schema',
+      steps: [
+        {
+          id: 'ext_bad',
+          intent: 'Read something odd.',
+          action: 'extract',
+          target: { candidates: [{ kind: 'css', value: 'table' }] },
+          schema: {
+            type: 'array',
+            items: { type: 'object', properties: { tags: { type: 'array' } } },
+          },
+        },
+      ],
+    } as unknown as Workflow;
+    await expect(compile(workflow)).rejects.toThrow(CompilerError);
+    await expect(compile(workflow)).rejects.toThrow(/ext_bad.*column 'tags'/);
+  });
+
+  it('no longer flushes outputs from generated code; the host drains or flushes them', async () => {
+    const { source } = await compile(supplierPortal);
+    expect(source).not.toContain('flushOutputs');
+    expect(source).toContain('emit.output({ allRows: allRows });');
   });
 });
 

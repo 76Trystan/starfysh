@@ -2,7 +2,7 @@ import type { Workflow, Step } from '@sfysh/ir';
 import { IR_VERSION } from '@sfysh/ir';
 import { walkFile } from './walker.js';
 import { chainsToSteps } from './steps.js';
-import type { UnsupportedCall } from './steps.js';
+import type { ParseWarning, UnsupportedCall } from './steps.js';
 
 export { walkFile } from './walker.js';
 export type {
@@ -19,7 +19,7 @@ export { extractCandidate, extractTarget, isLocatorLink, unquote } from './selec
 export { extractCondition } from './conditions.js';
 
 export { chainsToSteps } from './steps.js';
-export type { UnsupportedCall, ChainsToStepsResult } from './steps.js';
+export type { UnsupportedCall, ParseWarning, ChainsToStepsResult } from './steps.js';
 
 export class ParseError extends Error {
   constructor(message: string) {
@@ -36,10 +36,17 @@ export class ParseError extends Error {
  * `expect()` chains whose matcher (or subject, or argument) the condition
  * extractor could not translate. Callers should surface it so users know
  * which actions and assertions were dropped from the workflow.
+ *
+ * `warnings` lists places where the parser changed or kept a literal value
+ * the author should review. The important one is `literal-secret`: a literal
+ * typed into a credential field is replaced with a vault reference, and the
+ * secret name is declared in `workflow.secrets`, so the value never enters
+ * the IR. Warnings do not contain the literal values themselves.
  */
 export interface ParseResult {
   workflow: Workflow;
   unsupported: UnsupportedCall[];
+  warnings: ParseWarning[];
 }
 
 /**
@@ -59,7 +66,7 @@ export function parse(source: string): ParseResult {
   }
 
   const test = tests[0]!;
-  const { steps, unsupported } = chainsToSteps(test.calls);
+  const { steps, unsupported, warnings, secrets } = chainsToSteps(test.calls);
 
   if (steps.length === 0) {
     throw new ParseError(`No recognizable Playwright actions found in test '${test.name}'`);
@@ -69,11 +76,12 @@ export function parse(source: string): ParseResult {
     irVersion: IR_VERSION,
     id: slugify(test.name),
     name: test.name,
+    ...(secrets.length > 0 ? { secrets } : {}),
     steps: steps as [Step, ...Step[]],
     metadata: { source: 'parser' },
   };
 
-  return { workflow, unsupported };
+  return { workflow, unsupported, warnings };
 }
 
 function slugify(name: string): string {

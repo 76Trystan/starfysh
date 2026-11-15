@@ -19,7 +19,9 @@ export function humanReport(report: VerifyReport): string {
   lines.push(`Stability: ${report.stability.stable ? 'stable' : 'drift detected'}`);
   if (!report.stability.stable) {
     for (const d of report.stability.drift) {
-      lines.push(`  drift at '${d.path}': ${d.values.map((v) => shortJson(v)).join(' vs ')}`);
+      const seen = d.values.map((v) => shortJson(v));
+      if (d.missing) seen.push('(absent)');
+      lines.push(`  drift at '${d.path}': ${seen.join(' vs ')}`);
     }
   }
 
@@ -28,6 +30,18 @@ export function humanReport(report: VerifyReport): string {
     lines.push(`  run ${r.index + 1}: ${status} in ${fmtMs(r.durationMs)}`);
     if (r.error) {
       lines.push(`    error: ${r.error.name}: ${r.error.message}`);
+      if (r.error.stepId) {
+        const where = [`step ${r.error.stepId}`];
+        if (r.error.action) where.push(`action ${r.error.action}`);
+        if (r.error.selector) {
+          where.push(`selector ${r.error.selector.kind}=${JSON.stringify(r.error.selector.value)}`);
+        }
+        lines.push(`    at: ${where.join(', ')}`);
+      }
+    }
+    if (r.snapshot) {
+      const cut = r.snapshot.truncated ? ', truncated' : '';
+      lines.push(`    page snapshot captured (${r.snapshot.originalLength} chars${cut})`);
     }
     const violated = r.postconditions.filter((p) => p.status === 'violated');
     for (const p of violated) {

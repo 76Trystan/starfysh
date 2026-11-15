@@ -2,8 +2,14 @@
 // and decide "has this patch stabilised the workflow?" without caring
 // how the workflow was executed.
 
-import type { Condition, Workflow } from '@sfysh/ir';
-import type { Page, VaultResolver, WorkflowContext } from '@sfysh/runtime';
+import type { Condition, SelectorCandidate, Workflow } from '@sfysh/ir';
+import type {
+  Page,
+  PageSnapshot,
+  SnapshotOptions,
+  VaultResolver,
+  WorkflowContext,
+} from '@sfysh/runtime';
 
 /**
  * Callback that executes a workflow once against a prepared WorkflowContext.
@@ -76,6 +82,19 @@ export interface VerifyOptions {
    * to `EnvVaultResolver` when absent.
    */
   vaultResolver?: VaultResolver;
+  /**
+   * Capture a page snapshot when a replay fails. Default true. Pass false
+   * to skip it, or an options object to change the size cap or timeout.
+   */
+  snapshot?: boolean | SnapshotOptions;
+  /**
+   * Longest a single replay may take, in milliseconds. When it is exceeded
+   * the replay is recorded as failed with a `RunTimeoutError` and the
+   * verifier moves on. No limit when omitted. The runner cannot be
+   * cancelled, so it may still be working against the page when the
+   * disposer runs; a disposer that closes the page ends it.
+   */
+  runTimeoutMs?: number;
 }
 
 export interface TimingEnvelope {
@@ -106,25 +125,51 @@ export interface ReplayOutcome {
   outputs: unknown[];
   postconditions: PostconditionResult[];
   error?: {
+    /** Error message with registered secrets redacted. */
     message: string;
+    /** Name of the original error (TimeoutError, ExtractionError, ...). */
     name: string;
     /**
-     * Step id attributed to the failure when the thrown error is a
-     * `PostconditionViolation` (ADR 0011). Undefined otherwise.
+     * IR step that was running when the replay failed. Populated for any
+     * failure inside generated code and for a PostconditionViolation
+     * thrown anywhere. Undefined when the runner failed outside a step.
      */
     stepId?: string;
-    /** Condition slot that failed. Populated alongside `stepId`. */
+    /** Action kind of the failing step. */
+    action?: string;
+    /** Selector candidate the failing step was using, if it had a target. */
+    selector?: SelectorCandidate;
+    /** Condition slot that failed, when a pre or post condition was violated. */
     phase?: 'pre' | 'post';
+    /** The violated condition. Populated alongside phase. */
+    condition?: Condition;
+    /** Why the condition did not hold. Populated alongside phase. */
+    reason?: string;
+    /**
+     * The raw thrown value, for @sfysh/triage. Not redacted. The property
+     * is non-enumerable, so reporters and JSON.stringify skip it. Present
+     * only in-process; it does not survive serialisation.
+     */
+    cause?: unknown;
   };
+  /**
+   * Accessibility snapshot of the page taken right after a failed replay,
+   * when the backend supports it. Untrusted page content, redacted and
+   * capped in length. Not included in the JSON report.
+   */
+  snapshot?: PageSnapshot;
 }
 
 /**
  * Describes a single field that drifted across replays.
  * `path` is the dotted field path, `values` is the distinct values observed.
+ * `missing` is true when at least one run did not produce the field at all,
+ * which `values` cannot show because an absent value has no JSON form.
  */
 export interface DriftField {
   path: string;
   values: unknown[];
+  missing?: boolean;
 }
 
 export interface StabilityReport {

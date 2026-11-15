@@ -16,11 +16,14 @@
 // the recorder does, and scrubbing a key would cause the replay side's
 // still-raw key to miss. In practice secrets rarely appear in selector
 // strings; they land in `fill(...)` args (effects) or in response-derived
-// query values (string / string-array), both of which are covered.
+// query values (string / string-array), both of which are covered. If a
+// key does contain a secret, `cassette()` throws a CassetteError rather
+// than write it out.
 
 import type { Locator, Page } from '@sfysh/runtime';
 import {
   CASSETTE_VERSION,
+  CassetteError,
   callKey,
   segment,
   type Cassette,
@@ -48,7 +51,8 @@ export interface RecordingResult {
   /**
    * Snapshot the current cassette. Call after the runner has finished.
    * Returned cassette is a new object each call; mutating it does not
-   * disturb the recorder's internal state.
+   * disturb the recorder's internal state. Throws `CassetteError` if a
+   * query key contains a value the registered redactor would scrub.
    */
   cassette(): Cassette;
 }
@@ -87,6 +91,17 @@ function redactQueries(
 ): Record<string, CassetteValue> {
   const out: Record<string, CassetteValue> = {};
   for (const [key, value] of Object.entries(source)) {
+    // Keys cannot be scrubbed without breaking replay lookups, so a key
+    // that contains a secret has no safe form to write. Refuse the whole
+    // cassette instead of putting the secret on disk. The message names the
+    // scrubbed key, never the raw one.
+    const scrubbedKey = redact(key);
+    if (scrubbedKey !== key) {
+      throw new CassetteError(
+        `cannot record a cassette: query key '${scrubbedKey}' contains a vault secret. ` +
+          `A selector or locator argument is built from a secret value; cassette keys are stored as written and cannot be redacted.`,
+      );
+    }
     out[key] = redactValue(value, redact);
   }
   return out;
@@ -129,6 +144,18 @@ class RecordingPage implements Page {
   async waitForTimeout(ms: number): Promise<void> {
     this.effects.push({ call: callKey([], 'waitForTimeout', [ms]) });
     await this.live.waitForTimeout(ms);
+  }
+
+  // Recorded under the plain key "snapshot" as a string value, so it is
+  // scrubbed by the same redaction pass as every other string. Only called
+  // after a failure, so a cassette recorded from a passing run has no entry.
+  async snapshot(): Promise<string> {
+    if (typeof this.live.snapshot !== 'function') {
+      throw new Error('the recorded Page backend does not support snapshot()');
+    }
+    const value = await this.live.snapshot();
+    this.queries[callKey([], 'snapshot', [])] = { kind: 'string', value };
+    return value;
   }
 
   locator(selector: string): Locator {

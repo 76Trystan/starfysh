@@ -3,7 +3,31 @@
 // on anything else in the workspace.
 
 export * from './types.js';
-export * from './validate.js';
+export {
+  validateWorkflow,
+  validateStep,
+  isWorkflow,
+  isStep,
+  type ValidationError,
+  type ValidationResult,
+} from './validate.js';
+export {
+  applyPatch,
+  diffPatch,
+  diffStep,
+  findStep,
+  hashStep,
+  hashWorkflow,
+  insertStep,
+  listStepIds,
+  replaceStep,
+  validatePatch,
+} from './patch.js';
+export type { ApplyPatchResult, StepChange, StepDiff, StepLocation, StepPatch } from './patch.js';
+export { planExtract } from './extract.js';
+export type { ColumnType, ExtractPlan } from './extract.js';
+export { parseRoleSelector } from './selectors.js';
+export type { RoleSelector } from './selectors.js';
 
 /**
  * Semantic version of the IR schema this package publishes.

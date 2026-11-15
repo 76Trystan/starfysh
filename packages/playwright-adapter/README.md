@@ -22,7 +22,7 @@ import './workflows/my-workflow.js'; // registers the workflow as a side effect
 wrapWorkflowForTest(test, 'my-workflow');
 ```
 
-`wrapWorkflowForTest` registers a Playwright test that runs the named workflow against Playwright's `page` fixture. If the workflow fails, the test fails with the original error.
+`wrapWorkflowForTest` registers a Playwright test that runs the named workflow against Playwright's `page` fixture. If the workflow fails, the test fails with an error that keeps the original name, message, and stack, with any vault secrets replaced by `[REDACTED:<name>]`. The raw error is not re-thrown, because Playwright quotes filled values in its call log and that text would otherwise reach the test reporter and CI logs.
 
 You can override the test title:
 
@@ -69,11 +69,15 @@ workflow('my-existing-script', (sfPage) => myExistingScript(sfPage as unknown as
 
 ### `asPage(page: PlaywrightPage): Page`
 
-Casts a Playwright `Page` to Starfysh's `Page` interface. Safe at runtime because Playwright's `Page` is a structural superset of Starfysh's.
+Presents a Playwright `Page` as Starfysh's `Page` interface. The result is a thin proxy: every method and property is forwarded to the real Playwright page, so it still works anywhere a Playwright page does.
+
+The proxy adds one method, `snapshot()`, which returns the accessibility tree of the document body as text (Playwright's ARIA snapshot). The runtime calls it after a failed run and attaches the result to `RunResult.snapshot`, so a failure report records what the page looked like. Secrets resolved through the vault are redacted from it and its length is capped.
+
+Two things to know. `asPage(page) === page` is `false`, because the proxy is a different object; calling `asPage` twice with the same page returns the same proxy. And a page that already has a `snapshot` method is returned unchanged.
 
 ### `asLocator(locator: PlaywrightLocator): Locator`
 
-Same as `asPage` but for `Locator`.
+Casts a Playwright `Locator` to Starfysh's `Locator` interface. Safe at runtime because Playwright's `Locator` is a structural superset of Starfysh's.
 
 ### `wrapWorkflowForTest(test, workflowId, options?)`
 

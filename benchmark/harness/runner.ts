@@ -26,7 +26,7 @@ export async function runTask(browser: Browser, workflowId: string): Promise<Tas
       output,
       error: result.error
         ? {
-            kind: classify({ error: result.error.cause }).kind,
+            kind: classify({ error: result.error.cause, attribution: result.error }).kind,
             message: result.error.message,
           }
         : undefined,

@@ -65,6 +65,7 @@ Options:
 
 - `-b`, `--backend <path>` path to the backend module (required).
 - `-n`, `--runs <count>` number of replays (default 3).
+- `--timeout <ms>` fail a replay that runs longer than this many milliseconds, then carry on with the next. No limit by default.
 - `--json` emit a JSON report instead of a human-readable one.
 - `-o`, `--out <path>` write the report to a file instead of stdout.
 - `-h`, `--help` shows usage.

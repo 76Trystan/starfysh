@@ -5,7 +5,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { parseArgs, type ParseArgsConfig } from 'node:util';
-import { parse, ParseError, type UnsupportedCall } from '@sfysh/parser';
+import { parse, ParseError, type ParseWarning, type UnsupportedCall } from '@sfysh/parser';
 import {
   runVerifyCommand,
   reportIsGreen,
@@ -54,6 +54,8 @@ export interface ParseCommandResult {
    */
   output: string;
   unsupported: UnsupportedCall[];
+  /** Literal values the parser replaced with vault secrets, or kept and flagged. */
+  warnings: ParseWarning[];
 }
 
 /**
@@ -65,15 +67,15 @@ export interface ParseCommandResult {
  */
 export function runParseCommand(opts: ParseCommandOptions): ParseCommandResult {
   const source = readFileSync(opts.file, 'utf8');
-  const { workflow, unsupported } = parse(source);
+  const { workflow, unsupported, warnings } = parse(source);
   const json = JSON.stringify(workflow, null, 2);
 
   if (opts.out) {
     writeFileSync(opts.out, json + '\n', 'utf8');
-    return { output: '', unsupported };
+    return { output: '', unsupported, warnings };
   }
 
-  return { output: json, unsupported };
+  return { output: json, unsupported, warnings };
 }
 
 function formatUnsupported(unsupported: UnsupportedCall[]): string {
@@ -81,6 +83,34 @@ function formatUnsupported(unsupported: UnsupportedCall[]): string {
   lines.push(`Unsupported Playwright calls dropped from workflow (${unsupported.length}):`);
   for (const call of unsupported) {
     lines.push(`  line ${call.position.line}:${call.position.column}  ${call.text}`);
+  }
+  return lines.join('\n') + '\n';
+}
+
+/**
+ * Render parser warnings for stderr. Each lifted credential gets its own
+ * line because the user has to act on it (add the secret to the vault).
+ * Ordinary literal fills are summarised in one line to keep the output
+ * readable on long scripts.
+ */
+function formatWarnings(warnings: ParseWarning[]): string {
+  const lines: string[] = [];
+  const lifted = warnings.filter((w) => w.kind === 'literal-secret');
+  if (lifted.length > 0) {
+    lines.push(`Literal credentials replaced with vault secrets (${lifted.length}):`);
+    for (const w of lifted) {
+      lines.push(
+        `  line ${w.position.line}:${w.position.column}  ${w.stepId} -> secret '${w.secret}'`,
+      );
+    }
+    lines.push('  Supply these through the vault before running the workflow.');
+  }
+  const kept = warnings.filter((w) => w.kind === 'literal-fill');
+  if (kept.length > 0) {
+    const where = kept.map((w) => `${w.position.line}`).join(', ');
+    lines.push(
+      `Literal fill values copied into the workflow (${kept.length}, line ${where}). Replace any sensitive ones with vault secrets.`,
+    );
   }
   return lines.join('\n') + '\n';
 }
@@ -136,6 +166,9 @@ function parseCommand(args: string[], ctx: RunContext): number {
     if (result.unsupported.length > 0) {
       ctx.stderr.write(formatUnsupported(result.unsupported));
     }
+    if (result.warnings.length > 0) {
+      ctx.stderr.write(formatWarnings(result.warnings));
+    }
     return 0;
   } catch (err) {
     if (err instanceof ParseError) {
@@ -161,6 +194,7 @@ async function verifyCommand(args: string[], ctx: RunContext): Promise<number> {
       out: { type: 'string', short: 'o' },
       record: { type: 'string' },
       cassette: { type: 'string' },
+      timeout: { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     },
     allowPositionals: true,
@@ -212,6 +246,18 @@ async function verifyCommand(args: string[], ctx: RunContext): Promise<number> {
     runs = n;
   }
 
+  let runTimeoutMs: number | undefined;
+  if (typeof parsed.values.timeout === 'string') {
+    const n = Number(parsed.values.timeout);
+    if (!Number.isInteger(n) || n < 1) {
+      ctx.stderr.write(
+        `compile verify: --timeout must be a positive number of milliseconds, got '${parsed.values.timeout}'\n`,
+      );
+      return 1;
+    }
+    runTimeoutMs = n;
+  }
+
   const file = positionals[0]!;
   const out = typeof parsed.values.out === 'string' ? parsed.values.out : undefined;
   const record = typeof parsed.values.record === 'string' ? parsed.values.record : undefined;
@@ -231,6 +277,7 @@ async function verifyCommand(args: string[], ctx: RunContext): Promise<number> {
     ...(out ? { out } : {}),
     ...(record ? { record } : {}),
     ...(cassette ? { cassette } : {}),
+    ...(runTimeoutMs !== undefined ? { runTimeoutMs } : {}),
   };
 
   let result;
@@ -302,6 +349,8 @@ Options:
       --record <path>    Record a cassette from the last live replay and
                          write it to <path>. Mutually exclusive with
                          --cassette.
+      --timeout <ms>     Fail a replay that runs longer than this many
+                         milliseconds. No limit by default.
       --cassette <path>  Replay against an existing cassette instead of a
                          live site. The backend's 'runner' is still used;
                          'pageFactory' and 'dispose' are not called.

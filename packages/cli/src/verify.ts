@@ -72,6 +72,8 @@ export interface VerifyCommandOptions {
   record?: string;
   /** Path to load a cassette from. Mutually exclusive with `record`. */
   cassette?: string;
+  /** Longest a single replay may take, in milliseconds. No limit when omitted. */
+  runTimeoutMs?: number;
 }
 
 export interface VerifyCommandResult {
@@ -114,6 +116,7 @@ export async function runVerifyCommand(opts: VerifyCommandOptions): Promise<Veri
       runner: backend.runner,
       ...(opts.runs !== undefined ? { runs: opts.runs } : {}),
       ...(tolerance ? { tolerance } : {}),
+      ...(opts.runTimeoutMs !== undefined ? { runTimeoutMs: opts.runTimeoutMs } : {}),
     });
   } else if (opts.record) {
     const recorded = withRecording(backend.pageFactory, backend.runner, workflow);
@@ -123,9 +126,16 @@ export async function runVerifyCommand(opts: VerifyCommandOptions): Promise<Veri
       ...(backend.dispose ? { dispose: backend.dispose } : {}),
       ...(opts.runs !== undefined ? { runs: opts.runs } : {}),
       ...(tolerance ? { tolerance } : {}),
+      ...(opts.runTimeoutMs !== undefined ? { runTimeoutMs: opts.runTimeoutMs } : {}),
       ...(backend.vaultResolver ? { vaultResolver: backend.vaultResolver } : {}),
     });
-    const cassette = recorded.latest();
+    let cassette: Cassette | null;
+    try {
+      cassette = recorded.latest();
+    } catch (err) {
+      if (err instanceof CassetteError) throw new VerifyLoadError(err.message);
+      throw err;
+    }
     if (cassette) {
       writeFileSync(opts.record, serialiseCassette(cassette), 'utf8');
       recordedTo = opts.record;
@@ -137,6 +147,7 @@ export async function runVerifyCommand(opts: VerifyCommandOptions): Promise<Veri
       ...(backend.dispose ? { dispose: backend.dispose } : {}),
       ...(opts.runs !== undefined ? { runs: opts.runs } : {}),
       ...(tolerance ? { tolerance } : {}),
+      ...(opts.runTimeoutMs !== undefined ? { runTimeoutMs: opts.runTimeoutMs } : {}),
       ...(backend.vaultResolver ? { vaultResolver: backend.vaultResolver } : {}),
     });
   }

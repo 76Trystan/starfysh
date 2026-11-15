@@ -22,10 +22,51 @@ export interface UnsupportedCall {
   text: string;
 }
 
+/**
+ * Something the parser changed or noticed that the author should review.
+ * Warnings never carry the literal value they are about, so they are safe
+ * to print.
+ *
+ * - `literal-secret`: a `fill` on a field that looks like a credential had
+ *   a literal value. The parser replaced it with a vault reference named
+ *   `secret` and declared that name on the workflow. The value must be
+ *   supplied through the vault at run time.
+ * - `literal-fill`: a `fill` kept its literal value in the IR. Harmless for
+ *   ordinary input, but worth a look in case the field is sensitive and the
+ *   parser did not recognise it.
+ */
+export interface ParseWarning {
+  kind: 'literal-secret' | 'literal-fill';
+  stepId: string;
+  position: SourcePos;
+  message: string;
+  /** Vault secret name the literal was replaced with. Only on `literal-secret`. */
+  secret?: string;
+}
+
 export interface ChainsToStepsResult {
   steps: Step[];
   unsupported: UnsupportedCall[];
+  warnings: ParseWarning[];
+  /** Vault secret names introduced by lifting literal credentials. */
+  secrets: string[];
 }
+
+/**
+ * State shared across one parse, including nested loop bodies. A single
+ * counter keeps step ids unique across the whole workflow.
+ */
+interface ParseState {
+  counter: number;
+  warnings: ParseWarning[];
+  secrets: string[];
+}
+
+// Field names that suggest a credential. Matched against the locator
+// arguments of a `fill` chain. Errs towards matching: a false positive costs
+// the author one vault entry, a false negative puts a password in the IR.
+const CREDENTIAL_FIELD_RE =
+  /pass(?:word|wd|code|phrase)|pwd|\bpass\b|secret|token|\botp\b|api[-_ ]?key|\bpin\b|cvv|cvc/i;
 
 const SUPPORTED_PAGE_METHODS: ReadonlySet<string> = new Set([
   'goto',
@@ -54,13 +95,21 @@ const EXTRACT_SCHEMAS: ReadonlyMap<string, { readonly type: 'string' | 'array' }
 const BIND_RE = /^[a-zA-Z][a-zA-Z0-9_]*$/;
 
 export function chainsToSteps(chains: readonly WalkerItem[]): ChainsToStepsResult {
+  const state: ParseState = { counter: 0, warnings: [], secrets: [] };
+  const { steps, unsupported } = walkChains(chains, state);
+  return { steps, unsupported, warnings: state.warnings, secrets: state.secrets };
+}
+
+function walkChains(
+  chains: readonly WalkerItem[],
+  state: ParseState,
+): { steps: Step[]; unsupported: UnsupportedCall[] } {
   const steps: Step[] = [];
   const unsupported: UnsupportedCall[] = [];
-  let counter = 0;
 
   for (const item of chains) {
     if ('kind' in item && item.kind === 'for-of') {
-      const result = forOfToStep(item, ++counter);
+      const result = forOfToStep(item, ++state.counter, state);
       if (result?.step) steps.push(result.step);
       unsupported.push(...(result?.unsupported ?? []));
       continue;
@@ -88,9 +137,9 @@ export function chainsToSteps(chains: readonly WalkerItem[]): ChainsToStepsResul
         prev.post = prev.post ?? [];
         prev.post.push(condition);
       } else {
-        counter++;
+        state.counter++;
         steps.push({
-          id: stepId('assert', counter),
+          id: stepId('assert', state.counter),
           intent: describeCondition(condition),
           action: 'assert' as const,
           condition,
@@ -109,7 +158,7 @@ export function chainsToSteps(chains: readonly WalkerItem[]): ChainsToStepsResul
         });
         continue;
       }
-      const step = pageChainToStep(chain, ++counter);
+      const step = pageChainToStep(chain, ++state.counter, state);
       if (step) steps.push(step);
     }
   }
@@ -117,7 +166,7 @@ export function chainsToSteps(chains: readonly WalkerItem[]): ChainsToStepsResul
   return { steps, unsupported };
 }
 
-function pageChainToStep(chain: CallChain, n: number): Step | undefined {
+function pageChainToStep(chain: CallChain, n: number, state: ParseState): Step | undefined {
   const { links } = chain;
   const terminal = links[links.length - 1];
   if (!terminal) return undefined;
@@ -128,7 +177,7 @@ function pageChainToStep(chain: CallChain, n: number): Step | undefined {
     case 'click':
       return clickStep(links, n);
     case 'fill':
-      return fillStep(links, terminal.args, n);
+      return fillStep(chain, terminal.args, n, state);
     case 'waitForTimeout':
       return waitTimeoutStep(terminal.args, n);
     case 'waitForSelector':
@@ -202,18 +251,80 @@ function clickStep(links: CallChain['links'], n: number): Step | undefined {
   } as Step;
 }
 
-function fillStep(links: CallChain['links'], terminalArgs: string[], n: number): Step | undefined {
+function fillStep(
+  chain: CallChain,
+  terminalArgs: string[],
+  n: number,
+  state: ParseState,
+): Step | undefined {
+  const { links } = chain;
   const target = extractTarget(links);
   if (!target) return undefined;
-  const value = unquote(terminalArgs[0] ?? '');
-  if (value === undefined) return undefined;
+  const literal = unquote(terminalArgs[0] ?? '');
+  if (literal === undefined) return undefined;
+
+  const id = stepId('fill', n);
+  const field = describeTarget(target);
+  let value: string | { secret: string } = literal;
+
+  // Literal secrets must never enter the IR. A script that types a password
+  // inline would otherwise carry it into the workflow file, the generated
+  // code, and any cassette. When the field looks like a credential, the
+  // literal is dropped and replaced with a vault reference.
+  const locatorText = links
+    .slice(0, -1)
+    .map((link) => link.args.join(' '))
+    .join(' ');
+  if (CREDENTIAL_FIELD_RE.test(locatorText)) {
+    const secret = secretNameFor(target, n);
+    if (!state.secrets.includes(secret)) state.secrets.push(secret);
+    value = { secret };
+    state.warnings.push({
+      kind: 'literal-secret',
+      stepId: id,
+      position: chain.position,
+      secret,
+      message: `Literal value for ${field} looks like a credential. Replaced with vault secret '${secret}'; supply the value through the vault at run time.`,
+    });
+  } else {
+    state.warnings.push({
+      kind: 'literal-fill',
+      stepId: id,
+      position: chain.position,
+      message: `Literal value for ${field} was copied into the workflow. If this field is sensitive, replace it with a vault secret.`,
+    });
+  }
+
   return {
-    id: stepId('fill', n),
-    intent: `Fill ${describeTarget(target)}`,
+    id,
+    intent: `Fill ${field}`,
     action: 'fill' as const,
     target,
     value,
   } as Step;
+}
+
+/**
+ * Derive a vault secret name from the field a credential is typed into.
+ * `getByLabel('Password')` becomes `password`; `#login-pass` becomes
+ * `login_pass`. The result always satisfies the IR's secret-name pattern.
+ * Two fills on the same field share one name, which is the intent: they are
+ * the same secret.
+ */
+function secretNameFor(target: Target, n: number): string {
+  const primary = target.candidates[0];
+  const raw = primary?.value ?? '';
+  // For role selectors, the accessible name is the meaningful part.
+  const named = /\[name='([^']*)'\]/.exec(raw)?.[1] ?? raw;
+  let slug = named
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 64)
+    .replace(/_+$/, '');
+  if (!/^[a-z]/.test(slug)) slug = slug ? `secret_${slug}`.slice(0, 64) : '';
+  if (slug.length < 3) slug = `secret_${String(n).padStart(3, '0')}`;
+  return slug;
 }
 
 function waitTimeoutStep(args: string[], n: number): Step | undefined {
@@ -277,6 +388,7 @@ function describeTarget(target: Target): string {
 function forOfToStep(
   loop: ForOfLoop,
   n: number,
+  state: ParseState,
 ): { step: Step | undefined; unsupported: UnsupportedCall[] } | undefined {
   const target = extractTarget(loop.iterable.links);
   if (!target) return undefined;
@@ -296,7 +408,7 @@ function forOfToStep(
     return chain;
   });
 
-  const bodyResult = chainsToSteps(remapped);
+  const bodyResult = walkChains(remapped, state);
 
   if (bodyResult.steps.length === 0) {
     return bodyResult.unsupported.length > 0

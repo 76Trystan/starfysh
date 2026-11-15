@@ -179,6 +179,34 @@ test('mixed', async ({ page }) => {
     expect(parsed.steps).toHaveLength(1);
     expect(parsed.steps[0].action).toBe('navigate');
   });
+
+  it('reports lifted credentials and literal fills on stderr without printing the values', () => {
+    const file = join(dir, 'login.spec.ts');
+    const src = `
+import { test } from '@playwright/test';
+
+test('login', async ({ page }) => {
+  await page.goto('https://example.com/login');
+  await page.getByLabel('Email').fill('user@example.com');
+  await page.getByLabel('Password').fill('hunter2-literal');
+});
+`;
+    writeFileSync(file, src, 'utf8');
+
+    const c = ctx();
+    const code = run(['parse', file], c);
+
+    expect(code).toBe(0);
+    expect(c.stderr.text).toContain('Literal credentials replaced with vault secrets (1)');
+    expect(c.stderr.text).toContain("fill_003 -> secret 'password'");
+    expect(c.stderr.text).toContain('Literal fill values copied into the workflow (1, line 6)');
+    expect(c.stderr.text).not.toContain('hunter2-literal');
+    expect(c.stdout.text).not.toContain('hunter2-literal');
+
+    const parsed = JSON.parse(c.stdout.text);
+    expect(parsed.secrets).toEqual(['password']);
+    expect(parsed.steps[2].value).toEqual({ secret: 'password' });
+  });
 });
 
 describe('runParseCommand', () => {

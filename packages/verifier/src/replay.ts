@@ -4,8 +4,11 @@
 
 import type { Workflow } from '@sfysh/ir';
 import {
+  capturePageSnapshot,
   createWorkflowContext,
-  PostconditionViolation,
+  describeFailure,
+  getWorkflow,
+  type PageSnapshot,
   type WorkflowContext,
 } from '@sfysh/runtime';
 import type { Cassette } from './cassette.js';
@@ -22,10 +25,62 @@ import type {
   VerifyReport,
 } from './types.js';
 
+/**
+ * A ready-made runner for compiled workflows. Looks up the workflow that
+ * generated code registered under workflow.id and executes it directly,
+ * so a failure reaches the verifier with its step attribution intact.
+ *
+ * Prefer this over a runner that calls run() from @sfysh/runtime and
+ * re-throws: run() reports failures as a result object, and re-throwing
+ * its raw cause drops the step id and selector.
+ */
+export const runRegisteredWorkflow: RunnerFn = async (ctx, workflow) => {
+  const fn = getWorkflow(workflow.id);
+  if (fn === undefined) {
+    throw new Error(
+      `No workflow registered with id "${workflow.id}". Did you import its compiled module?`,
+    );
+  }
+  await fn(ctx);
+};
+
+/** Recorded as the error of a replay that ran past `VerifyOptions.runTimeoutMs`. */
+export class RunTimeoutError extends Error {
+  readonly timeoutMs: number;
+
+  constructor(timeoutMs: number) {
+    super(`run timed out after ${timeoutMs}ms`);
+    this.name = 'RunTimeoutError';
+    this.timeoutMs = timeoutMs;
+  }
+}
+
+/**
+ * Await the runner, giving up after `timeoutMs`. A missing or zero timeout
+ * means no limit.
+ */
+async function runWithTimeout(work: Promise<void>, timeoutMs: number | undefined): Promise<void> {
+  if (!timeoutMs || timeoutMs <= 0) return work;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  // If the timeout wins, the runner may still reject later with nobody listening.
+  work.catch(() => {});
+  try {
+    await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new RunTimeoutError(timeoutMs)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 export interface ReplayFromCassetteOptions {
   runner: RunnerFn;
   runs?: number;
   tolerance?: ToleranceMap;
+  runTimeoutMs?: number;
 }
 
 /**
@@ -44,6 +99,7 @@ export async function replayFromCassette(
     runner: options.runner,
     ...(options.runs !== undefined ? { runs: options.runs } : {}),
     ...(options.tolerance ? { tolerance: options.tolerance } : {}),
+    ...(options.runTimeoutMs !== undefined ? { runTimeoutMs: options.runTimeoutMs } : {}),
   });
 }
 
@@ -90,16 +146,17 @@ async function runOnce(
   const start = Date.now();
   let error: ReplayOutcome['error'];
   try {
-    await options.runner(ctx, workflow);
+    await runWithTimeout(options.runner(ctx, workflow), options.runTimeoutMs);
   } catch (err) {
-    const rawMessage = err instanceof Error ? err.message : String(err);
-    const attribution =
-      err instanceof PostconditionViolation ? { stepId: err.stepId, phase: err.phase } : {};
+    const failure = describeFailure(ctx, err);
     error = {
-      message: ctx.redact(rawMessage),
-      name: err instanceof Error ? err.name : 'Error',
-      ...attribution,
+      message: failure.message,
+      name: failure.name,
+      ...failure.attribution,
     };
+    // Kept for in-process triage only. Non-enumerable so the raw error,
+    // which is not redacted, cannot leak through a reporter.
+    Object.defineProperty(error, 'cause', { value: failure.cause, enumerable: false });
   }
   const durationMs = Date.now() - start;
 
@@ -118,6 +175,19 @@ async function runOnce(
     }
   }
 
+  const violated = postconditions.some((p) => p.status === 'violated');
+  const status: ReplayOutcome['status'] = error || violated ? 'failed' : 'ok';
+
+  // Capture what the page looked like while it is still open. The disposer
+  // below usually closes it.
+  let snapshot: PageSnapshot | undefined;
+  if (status === 'failed' && options.snapshot !== false) {
+    snapshot = await capturePageSnapshot(
+      ctx,
+      typeof options.snapshot === 'object' ? options.snapshot : {},
+    );
+  }
+
   if (options.dispose) {
     try {
       await options.dispose(ctx);
@@ -127,9 +197,6 @@ async function runOnce(
     }
   }
 
-  const violated = postconditions.some((p) => p.status === 'violated');
-  const status: ReplayOutcome['status'] = error || violated ? 'failed' : 'ok';
-
   return {
     index,
     status,
@@ -137,6 +204,7 @@ async function runOnce(
     outputs,
     postconditions,
     ...(error ? { error } : {}),
+    ...(snapshot ? { snapshot } : {}),
   };
 }
 
