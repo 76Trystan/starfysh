@@ -329,6 +329,83 @@ describe('parse', () => {
     });
   });
 
+  describe('for-of loop steps', () => {
+    it('lifts a for-of with .all() into an IR loop step with foreach and do', () => {
+      const source = `test('t', async ({ page }) => {
+  await page.goto('https://example.com');
+  for (const row of await page.locator('table tr').all()) {
+    await row.locator('button').click();
+  }
+});\n`;
+      const { workflow: wf } = parse(source);
+      expect(wf.steps).toHaveLength(2);
+      expect(wf.steps[1]).toMatchObject({
+        action: 'loop',
+        foreach: { candidates: [{ kind: 'css', value: 'table tr' }] },
+      });
+      const loop = wf.steps[1] as { do: { action: string }[] };
+      expect(loop.do).toHaveLength(1);
+      expect(loop.do[0]).toMatchObject({ action: 'click' });
+    });
+
+    it('lifts inner extract steps inside the loop body', () => {
+      const source = `test('t', async ({ page }) => {
+  await page.goto('https://example.com');
+  for (const row of await page.locator('tr').all()) {
+    const name = await row.locator('.name').textContent();
+  }
+});\n`;
+      const { workflow: wf } = parse(source);
+      expect(wf.steps[1]).toMatchObject({ action: 'loop' });
+      const loop = wf.steps[1] as { do: { action: string; bind?: string; schema?: unknown }[] };
+      expect(loop.do[0]).toMatchObject({
+        action: 'extract',
+        bind: 'name',
+        schema: { type: 'string' },
+      });
+    });
+
+    it('attaches expect() inside a loop body as post on the preceding inner step', () => {
+      const source = `test('t', async ({ page }) => {
+  await page.goto('https://example.com');
+  for (const row of await page.locator('tr').all()) {
+    await row.locator('button').click();
+    await expect(row.getByText('Done')).toBeVisible();
+  }
+});\n`;
+      const { workflow: wf } = parse(source);
+      const loop = wf.steps[1] as { do: { action: string; post?: unknown[] }[] };
+      expect(loop.do).toHaveLength(1);
+      expect(loop.do[0]?.post).toEqual([{ textPresent: 'Done' }]);
+    });
+
+    it('collects unsupported calls inside the loop body', () => {
+      const source = `test('t', async ({ page }) => {
+  await page.goto('https://example.com');
+  for (const row of await page.locator('tr').all()) {
+    await row.hover();
+  }
+});\n`;
+      const { workflow: wf, unsupported } = parse(source);
+      expect(wf.steps).toHaveLength(1);
+      expect(unsupported).toHaveLength(1);
+      expect(unsupported[0]?.method).toBe('hover');
+    });
+
+    it('uses getByRole iterable for the foreach target', () => {
+      const source = `test('t', async ({ page }) => {
+  for (const item of await page.getByRole('listitem').all()) {
+    await item.getByRole('button').click();
+  }
+});\n`;
+      const { workflow: wf } = parse(source);
+      expect(wf.steps[0]).toMatchObject({
+        action: 'loop',
+        foreach: { candidates: [{ kind: 'role', value: 'listitem' }] },
+      });
+    });
+  });
+
   describe('full hand-written Playwright script', () => {
     it('parses a login flow into a complete workflow', () => {
       const source = `

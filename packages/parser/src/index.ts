@@ -5,7 +5,14 @@ import { chainsToSteps } from './steps.js';
 import type { UnsupportedCall } from './steps.js';
 
 export { walkFile } from './walker.js';
-export type { WalkedTest, CallChain, ChainLink, SourcePos } from './walker.js';
+export type {
+  WalkedTest,
+  WalkerItem,
+  CallChain,
+  ForOfLoop,
+  ChainLink,
+  SourcePos,
+} from './walker.js';
 
 export { extractCandidate, extractTarget, isLocatorLink, unquote } from './selectors.js';
 

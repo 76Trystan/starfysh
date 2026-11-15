@@ -541,6 +541,93 @@ describe('compile: pre/post condition asserts (ADR 0011)', () => {
   });
 });
 
+describe('compile: extract schema branching', () => {
+  it('renders a string-schema extract as emit.value', async () => {
+    const workflow: Workflow = {
+      irVersion: '1.0.0',
+      id: 'test_value',
+      name: 'Value extract',
+      steps: [
+        {
+          id: 'ext_name',
+          intent: 'Extract user name.',
+          action: 'extract',
+          target: { candidates: [{ kind: 'testid', value: 'user-name' }] },
+          schema: { type: 'string' },
+          bind: 'name',
+        },
+      ],
+    };
+    const { source } = await compile(workflow);
+    expect(source).toContain("await emit.value(page.getByTestId('user-name'))");
+    expect(source).toContain('const name =');
+    expect(source).not.toContain('emit.table');
+  });
+
+  it('renders an array-schema extract as emit.list', async () => {
+    const workflow: Workflow = {
+      irVersion: '1.0.0',
+      id: 'test_list',
+      name: 'List extract',
+      steps: [
+        {
+          id: 'ext_items',
+          intent: 'Extract item texts.',
+          action: 'extract',
+          target: { candidates: [{ kind: 'css', value: '.item' }] },
+          schema: { type: 'array', items: { type: 'string' } },
+          bind: 'items',
+        },
+      ],
+    };
+    const { source } = await compile(workflow);
+    expect(source).toContain("await emit.list(page.locator('.item'))");
+    expect(source).toContain('const items =');
+    expect(source).not.toContain('emit.table');
+  });
+
+  it('renders a table-schema extract as emit.table (existing behaviour)', async () => {
+    const workflow: Workflow = {
+      irVersion: '1.0.0',
+      id: 'test_table',
+      name: 'Table extract',
+      steps: [
+        {
+          id: 'ext_rows',
+          intent: 'Extract table rows.',
+          action: 'extract',
+          target: { candidates: [{ kind: 'role', value: 'table' }] },
+          schema: { sku: 'string', qty: 'number' },
+        },
+      ],
+    };
+    const { source } = await compile(workflow);
+    expect(source).toContain('emit.table');
+    expect(source).not.toContain('emit.value');
+    expect(source).not.toContain('emit.list');
+  });
+
+  it('omits bind for a value extract without a variable name', async () => {
+    const workflow: Workflow = {
+      irVersion: '1.0.0',
+      id: 'test_novar',
+      name: 'No bind',
+      steps: [
+        {
+          id: 'ext_bare',
+          intent: 'Extract bare.',
+          action: 'extract',
+          target: { candidates: [{ kind: 'testid', value: 'x' }] },
+          schema: { type: 'string' },
+        },
+      ],
+    };
+    const { source } = await compile(workflow);
+    expect(source).toMatch(/^\s*await emit\.value/m);
+    expect(source).not.toMatch(/const \w+ =.*emit\.value/);
+  });
+});
+
 describe('formatTypeScript', () => {
   it('normalises whitespace and semicolons', async () => {
     const dirty = 'const  x=1\nconst y    = 2';

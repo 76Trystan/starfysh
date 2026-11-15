@@ -87,6 +87,26 @@ export async function extractTable<S extends ColumnSchema>(
   return rows;
 }
 
+/**
+ * Extract a single text value from a locator. Returns the first element's
+ * text content, or null if the locator matches nothing. Covers the parser's
+ * `textContent`, `innerText`, and `inputValue` extract patterns, which all
+ * map to `{ type: 'string' }` in the IR.
+ */
+export async function extractValue(locator: Locator): Promise<string | null> {
+  const texts = await locator.allTextContents();
+  return texts[0] ?? null;
+}
+
+/**
+ * Extract a flat list of text values from a locator. Returns one string per
+ * matched element. Covers the parser's `allTextContents` extract pattern,
+ * which maps to `{ type: 'array', items: { type: 'string' } }` in the IR.
+ */
+export async function extractList(locator: Locator): Promise<string[]> {
+  return locator.allTextContents();
+}
+
 function coerce(raw: string, type: 'string' | 'number' | 'boolean', field: string): unknown {
   if (type === 'string') return raw;
   if (type === 'number') {

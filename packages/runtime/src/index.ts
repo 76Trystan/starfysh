@@ -22,7 +22,7 @@ export type { ConditionEvaluation } from './conditions.js';
 export { EnvVaultResolver, VaultSecretMissingError } from './vault.js';
 export type { VaultResolver } from './vault.js';
 
-export { ExtractionError, extractTable } from './emit.js';
+export { ExtractionError, extractTable, extractValue, extractList } from './emit.js';
 export type { ColumnSchema, TableRow } from './emit.js';
 
 export { guard } from './guard.js';

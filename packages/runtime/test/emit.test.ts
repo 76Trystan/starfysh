@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import type { Locator, Page } from '../src/index.js';
-import { ExtractionError, createWorkflowContext, extractTable } from '../src/index.js';
+import {
+  ExtractionError,
+  createWorkflowContext,
+  extractTable,
+  extractValue,
+  extractList,
+} from '../src/index.js';
 
 /**
  * Minimal Locator mock for extraction tests. Supports .locator() chaining
@@ -110,6 +116,40 @@ describe('extractTable (pure helper + ctx.emit.table)', () => {
       rows: [['twelve']],
     });
     await expect(extractTable(loc, { qty: 'number' })).rejects.toThrow(ExtractionError);
+  });
+});
+
+function mockTextLocator(texts: string[]): Locator {
+  return { allTextContents: async () => texts } as unknown as Locator;
+}
+
+describe('extractValue', () => {
+  it('returns the first text content', async () => {
+    expect(await extractValue(mockTextLocator(['hello', 'world']))).toBe('hello');
+  });
+
+  it('returns null for an empty locator', async () => {
+    expect(await extractValue(mockTextLocator([]))).toBeNull();
+  });
+
+  it('delegates through ctx.emit.value', async () => {
+    const ctx = createWorkflowContext({ page: stubPage });
+    expect(await ctx.emit.value(mockTextLocator(['abc']))).toBe('abc');
+  });
+});
+
+describe('extractList', () => {
+  it('returns all text contents', async () => {
+    expect(await extractList(mockTextLocator(['a', 'b', 'c']))).toEqual(['a', 'b', 'c']);
+  });
+
+  it('returns an empty array for no matches', async () => {
+    expect(await extractList(mockTextLocator([]))).toEqual([]);
+  });
+
+  it('delegates through ctx.emit.list', async () => {
+    const ctx = createWorkflowContext({ page: stubPage });
+    expect(await ctx.emit.list(mockTextLocator(['x', 'y']))).toEqual(['x', 'y']);
   });
 });
 

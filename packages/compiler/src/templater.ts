@@ -267,6 +267,10 @@ function renderCondition(cond: Condition): string {
 }
 
 function buildStepContext(step: Step): Record<string, unknown> {
+  const schema =
+    step.action === 'extract' ? (step as { schema?: Record<string, unknown> }).schema : undefined;
+  const isValueExtract = step.action === 'extract' && schema?.type === 'string';
+  const isListExtract = step.action === 'extract' && schema?.type === 'array';
   return {
     ...step,
     isNavigate: step.action === 'navigate',
@@ -277,6 +281,9 @@ function buildStepContext(step: Step): Record<string, unknown> {
     isAssert: step.action === 'assert',
     isGuard: step.action === 'guard',
     isLoop: step.action === 'loop',
+    isValueExtract,
+    isListExtract,
+    isTableExtract: step.action === 'extract' && !isValueExtract && !isListExtract,
   };
 }
 
@@ -307,7 +314,7 @@ await {{{target target}}}.click();`,
 await {{{target target}}}.fill({{{value value}}});`,
 
   extract: `// [{{id}}] {{intent}}
-{{#if bind}}const {{bind}} = {{/if}}await emit.table({{{target target}}}, {{{jsonLiteral schema}}});`,
+{{#if isValueExtract}}{{#if bind}}const {{bind}} = {{/if}}await emit.value({{{target target}}});{{else if isListExtract}}{{#if bind}}const {{bind}} = {{/if}}await emit.list({{{target target}}});{{else}}{{#if bind}}const {{bind}} = {{/if}}await emit.table({{{target target}}}, {{{jsonLiteral schema}}});{{/if}}`,
 
   wait: `// [{{id}}] {{intent}}
 {{#if forCondition}}await poll(async () => {{{cond forCondition}}});{{/if}}{{#if millis}}await page.waitForTimeout({{millis}});{{/if}}`,

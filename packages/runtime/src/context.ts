@@ -12,7 +12,13 @@ import type { Locator, Page } from './types.js';
 import { asSecret, type Secret } from './secret.js';
 import type { VaultResolver } from './vault.js';
 import { EnvVaultResolver, VaultSecretMissingError } from './vault.js';
-import { extractTable, type ColumnSchema, type TableRow } from './emit.js';
+import {
+  extractTable,
+  extractValue,
+  extractList,
+  type ColumnSchema,
+  type TableRow,
+} from './emit.js';
 
 /**
  * The per-run container passed to every workflow function. Generated code
@@ -60,6 +66,8 @@ export interface WorkflowContext {
  */
 export interface EmitSink {
   table<S extends ColumnSchema>(locator: Locator, schema: S): Promise<TableRow<S>[]>;
+  value(locator: Locator): Promise<string | null>;
+  list(locator: Locator): Promise<string[]>;
   output<T>(value: T): void;
 }
 
@@ -105,6 +113,8 @@ export function createWorkflowContext(init: WorkflowContextInit): WorkflowContex
 
   const emit: EmitSink = {
     table: (locator, schema) => extractTable(locator, schema),
+    value: (locator) => extractValue(locator),
+    list: (locator) => extractList(locator),
     output: (value) => {
       outputs.push(value);
     },

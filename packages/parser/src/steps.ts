@@ -1,5 +1,5 @@
 import type { Step, Target, Condition } from '@sfysh/ir';
-import type { CallChain, SourcePos } from './walker.js';
+import type { CallChain, ForOfLoop, WalkerItem, SourcePos } from './walker.js';
 import { extractTarget } from './selectors.js';
 import { unquote } from './selectors.js';
 import { extractCondition } from './conditions.js';
@@ -53,12 +53,21 @@ const EXTRACT_SCHEMAS: ReadonlyMap<string, { readonly type: 'string' | 'array' }
 
 const BIND_RE = /^[a-zA-Z][a-zA-Z0-9_]*$/;
 
-export function chainsToSteps(chains: CallChain[]): ChainsToStepsResult {
+export function chainsToSteps(chains: readonly WalkerItem[]): ChainsToStepsResult {
   const steps: Step[] = [];
   const unsupported: UnsupportedCall[] = [];
   let counter = 0;
 
-  for (const chain of chains) {
+  for (const item of chains) {
+    if ('kind' in item && item.kind === 'for-of') {
+      const result = forOfToStep(item, ++counter);
+      if (result?.step) steps.push(result.step);
+      unsupported.push(...(result?.unsupported ?? []));
+      continue;
+    }
+
+    const chain = item as CallChain;
+
     if (chain.root === 'expect') {
       const condition = extractCondition(chain);
       if (!condition) {
@@ -263,6 +272,47 @@ function describeTarget(target: Target): string {
     default:
       return 'element';
   }
+}
+
+function forOfToStep(
+  loop: ForOfLoop,
+  n: number,
+): { step: Step | undefined; unsupported: UnsupportedCall[] } | undefined {
+  const target = extractTarget(loop.iterable.links);
+  if (!target) return undefined;
+
+  const varRe = new RegExp(`\\b${loop.variable}\\.`, 'g');
+  const remapped = loop.body.map((chain) => {
+    if (chain.root === loop.variable) return { ...chain, root: 'page' };
+    if (chain.root === 'expect') {
+      return {
+        ...chain,
+        links: chain.links.map((link) => ({
+          ...link,
+          args: link.args.map((arg) => arg.replace(varRe, 'page.')),
+        })),
+      };
+    }
+    return chain;
+  });
+
+  const bodyResult = chainsToSteps(remapped);
+
+  if (bodyResult.steps.length === 0) {
+    return bodyResult.unsupported.length > 0
+      ? { step: undefined, unsupported: bodyResult.unsupported }
+      : undefined;
+  }
+
+  const step: Step = {
+    id: stepId('loop', n),
+    intent: `Iterate over ${describeTarget(target)}`,
+    action: 'loop' as const,
+    foreach: target,
+    do: bodyResult.steps as [Step, ...Step[]],
+  } as Step;
+
+  return { step, unsupported: bodyResult.unsupported };
 }
 
 function describeCondition(condition: Condition): string {

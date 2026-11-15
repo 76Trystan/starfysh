@@ -5,7 +5,14 @@
 // assertions. Interpreting the chains into IR actions, selector candidates,
 // and pre/post conditions is the next layer's job.
 
-import { Project, SyntaxKind, ScriptTarget, type Node, type CallExpression } from 'ts-morph';
+import {
+  Project,
+  SyntaxKind,
+  ScriptTarget,
+  type Node,
+  type CallExpression,
+  type ForOfStatement as ForOfStatementNode,
+} from 'ts-morph';
 
 /** 1-based line and column in the source file. */
 export interface SourcePos {
@@ -50,10 +57,25 @@ export interface CallChain {
   bind?: string;
 }
 
+/**
+ * A `for (const x of await chain.all()) { ... }` loop found in a test body.
+ * The iterable is the chain up to (but not including) the trailing `.all()`.
+ */
+export interface ForOfLoop {
+  kind: 'for-of';
+  iterable: { root: string; links: ChainLink[] };
+  variable: string;
+  body: CallChain[];
+  position: SourcePos;
+}
+
+/** Discriminated union of items the walker extracts from a test body. */
+export type WalkerItem = CallChain | ForOfLoop;
+
 /** One `test('name', async ({ page }) => { ... })` call found at file scope. */
 export interface WalkedTest {
   name: string;
-  calls: CallChain[];
+  calls: WalkerItem[];
   position: SourcePos;
 }
 
@@ -109,17 +131,21 @@ function tryWalkTestCall(call: CallExpression): WalkedTest | undefined {
   const block = body.getBody().asKind(SyntaxKind.Block);
   if (!block) return undefined;
 
-  const calls: CallChain[] = [];
+  const calls: WalkerItem[] = [];
   for (const stmt of block.getStatements()) {
-    const chain = extractChain(stmt);
-    if (chain) calls.push(chain);
+    const item = extractItem(stmt);
+    if (item) calls.push(item);
   }
 
   return { name, calls, position: positionOf(call) };
 }
 
-function extractChain(statement: Node): CallChain | undefined {
-  return extractFromExpressionStatement(statement) ?? extractFromVariableStatement(statement);
+function extractItem(statement: Node): WalkerItem | undefined {
+  return (
+    extractFromExpressionStatement(statement) ??
+    extractFromVariableStatement(statement) ??
+    extractFromForOfStatement(statement)
+  );
 }
 
 function extractFromExpressionStatement(statement: Node): CallChain | undefined {
@@ -171,6 +197,53 @@ function extractFromVariableStatement(statement: Node): CallChain | undefined {
     position: positionOf(statement),
     text: init.getText(),
     bind: ident.getText(),
+  };
+}
+
+// Picks up `for (const row of await page.locator('tr').all()) { ... }`.
+// The iterable is the chain up to (but not including) the trailing `.all()`.
+// Body statements are walked recursively for CallChains.
+function extractFromForOfStatement(statement: Node): ForOfLoop | undefined {
+  const forOf = statement.asKind(SyntaxKind.ForOfStatement) as ForOfStatementNode | undefined;
+  if (!forOf) return undefined;
+
+  const initializer = forOf.getInitializer();
+  const varDeclList = initializer.asKind(SyntaxKind.VariableDeclarationList);
+  if (!varDeclList) return undefined;
+  const decls = varDeclList.getDeclarations();
+  if (decls.length !== 1) return undefined;
+  const loopVar = decls[0]!.getNameNode().asKind(SyntaxKind.Identifier);
+  if (!loopVar) return undefined;
+
+  let expr: Node = forOf.getExpression();
+  const awaitExpr = expr.asKind(SyntaxKind.AwaitExpression);
+  if (awaitExpr) expr = awaitExpr.getExpression();
+
+  const allCall = expr.asKind(SyntaxKind.CallExpression);
+  if (!allCall) return undefined;
+  const allAccess = allCall.getExpression().asKind(SyntaxKind.PropertyAccessExpression);
+  if (!allAccess || allAccess.getName() !== 'all') return undefined;
+
+  const innerCall = allAccess.getExpression().asKind(SyntaxKind.CallExpression);
+  if (!innerCall) return undefined;
+  const iterable = buildChain(innerCall);
+  if (!iterable) return undefined;
+
+  const body: CallChain[] = [];
+  const block = forOf.getStatement().asKind(SyntaxKind.Block);
+  if (block) {
+    for (const stmt of block.getStatements()) {
+      const chain = extractFromExpressionStatement(stmt) ?? extractFromVariableStatement(stmt);
+      if (chain) body.push(chain);
+    }
+  }
+
+  return {
+    kind: 'for-of',
+    iterable,
+    variable: loopVar.getText(),
+    body,
+    position: positionOf(statement),
   };
 }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { walkFile } from '../src/walker.js';
+import { walkFile, type ForOfLoop, type CallChain } from '../src/walker.js';
 
 describe('walkFile', () => {
   it('returns an empty list when no top-level test() call is present', () => {
@@ -97,5 +97,77 @@ describe('walkFile', () => {
     const source = `test('t', async ({ page }) => {\n  const a = 1, b = await page.getByTestId('x').textContent();\n  const { c } = await page.getByTestId('y').textContent();\n});\n`;
     const [walked] = walkFile(source);
     expect(walked?.calls).toEqual([]);
+  });
+
+  describe('for-of loop extraction', () => {
+    it('extracts a for-of with await .all() as a ForOfLoop', () => {
+      const source = `test('t', async ({ page }) => {
+  for (const row of await page.locator('table tr').all()) {
+    await row.locator('button').click();
+  }
+});\n`;
+      const [walked] = walkFile(source);
+      expect(walked?.calls).toHaveLength(1);
+      const loop = walked?.calls[0] as ForOfLoop;
+      expect(loop.kind).toBe('for-of');
+      expect(loop.variable).toBe('row');
+      expect(loop.iterable.root).toBe('page');
+      expect(loop.iterable.links).toEqual([{ method: 'locator', args: ["'table tr'"] }]);
+    });
+
+    it('extracts body chains from the loop block', () => {
+      const source = `test('t', async ({ page }) => {
+  for (const row of await page.locator('tr').all()) {
+    await row.locator('button').click();
+    const name = await row.locator('.name').textContent();
+  }
+});\n`;
+      const [walked] = walkFile(source);
+      const loop = walked?.calls[0] as ForOfLoop;
+      expect(loop.body).toHaveLength(2);
+      expect(loop.body[0]?.root).toBe('row');
+      expect((loop.body[0] as CallChain).links[loop.body[0]!.links.length - 1]?.method).toBe(
+        'click',
+      );
+      expect(loop.body[1]?.bind).toBe('name');
+    });
+
+    it('preserves source ordering with surrounding chains', () => {
+      const source = `test('t', async ({ page }) => {
+  await page.goto('https://example.com');
+  for (const row of await page.locator('tr').all()) {
+    await row.locator('td').textContent();
+  }
+  await page.getByRole('button').click();
+});\n`;
+      const [walked] = walkFile(source);
+      expect(walked?.calls).toHaveLength(3);
+      expect((walked?.calls[0] as CallChain).root).toBe('page');
+      expect((walked?.calls[1] as ForOfLoop).kind).toBe('for-of');
+      expect((walked?.calls[2] as CallChain).root).toBe('page');
+    });
+
+    it('skips for-of without .all() terminal', () => {
+      const source = `test('t', async ({ page }) => {
+  for (const item of someArray) {
+    await page.goto('x');
+  }
+});\n`;
+      const [walked] = walkFile(source);
+      expect(walked?.calls).toHaveLength(0);
+    });
+
+    it('extracts a for-of with a getByRole iterable', () => {
+      const source = `test('t', async ({ page }) => {
+  for (const item of await page.getByRole('listitem').all()) {
+    await item.locator('a').click();
+  }
+});\n`;
+      const [walked] = walkFile(source);
+      const loop = walked?.calls[0] as ForOfLoop;
+      expect(loop.kind).toBe('for-of');
+      expect(loop.iterable.links).toEqual([{ method: 'getByRole', args: ["'listitem'"] }]);
+      expect(loop.variable).toBe('item');
+    });
   });
 });
