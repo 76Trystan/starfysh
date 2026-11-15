@@ -11,3 +11,4 @@ export { ProviderError } from './types.js';
 
 export { AnthropicProvider, type AnthropicConfig } from './anthropic.js';
 export { OpenAIProvider, type OpenAIConfig } from './openai.js';
+export { GeminiProvider, type GeminiConfig } from './gemini.js';
