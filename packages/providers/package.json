@@ -1,0 +1,53 @@
+{
+  "name": "@sfysh/providers",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Model provider abstraction for Starfysh. Defines a common interface that Anthropic, OpenAI, and local-model backends satisfy, so the healer and future authoring agent can swap providers without code changes.",
+  "keywords": [
+    "starfysh",
+    "providers",
+    "llm",
+    "anthropic",
+    "openai",
+    "healing",
+    "browser-automation"
+  ],
+  "homepage": "https://github.com/76Trystan/starfysh#readme",
+  "bugs": {
+    "url": "https://github.com/76Trystan/starfysh/issues"
+  },
+  "license": "Apache-2.0",
+  "author": "Trystan Frederick",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/76Trystan/starfysh.git",
+    "directory": "packages/providers"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  }
+}
