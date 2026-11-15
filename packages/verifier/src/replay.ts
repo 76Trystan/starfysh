@@ -44,10 +44,43 @@ export const runRegisteredWorkflow: RunnerFn = async (ctx, workflow) => {
   await fn(ctx);
 };
 
+/** Recorded as the error of a replay that ran past `VerifyOptions.runTimeoutMs`. */
+export class RunTimeoutError extends Error {
+  readonly timeoutMs: number;
+
+  constructor(timeoutMs: number) {
+    super(`run timed out after ${timeoutMs}ms`);
+    this.name = 'RunTimeoutError';
+    this.timeoutMs = timeoutMs;
+  }
+}
+
+/**
+ * Await the runner, giving up after `timeoutMs`. A missing or zero timeout
+ * means no limit.
+ */
+async function runWithTimeout(work: Promise<void>, timeoutMs: number | undefined): Promise<void> {
+  if (!timeoutMs || timeoutMs <= 0) return work;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  // If the timeout wins, the runner may still reject later with nobody listening.
+  work.catch(() => {});
+  try {
+    await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new RunTimeoutError(timeoutMs)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 export interface ReplayFromCassetteOptions {
   runner: RunnerFn;
   runs?: number;
   tolerance?: ToleranceMap;
+  runTimeoutMs?: number;
 }
 
 /**
@@ -66,6 +99,7 @@ export async function replayFromCassette(
     runner: options.runner,
     ...(options.runs !== undefined ? { runs: options.runs } : {}),
     ...(options.tolerance ? { tolerance: options.tolerance } : {}),
+    ...(options.runTimeoutMs !== undefined ? { runTimeoutMs: options.runTimeoutMs } : {}),
   });
 }
 
@@ -112,7 +146,7 @@ async function runOnce(
   const start = Date.now();
   let error: ReplayOutcome['error'];
   try {
-    await options.runner(ctx, workflow);
+    await runWithTimeout(options.runner(ctx, workflow), options.runTimeoutMs);
   } catch (err) {
     const failure = describeFailure(ctx, err);
     error = {

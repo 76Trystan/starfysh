@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sfysh.dev/schemas/v1/patch.json",
+  "title": "StepPatch",
+  "description": "A proposed change to exactly one step of a workflow. Produced by the healer, reviewed by a person, and applied to the IR. A patch names the workflow version it was written against, so it cannot be applied to a workflow that has changed since.",
+  "type": "object",
+  "required": ["workflowId", "baseHash", "stepId", "op", "after", "rationale"],
+  "additionalProperties": false,
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{2,63}$",
+      "description": "Id of the workflow this patch applies to."
+    },
+    "baseHash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Hash of the workflow the patch was written against, as returned by hashWorkflow. Applying the patch to a workflow with a different hash is refused."
+    },
+    "stepId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{2,63}$",
+      "description": "The step the patch is anchored to. For 'replace' it is the step being replaced. For the insert operations it is the existing step the new one goes next to."
+    },
+    "op": {
+      "type": "string",
+      "enum": ["replace", "insert_before", "insert_after"],
+      "description": "What the patch does. 'replace' swaps the anchored step for 'after', keeping its id. 'insert_before' and 'insert_after' add 'after' as a new sibling of the anchored step."
+    },
+    "before": {
+      "$ref": "./step.schema.json",
+      "description": "The anchored step as it was when the patch was written. Required for 'replace', where it must equal the step currently in the workflow."
+    },
+    "after": {
+      "$ref": "./step.schema.json",
+      "description": "The new step. For 'replace' it carries the same id as the step it replaces. For the insert operations it carries an id not used anywhere else in the workflow."
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000,
+      "description": "Why the change is proposed, in plain language for the person reviewing it."
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "How confident the author is that the patch is correct, from 0 to 1."
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "op": { "const": "replace" } } },
+      "then": { "required": ["before"] }
+    }
+  ]
+}

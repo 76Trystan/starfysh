@@ -87,6 +87,14 @@ export interface VerifyOptions {
    * to skip it, or an options object to change the size cap or timeout.
    */
   snapshot?: boolean | SnapshotOptions;
+  /**
+   * Longest a single replay may take, in milliseconds. When it is exceeded
+   * the replay is recorded as failed with a `RunTimeoutError` and the
+   * verifier moves on. No limit when omitted. The runner cannot be
+   * cancelled, so it may still be working against the page when the
+   * disposer runs; a disposer that closes the page ends it.
+   */
+  runTimeoutMs?: number;
 }
 
 export interface TimingEnvelope {
@@ -155,10 +163,13 @@ export interface ReplayOutcome {
 /**
  * Describes a single field that drifted across replays.
  * `path` is the dotted field path, `values` is the distinct values observed.
+ * `missing` is true when at least one run did not produce the field at all,
+ * which `values` cannot show because an absent value has no JSON form.
  */
 export interface DriftField {
   path: string;
   values: unknown[];
+  missing?: boolean;
 }
 
 export interface StabilityReport {

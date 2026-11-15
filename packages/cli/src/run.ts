@@ -194,6 +194,7 @@ async function verifyCommand(args: string[], ctx: RunContext): Promise<number> {
       out: { type: 'string', short: 'o' },
       record: { type: 'string' },
       cassette: { type: 'string' },
+      timeout: { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     },
     allowPositionals: true,
@@ -245,6 +246,18 @@ async function verifyCommand(args: string[], ctx: RunContext): Promise<number> {
     runs = n;
   }
 
+  let runTimeoutMs: number | undefined;
+  if (typeof parsed.values.timeout === 'string') {
+    const n = Number(parsed.values.timeout);
+    if (!Number.isInteger(n) || n < 1) {
+      ctx.stderr.write(
+        `compile verify: --timeout must be a positive number of milliseconds, got '${parsed.values.timeout}'\n`,
+      );
+      return 1;
+    }
+    runTimeoutMs = n;
+  }
+
   const file = positionals[0]!;
   const out = typeof parsed.values.out === 'string' ? parsed.values.out : undefined;
   const record = typeof parsed.values.record === 'string' ? parsed.values.record : undefined;
@@ -264,6 +277,7 @@ async function verifyCommand(args: string[], ctx: RunContext): Promise<number> {
     ...(out ? { out } : {}),
     ...(record ? { record } : {}),
     ...(cassette ? { cassette } : {}),
+    ...(runTimeoutMs !== undefined ? { runTimeoutMs } : {}),
   };
 
   let result;
@@ -335,6 +349,8 @@ Options:
       --record <path>    Record a cassette from the last live replay and
                          write it to <path>. Mutually exclusive with
                          --cassette.
+      --timeout <ms>     Fail a replay that runs longer than this many
+                         milliseconds. No limit by default.
       --cassette <path>  Replay against an existing cassette instead of a
                          live site. The backend's 'runner' is still used;
                          'pageFactory' and 'dispose' are not called.

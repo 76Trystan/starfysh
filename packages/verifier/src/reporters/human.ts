@@ -19,7 +19,9 @@ export function humanReport(report: VerifyReport): string {
   lines.push(`Stability: ${report.stability.stable ? 'stable' : 'drift detected'}`);
   if (!report.stability.stable) {
     for (const d of report.stability.drift) {
-      lines.push(`  drift at '${d.path}': ${d.values.map((v) => shortJson(v)).join(' vs ')}`);
+      const seen = d.values.map((v) => shortJson(v));
+      if (d.missing) seen.push('(absent)');
+      lines.push(`  drift at '${d.path}': ${seen.join(' vs ')}`);
     }
   }
 

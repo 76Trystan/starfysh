@@ -96,16 +96,25 @@ function recordDrift(drift: DriftField[], path: string, a: unknown, b: unknown):
   drift.push({ path, values: [a, b] });
 }
 
+// JSON has no way to write "absent", so a missing value needs its own
+// bucket key. The NUL prefix cannot collide with JSON text, which never
+// starts with a control character.
+const MISSING = '\u0000missing';
+
 function deduplicateDrift(drift: DriftField[]): StabilityReport {
   const byPath = new Map<string, Set<string>>();
   for (const d of drift) {
     const bucket = byPath.get(d.path) ?? new Set<string>();
+    // A field that one run produced and another did not arrives here as
+    // undefined, which JSON.stringify turns into undefined, not a string.
     for (const v of d.values) bucket.add(stableStringify(v));
     byPath.set(d.path, bucket);
   }
   const merged: DriftField[] = [];
   for (const [path, set] of byPath) {
-    merged.push({ path, values: [...set].map((s) => JSON.parse(s)) });
+    const missing = set.has(MISSING);
+    const values = [...set].filter((s) => s !== MISSING).map((s) => JSON.parse(s) as unknown);
+    merged.push({ path, values, ...(missing ? { missing: true } : {}) });
   }
   return { stable: merged.length === 0, drift: merged };
 }
@@ -124,6 +133,9 @@ function deepEqual(a: unknown, b: unknown): boolean {
 }
 
 function stableStringify(v: unknown): string {
+  // undefined, functions and symbols have no JSON form. Give them the
+  // MISSING token so "absent" never compares equal to an explicit null.
+  if (v === undefined || typeof v === 'function' || typeof v === 'symbol') return MISSING;
   return JSON.stringify(v, (_, value) => {
     if (isPlainObject(value)) {
       const sorted: Record<string, unknown> = {};

@@ -21,12 +21,11 @@
 //   runtime's `evaluateCondition`, the same evaluator as pre and post
 //   checks. Generated code inlines its own expression for those positions,
 //   which for `urlMatches` accepts a regex only, not a substring.
-// - Outputs are left in the context for the caller to drain. Generated code
-//   flushes them to stdout or a file when the workflow declares `outputs`.
 // - Candidate fallthrough is available as an option (off by default).
 
 import {
   parseRoleSelector,
+  planExtract,
   validateWorkflow,
   type Condition,
   type SelectorCandidate,
@@ -153,6 +152,7 @@ interface StepView {
   target?: Target;
   value?: ValueSource;
   schema?: Record<string, unknown>;
+  bind?: string;
   forCondition?: Condition;
   millis?: number;
   condition?: Condition;
@@ -170,6 +170,12 @@ interface StepOutcome {
   selector?: SelectorCandidate;
   candidateIndex?: number;
   iterations?: number;
+}
+
+/** A value an extract step read, waiting for the post checks before it is emitted. */
+interface PendingOutput {
+  name: string;
+  value: unknown;
 }
 
 class Run {
@@ -209,8 +215,10 @@ class Run {
       await runtimeStep(this.ctx, info, () =>
         withTimeout(s.id, s.timeoutMs, async () => {
           for (const c of s.pre ?? []) await assertCondition(this.ctx, s.id, 'pre', c);
-          await this.body(s, info, outcome);
+          const pending = await this.body(s, info, outcome);
           for (const c of s.post ?? []) await assertCondition(this.ctx, s.id, 'post', c);
+          // Emitted only once the post checks pass, as in generated code.
+          if (pending) this.ctx.emit.output({ [pending.name]: pending.value });
         }),
       );
     } catch (err) {
@@ -220,7 +228,11 @@ class Run {
     finish('ok');
   }
 
-  private async body(s: StepView, info: StepInfo, outcome: StepOutcome): Promise<void> {
+  private async body(
+    s: StepView,
+    info: StepInfo,
+    outcome: StepOutcome,
+  ): Promise<PendingOutput | undefined> {
     const { page, emit } = this.ctx;
 
     switch (s.action) {
@@ -245,12 +257,18 @@ class Run {
         // Read methods return an empty result when nothing matches instead
         // of throwing, so there is no failure to fall through on. Extract
         // always uses the primary candidate.
+        const plan = planExtract(s.schema);
+        if (plan.kind === 'unsupported') {
+          throw new InterpreterError(`extract step '${s.id}' cannot be executed: ${plan.reason}`);
+        }
         const locator = this.locate(primaryOf(s.target!, s.id));
-        const type = s.schema?.['type'];
-        if (type === 'string') await emit.value(locator);
-        else if (type === 'array') await emit.list(locator);
-        else await emit.table(locator, s.schema as unknown as ColumnSchema);
-        return;
+        const value =
+          plan.kind === 'value'
+            ? await emit.value(locator)
+            : plan.kind === 'list'
+              ? await emit.list(locator)
+              : await emit.table(locator, plan.columns as ColumnSchema);
+        return { name: s.bind ?? s.id, value };
       }
 
       case 'wait':

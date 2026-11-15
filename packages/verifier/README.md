@@ -11,7 +11,7 @@ Phase 1 scaffold. Package is private (`"private": true` in `package.json`) and w
 Given an IR workflow and a `runner` callback that knows how to execute the workflow against a `Page`, the verifier:
 
 - Replays the workflow N times (default 3) against fresh Page instances.
-- Captures outputs from each run (via `drainOutputs` in `@sfysh/runtime`).
+- Captures outputs from each run (via `drainOutputs` in `@sfysh/runtime`). Every `extract` step contributes one entry, keyed by its `bind` name or step id.
 - Evaluates workflow-level `pre` and `post` conditions against the live page.
 - Compares outputs across runs with per-field tolerance, so that a field that legitimately varies (a timestamp, a pagination cursor) does not get flagged as drift.
 - Records a timing envelope (min, max, mean) so a scheduler can later distinguish "slow" from "stuck".
@@ -39,6 +39,10 @@ process.stdout.write(humanReport(report));
 ```
 
 `pageFactory` is called once per replay so each run starts from a fresh session.
+
+Set `runTimeoutMs` to cap how long one replay may take. A replay that runs past it is recorded as failed with a `RunTimeoutError` and the verifier moves on to the next. There is no limit by default. The runner cannot be cancelled, so make sure your `dispose` closes the page, which ends whatever the runner was still doing.
+
+When outputs differ between runs, `report.stability.drift` lists each field by its dotted path with the distinct values seen. A field that one run produced and another did not is listed with `missing: true`.
 
 ## What a failed replay tells you
 
@@ -88,11 +92,10 @@ This is the quickest way to check a workflow you have just edited: no generated 
 
 Under `'fallthrough'`, a run that passes with `candidateIndex` above 0 means the primary selector is broken. The compiled workflow only uses the first candidate and would fail, so treat that result as a prompt to fix the selector order, not as a pass.
 
-The interpreter and generated code are kept in step by a test that runs both against the same scripted page and compares every page call. They differ in four deliberate ways. The interpreter:
+The interpreter and generated code are kept in step by a test that runs both against the same scripted page and compares every page call. They differ in three deliberate ways. The interpreter:
 
 - enforces `maxIterations` on loops (default 100) and `timeoutMs` on steps, failing with `LoopLimitError` or `StepTimeoutError`;
 - evaluates conditions in `guard`, `wait`, `assert` and `loop.while` with the same evaluator as pre and post checks, so `urlMatches` accepts a substring there as well as a regex;
-- leaves outputs in the context for the caller to drain, where generated code flushes them;
 - accepts `{ param }` values, which the compiler does not support yet.
 
 Generated code is still what ships and what runs on a schedule. If a workflow passes under the interpreter, run the compiled version once before relying on it.

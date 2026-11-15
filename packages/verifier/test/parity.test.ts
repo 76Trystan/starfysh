@@ -45,6 +45,7 @@ interface Observed {
   status: string;
   error: unknown;
   snapshot: unknown;
+  outputs: unknown[];
 }
 
 const SECRET = 'hunter2-secret';
@@ -59,6 +60,7 @@ async function observe(id: string, script: PageScript): Promise<Observed> {
     // Round-trip through JSON: compares exactly what a report would contain.
     error: result.error ? JSON.parse(JSON.stringify(result.error)) : undefined,
     snapshot: result.snapshot,
+    outputs: ctx.drainOutputs(),
   };
 }
 
@@ -258,6 +260,7 @@ describe('parity: compiled code and the interpreter drive the page identically',
     expect(compiled.status).toBe('ok');
     expect(interpreted.status).toBe('ok');
     expect(interpreted.log).toEqual(compiled.log);
+    expect(interpreted.outputs).toEqual(compiled.outputs);
 
     // Guard against a vacuous pass: the run really did exercise the page.
     expect(compiled.log.length).toBeGreaterThan(30);
@@ -278,6 +281,7 @@ describe('parity: compiled code and the interpreter drive the page identically',
     const { compiled, interpreted } = await both(everything, script);
     expect(compiled.status).toBe('ok');
     expect(interpreted.log).toEqual(compiled.log);
+    expect(interpreted.outputs).toEqual(compiled.outputs);
     expect(compiled.log).toContain('getByText("Accept").click');
   });
 
@@ -290,6 +294,7 @@ describe('parity: compiled code and the interpreter drive the page identically',
 
     expect(compiled.status).toBe('failed');
     expect(interpreted.log).toEqual(compiled.log);
+    expect(interpreted.outputs).toEqual(compiled.outputs);
     expect(interpreted.error).toEqual(compiled.error);
     expect(interpreted.snapshot).toEqual(compiled.snapshot);
     expect(compiled.error).toMatchObject({
@@ -311,6 +316,7 @@ describe('parity: compiled code and the interpreter drive the page identically',
 
     expect(compiled.status).toBe('failed');
     expect(interpreted.log).toEqual(compiled.log);
+    expect(interpreted.outputs).toEqual(compiled.outputs);
     expect(interpreted.error).toEqual(compiled.error);
     expect(compiled.error).toMatchObject({
       stepId: 'click_004',
@@ -326,6 +332,7 @@ describe('parity: compiled code and the interpreter drive the page identically',
     };
     const { compiled, interpreted } = await both(everything, script);
     expect(interpreted.log).toEqual(compiled.log);
+    expect(interpreted.outputs).toEqual(compiled.outputs);
     expect(interpreted.error).toEqual(compiled.error);
     expect(compiled.error).toMatchObject({ stepId: 'click_004', phase: 'pre' });
   });
@@ -350,7 +357,11 @@ describe('parity: compiled code and the interpreter drive the page identically',
         vaultResolver: { resolve: () => SECRET },
       });
       const result = await runtime.run(id, ctx);
-      return { log, error: JSON.parse(JSON.stringify(result.error ?? null)) as unknown };
+      return {
+        log,
+        error: JSON.parse(JSON.stringify(result.error ?? null)) as unknown,
+        outputs: ctx.drainOutputs(),
+      };
     };
 
     runtime.resetWorkflows();
@@ -360,6 +371,7 @@ describe('parity: compiled code and the interpreter drive the page identically',
     const interpreted = await run('interpreted');
 
     expect(interpreted.log).toEqual(compiled.log);
+    expect(interpreted.outputs).toEqual(compiled.outputs);
     expect(interpreted.error).toEqual(compiled.error);
     expect(compiled.error).toMatchObject({ name: 'AssertionError', stepId: 'assert_010' });
   });
@@ -368,11 +380,33 @@ describe('parity: compiled code and the interpreter drive the page identically',
     const script: PageScript = {
       url: 'https://portal.acmesupply.com/dashboard/reports/stock',
       visible: { "locator(\"[role='dialog'] button:has-text('Accept')\")": true },
+      count: { 'getByRole("table").locator("tbody tr, tr:not(:first-child)")': 2 },
+      texts: {
+        'getByRole("table").locator("thead th, tr:first-child th")': [
+          'sku',
+          'name',
+          'qty',
+          'reorderLevel',
+        ],
+        'getByRole("table").locator("tbody tr, tr:not(:first-child)").nth(0).locator("td, th")': [
+          'A-1',
+          'Widget',
+          '3',
+          '10',
+        ],
+        'getByRole("table").locator("tbody tr, tr:not(:first-child)").nth(1).locator("td, th")': [
+          'B-2',
+          'Gadget',
+          '1,250',
+          '40',
+        ],
+      },
       snapshot: '- table',
     };
     const { compiled, interpreted } = await both(supplierPortal, script);
 
     expect(interpreted.log).toEqual(compiled.log);
+    expect(interpreted.outputs).toEqual(compiled.outputs);
     expect(interpreted.status).toBe(compiled.status);
     expect(interpreted.error).toEqual(compiled.error);
     expect(compiled.log.length).toBeGreaterThan(10);
@@ -381,10 +415,15 @@ describe('parity: compiled code and the interpreter drive the page identically',
     expect(compiled.log).toContain(`getByRole("textbox",{"name":"Password"}).fill("${SECRET}")`);
     expect(compiled.log).toContain('getByRole("button",{"name":"Accept"}).click');
 
-    // Recorded so a change here is noticed: the reference workflow's last
-    // step declares an array-of-objects schema, and both executors read any
-    // `type: 'array'` schema as a flat text list. The table is read with one
-    // allTextContents() call, not row by row.
-    expect(compiled.log.at(-1)).toBe('getByRole("table").allTextContents');
+    // The reference workflow declares typed rows. Both executors read the
+    // table row by row and produce the same typed output.
+    expect(compiled.outputs).toEqual([
+      {
+        allRows: [
+          { sku: 'A-1', name: 'Widget', qty: 3, reorderLevel: 10 },
+          { sku: 'B-2', name: 'Gadget', qty: 1250, reorderLevel: 40 },
+        ],
+      },
+    ]);
   });
 });

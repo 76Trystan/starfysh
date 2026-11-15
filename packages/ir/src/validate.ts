@@ -36,6 +36,37 @@ ajv.addSchema(stepSchema, 'https://sfysh.dev/schemas/v1/step.schema.json');
 const compiledWorkflow = ajv.compile<Workflow>(workflowSchema);
 const compiledStep = ajv.compile<Step>(stepSchema);
 
+// The patch schema refers to the step schema by the same relative $ref the
+// workflow schema uses, so the registration above covers it too.
+const patchSchema = JSON.parse(
+  readFileSync(join(schemaDir, 'patch.schema.json'), 'utf-8'),
+) as Record<string, unknown>;
+const compiledPatch = ajv.compile(patchSchema);
+
+/**
+ * Check an unknown value against the patch schema, then apply the step
+ * rules to its `before` and `after` steps. Returns the problems found, or
+ * an empty list. Internal: `validatePatch` in patch.ts is the public entry
+ * point and adds the checks that relate the patch's fields to each other.
+ */
+export function validatePatchShape(data: unknown): ValidationError[] {
+  if (!compiledPatch(data)) return toErrors(compiledPatch.errors);
+
+  const errors: ValidationError[] = [];
+  const patch = data as { before?: Step; after: Step };
+  for (const field of ['before', 'after'] as const) {
+    const candidate = patch[field];
+    if (candidate === undefined) continue;
+    const found: ValidationError[] = [];
+    walkSteps([candidate], '', (step, path) => checkStepText(step, path, found));
+    checkUniqueStepIds([candidate], '', found);
+    for (const e of found) {
+      errors.push({ ...e, path: `/${field}${e.path === '/' ? '' : e.path}` });
+    }
+  }
+  return errors;
+}
+
 /**
  * A single validation error, projected into a stable, consumer-friendly shape.
  * The underlying Ajv error objects carry more detail; we expose the subset

@@ -35,6 +35,14 @@ describe('classify: StepFailure wrapper', () => {
     const bare = classify({ error });
     const wrapped = classify({ error: new StepFailure(info, error) });
     expect(bare.kind).toBe(kind);
-    expect(wrapped).toEqual(bare);
+    // Same verdict either way. The wrapper also tells triage which step it was.
+    expect(wrapped).toMatchObject({
+      kind: bare.kind,
+      rule: bare.rule,
+      reason: bare.reason,
+      retryable: bare.retryable,
+    });
+    expect(wrapped.stepId).toBe('click_003');
+    expect(wrapped.action).toBe('click');
   });
 });

@@ -5,7 +5,7 @@
 // and healer dev loops, workflows can also be replayed against a cassette
 // recorded from an earlier live run.
 
-export { replay, replayFromCassette, runRegisteredWorkflow } from './replay.js';
+export { replay, replayFromCassette, runRegisteredWorkflow, RunTimeoutError } from './replay.js';
 export { replay as verify } from './replay.js';
 export type { ReplayFromCassetteOptions } from './replay.js';
 

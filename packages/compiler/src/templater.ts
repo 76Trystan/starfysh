@@ -5,7 +5,7 @@
 // is a compile error, not silently skipped.
 
 import Handlebars from 'handlebars';
-import { parseRoleSelector } from '@sfysh/ir';
+import { parseRoleSelector, planExtract } from '@sfysh/ir';
 import type { Step, Target, SelectorCandidate, ValueSource, Condition, Workflow } from '@sfysh/ir';
 import { COMPILER_VERSION } from './version.js';
 
@@ -64,7 +64,14 @@ export class Templater {
     // Declared inside the wrapper it would be out of scope, so the wrapper
     // returns it and the declaration moves outside.
     const bind = step.action === 'extract' ? (step as { bind?: string }).bind : undefined;
-    const inner = [pre, code, post, bind ? `return ${bind};` : '']
+    // Every extract hands its value to the output sink, under its bind
+    // name or, failing that, its step id. It does so after the post
+    // checks, so a step whose postcondition fails contributes no output.
+    const output =
+      step.action === 'extract'
+        ? `emit.output({ ${bind ?? step.id!}: ${bind ?? EXTRACT_LOCAL} });`
+        : '';
+    const inner = [pre, code, post, output, bind ? `return ${bind};` : '']
       .filter((s) => s.length > 0)
       .join('\n');
     const declaration = bind ? `const ${bind} = ` : '';
@@ -85,7 +92,6 @@ export class Templater {
       compilerVersion: COMPILER_HEADER_VERSION,
       destructure: computeContextDestructure(workflow),
       needsAssertCondition: containsConditionAsserts(workflow.steps),
-      hasOutputs: workflow.outputs !== undefined,
       steps: stepsSource,
     });
   }
@@ -319,11 +325,18 @@ function renderCondition(cond: Condition): string {
   throw new CompilerError('Unknown Condition shape');
 }
 
+/** Local variable an extract step without `bind` stores its value in. */
+const EXTRACT_LOCAL = 'extracted';
+
 function buildStepContext(step: Step): Record<string, unknown> {
   const schema =
     step.action === 'extract' ? (step as { schema?: Record<string, unknown> }).schema : undefined;
-  const isValueExtract = step.action === 'extract' && schema?.type === 'string';
-  const isListExtract = step.action === 'extract' && schema?.type === 'array';
+  // The schema decides the read: one value, a flat list, or typed table
+  // rows. The rule is shared with the interpreter through @sfysh/ir.
+  const plan = step.action === 'extract' ? planExtract(schema) : undefined;
+  if (plan?.kind === 'unsupported') {
+    throw new CompilerError(`Extract step '${step.id}' cannot be compiled: ${plan.reason}`);
+  }
   return {
     ...step,
     intent: commentText((step as { intent?: string }).intent ?? ''),
@@ -335,9 +348,9 @@ function buildStepContext(step: Step): Record<string, unknown> {
     isAssert: step.action === 'assert',
     isGuard: step.action === 'guard',
     isLoop: step.action === 'loop',
-    isValueExtract,
-    isListExtract,
-    isTableExtract: step.action === 'extract' && !isValueExtract && !isListExtract,
+    extractMethod: plan?.kind,
+    extractColumns: plan?.kind === 'table' ? plan.columns : undefined,
+    extractVar: (step as { bind?: string }).bind ?? EXTRACT_LOCAL,
   };
 }
 
@@ -401,7 +414,7 @@ await {{{target target}}}.click();`,
 await {{{target target}}}.fill({{{value value}}});`,
 
   extract: `// [{{id}}] {{intent}}
-{{#if isValueExtract}}{{#if bind}}const {{bind}} = {{/if}}await emit.value({{{target target}}});{{else if isListExtract}}{{#if bind}}const {{bind}} = {{/if}}await emit.list({{{target target}}});{{else}}{{#if bind}}const {{bind}} = {{/if}}await emit.table({{{target target}}}, {{{jsonLiteral schema}}});{{/if}}`,
+const {{extractVar}} = await emit.{{extractMethod}}({{{target target}}}{{#if extractColumns}}, {{{jsonLiteral extractColumns}}}{{/if}});`,
 
   wait: `// [{{id}}] {{intent}}
 {{#if forCondition}}await poll(async () => {{{cond forCondition}}});{{/if}}{{#if millis}}await page.waitForTimeout({{millis}});{{/if}}`,
@@ -439,7 +452,6 @@ const WORKFLOW_TEMPLATE = (tpl: {
   compilerVersion: string;
   destructure: string[];
   needsAssertCondition: boolean;
-  hasOutputs: boolean;
   steps: string;
 }): string => {
   const runtimeImports = ['workflow', 'step', 'assert', 'poll'];
@@ -456,6 +468,6 @@ workflow(${JSON.stringify(tpl.workflowId)}, async (ctx) => {
   const { ${tpl.destructure.join(', ')} } = ctx;
 
 ${tpl.steps}
-${tpl.hasOutputs ? '\n  await ctx.flushOutputs();\n' : ''}});
+});
 `;
 };

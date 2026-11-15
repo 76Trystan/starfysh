@@ -114,6 +114,35 @@ describe('compile verify (dispatch and CLI parsing)', () => {
     expect(c.stderr.text).toContain('--runs must be a positive integer');
   });
 
+  it('errors when --timeout is not a positive number of milliseconds', async () => {
+    const workflow = writeWorkflow(dir);
+    for (const bad of ['soon', '0', '1.5']) {
+      const c = ctx();
+      const code = await run(
+        ['verify', workflow, '--backend', backendSuccess, '--timeout', bad],
+        c,
+      );
+      expect(code).toBe(1);
+      expect(c.stderr.text).toContain('--timeout must be a positive number of milliseconds');
+    }
+  });
+
+  it('accepts --timeout and still passes a run that finishes in time', async () => {
+    const workflow = writeWorkflow(dir);
+    const c = ctx();
+    const code = await run(
+      ['verify', workflow, '--backend', backendSuccess, '--runs', '1', '--timeout', '30000'],
+      c,
+    );
+    expect(code).toBe(0);
+  });
+
+  it('documents --timeout in the help text', async () => {
+    const c = ctx();
+    await run(['verify', '--help'], c);
+    expect(c.stdout.text).toContain('--timeout <ms>');
+  });
+
   it('reports a clear error for missing workflow files', async () => {
     const c = ctx();
     const code = await run(
