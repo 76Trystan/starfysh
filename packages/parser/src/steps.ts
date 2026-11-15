@@ -5,10 +5,16 @@ import { unquote } from './selectors.js';
 import { extractCondition } from './conditions.js';
 
 /**
- * A `page.<method>(...)` call whose terminal method is not in the parser's
- * supported set. Surfaced so downstream tooling can tell the user which
- * actions were dropped rather than silently producing an incomplete workflow.
- * Phase 2 reuses this shape for unrecognised HTTP-library calls.
+ * A call the parser recognised syntactically but could not map into the IR.
+ * Two shapes land here: a `page.<method>(...)` chain whose terminal method is
+ * not in the parser's supported set, and an `expect(...)` chain whose matcher
+ * (or subject, or argument) the condition extractor could not translate. In
+ * both cases `method` is the terminal method of the chain (`hover`,
+ * `toHaveCount`, ...). Surfaced so downstream tooling can tell the user which
+ * actions and assertions were dropped rather than silently producing an
+ * incomplete workflow. Phase 2 reuses this shape for unrecognised
+ * HTTP-library calls; one list rather than a page/expect split keeps that
+ * extension a pure addition.
  */
 export interface UnsupportedCall {
   method: string;
@@ -55,7 +61,18 @@ export function chainsToSteps(chains: CallChain[]): ChainsToStepsResult {
   for (const chain of chains) {
     if (chain.root === 'expect') {
       const condition = extractCondition(chain);
-      if (!condition) continue;
+      if (!condition) {
+        // The matcher, its subject, or its argument could not be mapped to an
+        // IR Condition. Report the terminal method (the matcher name) so the
+        // user sees exactly which assertion fell out of the workflow.
+        const terminal = chain.links[chain.links.length - 1];
+        unsupported.push({
+          method: terminal?.method ?? 'expect',
+          position: chain.position,
+          text: chain.text,
+        });
+        continue;
+      }
 
       const prev = steps[steps.length - 1];
       if (prev) {

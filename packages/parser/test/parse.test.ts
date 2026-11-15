@@ -289,6 +289,46 @@ describe('parse', () => {
     });
   });
 
+  describe('unsupported expect() matchers', () => {
+    it('records an unrecognised matcher with the matcher name, position, and raw text', () => {
+      const source = `test('t', async ({ page }) => {\n  await page.goto('https://example.com');\n  await expect(page.getByText('X')).toHaveCount(3);\n});\n`;
+      const { workflow, unsupported } = parse(source);
+      expect(workflow.steps).toHaveLength(1);
+      expect(unsupported).toHaveLength(1);
+      expect(unsupported[0]?.method).toBe('toHaveCount');
+      expect(unsupported[0]?.position.line).toBe(3);
+      expect(unsupported[0]?.text).toBe("expect(page.getByText('X')).toHaveCount(3)");
+    });
+
+    it('records a supported matcher whose subject cannot be mapped', () => {
+      const source = `test('t', async ({ page }) => {\n  await page.goto('https://example.com');\n  await expect(page.getByPlaceholder('Search')).toBeVisible();\n});\n`;
+      const { unsupported } = parse(source);
+      expect(unsupported).toHaveLength(1);
+      expect(unsupported[0]?.method).toBe('toBeVisible');
+      expect(unsupported[0]?.text).toBe("expect(page.getByPlaceholder('Search')).toBeVisible()");
+    });
+
+    it('records toHaveURL with a regex argument it cannot translate', () => {
+      const source = `test('t', async ({ page }) => {\n  await page.goto('https://example.com');\n  await expect(page).toHaveURL(/dashboard/);\n});\n`;
+      const { unsupported } = parse(source);
+      expect(unsupported).toHaveLength(1);
+      expect(unsupported[0]?.method).toBe('toHaveURL');
+    });
+
+    it('does not report mapped expect() assertions', () => {
+      const source = `test('t', async ({ page }) => {\n  await page.goto('https://example.com');\n  await expect(page.getByText('Welcome')).toBeVisible();\n});\n`;
+      const { workflow, unsupported } = parse(source);
+      expect(unsupported).toEqual([]);
+      expect(workflow.steps[0]?.post).toEqual([{ textPresent: 'Welcome' }]);
+    });
+
+    it('interleaves unsupported page calls and expect matchers in source order', () => {
+      const source = `test('t', async ({ page }) => {\n  await page.goto('https://example.com');\n  await page.hover('.menu');\n  await expect(page.getByText('X')).toHaveCount(3);\n});\n`;
+      const { unsupported } = parse(source);
+      expect(unsupported.map((u) => u.method)).toEqual(['hover', 'toHaveCount']);
+    });
+  });
+
   describe('full hand-written Playwright script', () => {
     it('parses a login flow into a complete workflow', () => {
       const source = `

@@ -2,13 +2,13 @@
 
 Parser that reads hand-written Playwright TypeScript scripts and lifts them into the Starfysh IR. Once a Playwright script is in IR form, the Starfysh verifier can replay it, the healer can patch broken steps, and the compiler can regenerate deterministic TypeScript.
 
-## Status
+## Usage
 
-Scaffolded, not yet implemented. The package is private (`"private": true` in `package.json`) and will stay that way until the walker, selector extraction, and pre/post inference pass their tests. Follow the Phase 1 checklist in `docs/planning/ToDo.md` for the current state.
+```ts
+import { parse } from '@sfysh/parser';
 
-Importing `parse()` today throws `ParserNotImplementedError`. The signature is stable so downstream packages (the CLI, the verifier) can be written against it ahead of the implementation.
-
-## What it will do
+const { workflow, unsupported } = parse(source);
+```
 
 Given a Playwright script like:
 
@@ -22,25 +22,29 @@ test('submit a report', async ({ page }) => {
 });
 ```
 
-`parse(source)` will return a `Workflow` matching `@sfysh/ir`'s schema, with:
+`parse(source)` returns a `ParseResult`:
 
-- One step per Playwright action (`page.goto`, `click`, `fill`, `waitFor`, etc.)
-- Ranked selector candidates per step (role based first, then test-id, then CSS)
-- `pre` and `post` conditions inferred from `expect()` calls that surround each action
-- Values that look like test inputs lifted to typed parameters
-- Credentials replaced with vault references rather than left as literals
+- `workflow` is a `Workflow` that validates against `@sfysh/ir`'s schema, built from the first `test()` call in the source. Each recognised Playwright action becomes one IR step with ranked selector candidates (role based first, then test-id, then CSS), and recognised `expect()` assertions become postconditions on the preceding step (or standalone assert steps when nothing precedes them).
+- `unsupported` lists every call the parser recognised syntactically but could not map into the IR, so nothing is dropped silently. Two shapes land here: `page.<method>()` chains whose terminal method is outside the supported set (for example `hover` or `screenshot`), and `expect()` chains whose matcher, subject, or argument could not be translated (for example `toHaveCount`, or `toHaveURL` with a regex argument). Each entry carries the terminal `method` name, the 1-based source `position`, and the raw call `text`.
 
-The output must validate against `@sfysh/ir`'s schema and must survive a round-trip through `@sfysh/compiler` back to deterministic TypeScript.
+`parse` throws `ParseError` when the source contains no `test()` calls or no recognisable actions at all.
+
+## What is recognised today
+
+- **Actions:** `page.goto`, `click`, `fill`, `waitForTimeout`, `waitForSelector`, `waitForURL`.
+- **Data reads:** locator terminals `textContent`, `innerText`, `inputValue`, and `allTextContents` become IR `extract` steps with weak default schemas. A single-declaration binding such as `const name = await page.getByTestId('user').textContent()` carries `bind: 'name'` onto the step.
+- **Assertions:** `toHaveURL`, `toBeVisible`, `toBeHidden`, `toContainText`, `toHaveText` with string arguments and subjects built from `getByText`, `getByLabel`, `getByTestId`, `getByRole`, or `locator`.
+- **Selectors:** `getByRole`, `getByTestId`, `getByText`, `getByLabel`, and CSS `locator` chains, ranked per the IR's candidate ordering.
+
+Table iteration (`for (const row of await locator.all())`) and richer extract schema inference are tracked in the Phase 1 checklist and not yet supported.
 
 ## Installation
 
-Not yet published. Use the workspace symlink.
-
 ```sh
-pnpm add @sfysh/parser@workspace:*
+pnpm add @sfysh/parser
 ```
 
 ## Dependencies
 
 - `@sfysh/ir` for the output type
-- `ts-morph` (added when the walker lands)
+- `ts-morph` for the TypeScript AST walk

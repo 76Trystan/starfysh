@@ -24,9 +24,11 @@ export class ParseError extends Error {
 /**
  * Outcome of `parse()`. The workflow is the IR that downstream consumers
  * (compiler, verifier, CLI) use. `unsupported` is a non-throwing report of
- * every `page.<method>` call the parser recognised syntactically but could
- * not map to an IR step; callers should surface it so users know which
- * actions were dropped from the workflow.
+ * every call the parser recognised syntactically but could not map into the
+ * IR: `page.<method>` chains with an unsupported terminal method, and
+ * `expect()` chains whose matcher (or subject, or argument) the condition
+ * extractor could not translate. Callers should surface it so users know
+ * which actions and assertions were dropped from the workflow.
  */
 export interface ParseResult {
   workflow: Workflow;
@@ -39,8 +41,9 @@ export interface ParseResult {
  * Extracts the first `test()` call, maps its Playwright actions (goto, click,
  * fill, waitFor*) to IR steps, and converts `expect()` assertions into
  * postconditions on the preceding step or standalone assert steps. Any
- * `page.<method>()` call whose terminal method is outside the supported set
- * is collected into `unsupported` rather than dropped silently.
+ * `page.<method>()` call whose terminal method is outside the supported set,
+ * and any `expect()` assertion that cannot be mapped to an IR Condition, is
+ * collected into `unsupported` rather than dropped silently.
  */
 export function parse(source: string): ParseResult {
   const tests = walkFile(source);
