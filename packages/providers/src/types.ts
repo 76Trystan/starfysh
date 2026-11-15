@@ -10,13 +10,14 @@ export interface Message {
 }
 
 /**
- * Options passed to {@link Provider.complete}. Temperature and
- * maxTokens have sane defaults per provider; callers override them
- * when the healer needs deterministic output (temperature 0) or
- * expects a long patch (higher maxTokens).
+ * Options passed to {@link Provider.complete}. maxTokens has a sane
+ * default per provider; callers override it when the healer expects
+ * a long patch. Temperature is intentionally absent: the Anthropic
+ * API removed sampling parameters on 2026-10-21, and the healer
+ * controls output depth via the `effort` config on the provider,
+ * not per-call temperature.
  */
 export interface CompleteOptions {
-  temperature?: number;
   maxTokens?: number;
   stop?: string[];
 }

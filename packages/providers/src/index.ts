@@ -8,3 +8,5 @@ export type {
   ProviderErrorCode,
 } from './types.js';
 export { ProviderError } from './types.js';
+
+export { AnthropicProvider, type AnthropicConfig } from './anthropic.js';

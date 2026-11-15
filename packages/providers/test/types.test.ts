@@ -93,7 +93,6 @@ describe('Provider interface', () => {
     };
 
     const result = await stub.complete([{ role: 'user', content: 'hi' }], {
-      temperature: 0,
       maxTokens: 100,
       stop: ['\n'],
     });
