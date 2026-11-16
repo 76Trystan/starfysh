@@ -2,7 +2,7 @@
 
 Healer for Starfysh. When a workflow step fails and triage classifies the failure as a site change, the healer asks a model to re-derive that one step, validates the patch, verifies the patched workflow against the live site, and hands a reviewable diff to a person.
 
-**Status: in progress.** The package is private and unpublished. Triage wiring, the model input builder, the output parser, and the three patch checks (scope, allowlist by patch class, origins and secrets) are implemented; `heal()` still throws `HealerNotImplementedError`, and nothing here calls a model yet.
+**Status: in progress.** The package is private and unpublished. Triage wiring, the model input builder, the output parser, and the four patch checks (scope, allowlist by patch class, origins and secrets, URL patterns) are implemented; `heal()` still throws `HealerNotImplementedError`, and nothing here calls a model yet.
 
 ## Triage before any model
 
@@ -148,7 +148,7 @@ An inserted step is rejected when it carries nested steps (`nested_steps_added`)
 
 Before any of that, the patch has to match the workflow: the right workflow id (`wrong_workflow`), the current hash (`stale_base`), an anchor step that exists (`unknown_step`), and a `before` equal to the step that is really there (`before_mismatch`). Without the last check, a patch could hide a dropped condition by leaving it out of both sides.
 
-This is the general rule for every patch. The narrower limits for each kind of patch, and the rules on URLs and secrets, are described in the next two sections.
+This is the general rule for every patch. The narrower limits for each kind of patch, the rules on URLs and secrets, and the limits on URL patterns are described in the next three sections.
 
 ## Allowlist by patch class
 
@@ -214,6 +214,30 @@ Only `status: 'ok'` lets a patch go ahead on its own. The result has three state
 **Secrets.** A renamed password field is the commonest reason to heal a login step, and "type the password into the search box" looks the same to code. That is why a new target on a step with a `{secret}` value is neither rejected nor accepted: it goes to a person.
 
 **Known limit.** A `urlMatches` pattern that names a host without a scheme (`evil\.test/login`) reads the same as a path and is not caught. Such a condition can only be added alongside the existing ones, because the scope check does not let a `post` condition be replaced.
+
+## URL patterns
+
+A `urlMatches` condition is compiled into a regular expression and run against the page URL, which the site controls. A pattern such as `(a+)+$` is valid and can hold the event loop for minutes. `checkPatchPatterns()` puts limits on every pattern a patch introduces.
+
+```ts
+import { checkPatchPatterns } from '@sfysh/healer';
+
+const patterns = checkPatchPatterns(patch, workflow);
+if (!patterns.ok) {
+  patterns.violations; // [{ code, path, message }]
+}
+```
+
+| Code                           | Rejected because                                                                             |
+| ------------------------------ | -------------------------------------------------------------------------------------------- |
+| `pattern_too_long`             | The pattern is longer than 200 characters.                                                   |
+| `pattern_invalid`              | The pattern is not a valid regular expression. Generated code would throw on it.             |
+| `pattern_nested_quantifier`    | A group that can repeat contains something of variable length, as in `(a+)+` or `(.*a){20}`. |
+| `pattern_too_many_quantifiers` | The pattern has more than three unbounded quantifiers (`*`, `+`, `{n,}`), as in `.*.*.*.*x`. |
+
+A pattern that is already in the workflow, character for character, is not checked. A person wrote it, and refusing it would make any step that carries one impossible to heal. Edit it at all and it counts as new.
+
+The nested-quantifier rule looks at the shape of the pattern and refuses when unsure, so some harmless patterns fail it (`(/\d+)*` is one). It does not catch a repeated alternation whose branches overlap, such as `(a|a)*`. `checkUrlPattern(pattern)` runs the same limits on one string.
 
 ## What is still to come
 

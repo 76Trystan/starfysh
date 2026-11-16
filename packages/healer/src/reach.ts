@@ -13,7 +13,9 @@
 
 import { findStep } from '@sfysh/ir';
 import type { StepPatch, Workflow } from '@sfysh/ir';
-import { pointer, same } from './equal.js';
+import { same } from './equal.js';
+import { eachStep, ownConditions } from './walk.js';
+import type { LooseStep } from './walk.js';
 
 export type ReachViolationCode =
   /** The step the patch is anchored to is not in the workflow. */
@@ -57,14 +59,8 @@ export type ReachResult =
   | { status: 'needs_approval'; approvals: ReachApproval[] }
   | { status: 'rejected'; violations: ReachViolation[] };
 
-type Loose = Record<string, unknown>;
+type Loose = LooseStep;
 
-/** Fields that hold nested steps. */
-const BODIES = ['then', 'else', 'do'] as const;
-/** Fields that hold one condition. */
-const CONDITION_FIELDS = ['forCondition', 'condition', 'if', 'while'] as const;
-/** Fields that hold a list of conditions. */
-const CONDITION_LISTS = ['pre', 'post'] as const;
 /** Fields that hold a value source, which may be a `{secret}` reference. */
 const VALUE_FIELDS = ['url', 'value'] as const;
 
@@ -175,45 +171,26 @@ interface OriginUse {
 }
 
 /** Every place a step, or a step nested in it, names an origin. */
-function originUses(step: Loose, base: string): OriginUse[] {
+function originUses(root: Loose, base: string): OriginUse[] {
   const uses: OriginUse[] = [];
-
-  if (typeof step.url === 'string') {
-    const origin = literalOrigin(step.url);
-    if (origin !== undefined) uses.push({ path: `${base}/url`, keys: [origin] });
-  }
-
-  const visit = (condition: unknown, path: string) => {
-    if (typeof condition !== 'object' || condition === null) return;
-    const { urlEquals, urlMatches } = condition as Loose;
-    if (typeof urlEquals === 'string') {
-      const origin = literalOrigin(urlEquals);
-      if (origin !== undefined) uses.push({ path: `${path}/urlEquals`, keys: [origin] });
+  eachStep(root, base, (step, at) => {
+    if (typeof step.url === 'string') {
+      const origin = literalOrigin(step.url);
+      if (origin !== undefined) uses.push({ path: `${at}/url`, keys: [origin] });
     }
-    if (typeof urlMatches === 'string') {
-      for (const keys of patternOrigins(urlMatches)) {
-        uses.push({ path: `${path}/urlMatches`, keys });
+    for (const { condition, path } of ownConditions(step, at)) {
+      const { urlEquals, urlMatches } = condition;
+      if (typeof urlEquals === 'string') {
+        const origin = literalOrigin(urlEquals);
+        if (origin !== undefined) uses.push({ path: `${path}/urlEquals`, keys: [origin] });
+      }
+      if (typeof urlMatches === 'string') {
+        for (const keys of patternOrigins(urlMatches)) {
+          uses.push({ path: `${path}/urlMatches`, keys });
+        }
       }
     }
-  };
-  for (const field of CONDITION_FIELDS) visit(step[field], `${base}/${field}`);
-  for (const field of CONDITION_LISTS) {
-    const list = step[field];
-    if (Array.isArray(list)) {
-      list.forEach((condition, index) => visit(condition, `${base}/${field}/${index}`));
-    }
-  }
-
-  for (const body of BODIES) {
-    const nested = step[body];
-    if (Array.isArray(nested)) {
-      nested.forEach((child, index) => {
-        if (typeof child === 'object' && child !== null) {
-          uses.push(...originUses(child as Loose, `${base}/${body}/${index}`));
-        }
-      });
-    }
-  }
+  });
   return uses;
 }
 
@@ -271,28 +248,15 @@ function patternOrigins(pattern: string): string[][] {
 }
 
 /** Secret references in a step and the steps nested in it: JSON Pointer to secret name. */
-function secretRefs(step: Loose, base: string): Map<string, string> {
+function secretRefs(root: Loose, base: string): Map<string, string> {
   const refs = new Map<string, string>();
-  for (const field of VALUE_FIELDS) {
-    const source = step[field];
-    if (typeof source === 'object' && source !== null && 'secret' in source) {
-      refs.set(`${base}/${field}`, String((source as { secret: unknown }).secret));
+  eachStep(root, base, (step, at) => {
+    for (const field of VALUE_FIELDS) {
+      const source = step[field];
+      if (typeof source === 'object' && source !== null && 'secret' in source) {
+        refs.set(`${at}/${field}`, String((source as { secret: unknown }).secret));
+      }
     }
-  }
-  for (const body of BODIES) {
-    const nested = step[body];
-    if (Array.isArray(nested)) {
-      nested.forEach((child, index) => {
-        if (typeof child === 'object' && child !== null) {
-          for (const [path, name] of secretRefs(
-            child as Loose,
-            `${base}/${pointer(body)}/${index}`,
-          )) {
-            refs.set(path, name);
-          }
-        }
-      });
-    }
-  }
+  });
   return refs;
 }

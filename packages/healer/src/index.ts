@@ -46,6 +46,19 @@ export type {
   ReachViolationCode,
 } from './reach.js';
 
+export {
+  checkPatchPatterns,
+  checkUrlPattern,
+  URL_PATTERN_MAX_CHARS,
+  URL_PATTERN_MAX_UNBOUNDED,
+} from './pattern.js';
+export type {
+  PatternResult,
+  PatternViolation,
+  PatternViolationCode,
+  UrlPatternProblem,
+} from './pattern.js';
+
 /**
  * Thrown by `heal()` until the healer is implemented. The package is a
  * scaffold: it exists so the workspace wiring, the dependency graph and the
