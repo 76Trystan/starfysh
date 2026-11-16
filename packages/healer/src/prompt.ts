@@ -132,7 +132,7 @@ Your task is to propose a replacement for the failed step so that it does what i
 
 Rules:
 - Change only the failed step. Keep its "id" and its "action".
-- Keep every "post" condition unless the page snapshot shows it can no longer be true. Never remove a condition to make the step pass.
+- Keep every "post" condition exactly as it is. You may add conditions. If a "post" condition can no longer be true on this page, do not remove or reword it: answer with cannotHeal and say which one.
 - List selector candidates under "target.candidates" in this order of preference: role, then testid, then css.
 - Use only elements that appear in the page snapshot. Do not guess names, test ids or classes.
 - Never write a literal password, token or other secret. Keep any {"secret": "..."} reference exactly as it is.

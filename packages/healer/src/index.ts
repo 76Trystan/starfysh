@@ -26,6 +26,9 @@ export {
 } from './triage.js';
 export type { HealerTriage, HealRoute, TriageDecision, TriageOptions } from './triage.js';
 
+export { checkPatchScope, STEP_FIELDS } from './scope.js';
+export type { ScopeResult, ScopeViolation, ScopeViolationCode } from './scope.js';
+
 /**
  * Thrown by `heal()` until the healer is implemented. The package is a
  * scaffold: it exists so the workspace wiring, the dependency graph and the

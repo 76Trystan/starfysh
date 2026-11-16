@@ -2,7 +2,7 @@
 
 Healer for Starfysh. When a workflow step fails and triage classifies the failure as a site change, the healer asks a model to re-derive that one step, validates the patch, verifies the patched workflow against the live site, and hands a reviewable diff to a person.
 
-**Status: in progress.** The package is private and unpublished. Triage wiring, the model input builder and the output parser are implemented; `heal()` still throws `HealerNotImplementedError`, and nothing here calls a model yet.
+**Status: in progress.** The package is private and unpublished. Triage wiring, the model input builder, the output parser and the patch scope check are implemented; `heal()` still throws `HealerNotImplementedError`, and nothing here calls a model yet.
 
 ## Triage before any model
 
@@ -117,11 +117,42 @@ The model supplies only the replacement step, a rationale and an optional confid
 
 One Markdown code fence around the whole answer is tolerated, because models add one even when told not to. Nothing else is: the parser does not search free text for something that looks like a patch. The rationale is model-written text that a reviewer will read in a terminal, so control characters are removed from it and it is cut to 2,000 characters.
 
-A patch from this function is well formed, not approved. Limits on what a heal may change are a separate check that has not landed yet, and nothing in this package applies or runs a patch.
+A patch from this function is well formed, not approved. Limits on what a heal may change are a separate check, described next, and nothing in this package applies or runs a patch.
+
+## Patch scope
+
+A well-formed patch can still do things a heal must not. `checkPatchScope()` compares the step before and after and rejects any change outside what one heal may touch. It trusts nothing the model said about the patch and does not apply it.
+
+```ts
+import { checkPatchScope } from '@sfysh/healer';
+
+const scope = checkPatchScope(result.patch, workflow);
+if (!scope.ok) {
+  scope.violations; // [{ code, path, message }], every violation, not only the first
+}
+```
+
+A replacement may change selector candidates, the intent, the timeout and the conditions of a guard or loop, and may add conditions. It is rejected when it does any of the following.
+
+| Code                   | Rejected because                                                                             |
+| ---------------------- | -------------------------------------------------------------------------------------------- |
+| `post_weakened`        | A `post` condition was removed or altered. An altered condition counts as a removed one.     |
+| `assertion_changed`    | The condition of an `assert` step changed.                                                   |
+| `nested_steps_changed` | The steps inside a guard or loop changed. One heal changes one step, not a subtree.          |
+| `action_changed`       | The step became a different kind of step.                                                    |
+| `outputs_changed`      | An `extract` changed its `bind` or `schema`, which decide what the workflow outputs.         |
+| `parameters_changed`   | The step reads different workflow parameters than before.                                    |
+| `unknown_field`        | The step gained a field its action does not have. The step schema alone does not catch this. |
+
+An inserted step is rejected when it carries nested steps (`nested_steps_added`), is an `extract`, reads a workflow parameter, or has an unknown field.
+
+Before any of that, the patch has to match the workflow: the right workflow id (`wrong_workflow`), the current hash (`stale_base`), an anchor step that exists (`unknown_step`), and a `before` equal to the step that is really there (`before_mismatch`). Without the last check, a patch could hide a dropped condition by leaving it out of both sides.
+
+This is the general rule for every patch. Narrower limits for particular kinds of patch, and the rules on URLs and secrets, are separate checks that have not landed yet.
 
 ## What is still to come
 
-- Check each patch against limits on what a heal may change before it is applied or run.
+- Limits by kind of patch, and rules on URLs and secrets, before a patch is applied or run.
 - Verify the patched workflow with `@sfysh/verifier` and require human approval by default.
 
 ## How it fits with the other packages
