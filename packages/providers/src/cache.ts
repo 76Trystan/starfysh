@@ -66,7 +66,13 @@ export class CachedProvider implements Provider {
 }
 
 function hashRequest(messages: Message[], options?: CompleteOptions): string {
-  const payload = JSON.stringify({ messages, options: options ?? {} });
+  // Only the options that change what the model is asked. `timeoutMs` and
+  // `signal` bound how long the caller waits, so the same request with a
+  // different deadline must find the same entry.
+  const payload = JSON.stringify({
+    messages,
+    options: { maxTokens: options?.maxTokens, stop: options?.stop },
+  });
   return fnv1a(payload);
 }
 

@@ -16,10 +16,27 @@ export interface Message {
  * API removed sampling parameters on 2026-10-21, and the healer
  * controls output depth via the `effort` config on the provider,
  * not per-call temperature.
+ *
+ * `timeoutMs` and `signal` bound how long a call may run. There is no
+ * default timeout here: without one, a call waits as long as the vendor
+ * SDK allows, which is ten minutes for the Anthropic and OpenAI clients.
+ * A caller that must not hang (the healer) sets its own. Neither option
+ * changes what the model is asked, so neither is part of the cache key.
  */
 export interface CompleteOptions {
   maxTokens?: number;
   stop?: string[];
+  /**
+   * Give up after this many milliseconds. The call rejects with a
+   * `ProviderError` whose code is `timeout`. Must be positive and finite.
+   */
+  timeoutMs?: number;
+  /**
+   * Cancel the call when this signal aborts. The call rejects with a
+   * `ProviderError` whose code is `aborted`, and the signal's reason is
+   * kept as the error's `cause`.
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -104,6 +121,8 @@ export type ProviderErrorCode =
   | 'model_not_found'
   | 'server_error'
   | 'network'
+  | 'timeout'
+  | 'aborted'
   | 'unknown';
 
 export class ProviderError extends Error {
@@ -119,6 +138,9 @@ export class ProviderError extends Error {
     this.name = 'ProviderError';
     this.code = opts.code;
     this.provider = opts.provider;
-    this.retryable = opts.code === 'rate_limit' || opts.code === 'server_error';
+    // A timeout is worth one more try: the request may have been slow, not
+    // wrong. An abort is the caller's own decision, so it is never retried.
+    this.retryable =
+      opts.code === 'rate_limit' || opts.code === 'server_error' || opts.code === 'timeout';
   }
 }

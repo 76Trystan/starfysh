@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import type { Message, CompleteOptions, Completion, ProviderConfig, StopReason } from './types.js';
 import { ProviderError, type ProviderErrorCode } from './types.js';
 import type { Provider } from './types.js';
+import { withDeadline } from './deadline.js';
 
 export interface OpenAIConfig extends ProviderConfig {
   baseUrl?: string;
@@ -26,15 +27,22 @@ export class OpenAIProvider implements Provider {
 
   async complete(messages: Message[], options?: CompleteOptions): Promise<Completion> {
     try {
-      const response = await this.client.chat.completions.create({
-        model: this.model,
-        max_tokens: options?.maxTokens ?? DEFAULT_MAX_TOKENS,
-        stop: options?.stop,
-        messages: messages.map((m) => ({
-          role: m.role,
-          content: m.content,
-        })),
-      });
+      const response = await withDeadline(this.name, options, (signal) =>
+        this.client.chat.completions.create(
+          {
+            model: this.model,
+            max_tokens: options?.maxTokens ?? DEFAULT_MAX_TOKENS,
+            stop: options?.stop,
+            messages: messages.map((m) => ({
+              role: m.role,
+              content: m.content,
+            })),
+          },
+          // Passed only when there is a signal, so a call with no deadline
+          // reaches the SDK exactly as it did before.
+          ...(signal ? [{ signal }] : []),
+        ),
+      );
 
       const choice = response.choices[0];
       const content = choice?.message?.content ?? '';
@@ -73,6 +81,8 @@ function toStopReason(reason: string | null | undefined): StopReason {
 }
 
 function toProviderError(error: unknown, provider: string): ProviderError {
+  // Timeouts and caller aborts are already classified by `withDeadline`.
+  if (error instanceof ProviderError) return error;
   if (error instanceof OpenAI.AuthenticationError) {
     return new ProviderError(error.message, { code: 'auth', provider, cause: error });
   }

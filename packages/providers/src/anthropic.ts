@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { Message, CompleteOptions, Completion, ProviderConfig, StopReason } from './types.js';
 import { ProviderError, type ProviderErrorCode } from './types.js';
 import type { Provider } from './types.js';
+import { withDeadline } from './deadline.js';
 
 export interface AnthropicConfig extends ProviderConfig {
   baseUrl?: string;
@@ -27,16 +28,23 @@ export class AnthropicProvider implements Provider {
     const { system, conversation } = splitSystem(messages);
 
     try {
-      const response = await this.client.messages.create({
-        model: this.model,
-        max_tokens: options?.maxTokens ?? DEFAULT_MAX_TOKENS,
-        stop_sequences: options?.stop,
-        system: system ?? undefined,
-        messages: conversation.map((m) => ({
-          role: m.role as 'user' | 'assistant',
-          content: m.content,
-        })),
-      });
+      const response = await withDeadline(this.name, options, (signal) =>
+        this.client.messages.create(
+          {
+            model: this.model,
+            max_tokens: options?.maxTokens ?? DEFAULT_MAX_TOKENS,
+            stop_sequences: options?.stop,
+            system: system ?? undefined,
+            messages: conversation.map((m) => ({
+              role: m.role as 'user' | 'assistant',
+              content: m.content,
+            })),
+          },
+          // Passed only when there is a signal, so a call with no deadline
+          // reaches the SDK exactly as it did before.
+          ...(signal ? [{ signal }] : []),
+        ),
+      );
 
       const text = response.content
         .filter((block): block is Anthropic.TextBlock => block.type === 'text')
@@ -101,6 +109,8 @@ function splitSystem(messages: Message[]): {
 }
 
 function toProviderError(error: unknown): ProviderError {
+  // Timeouts and caller aborts are already classified by `withDeadline`.
+  if (error instanceof ProviderError) return error;
   if (error instanceof Anthropic.AuthenticationError) {
     return new ProviderError(error.message, { code: 'auth', provider: 'anthropic', cause: error });
   }

@@ -3,6 +3,7 @@ import type { Content } from '@google/genai';
 import type { Message, CompleteOptions, Completion, ProviderConfig, StopReason } from './types.js';
 import { ProviderError, type ProviderErrorCode } from './types.js';
 import type { Provider } from './types.js';
+import { withDeadline } from './deadline.js';
 
 export interface GeminiConfig extends ProviderConfig {
   baseUrl?: string;
@@ -28,15 +29,18 @@ export class GeminiProvider implements Provider {
     try {
       const { system, conversation } = splitSystem(messages);
 
-      const response = await this.client.models.generateContent({
-        model: this.model,
-        contents: conversation,
-        config: {
-          systemInstruction: system || undefined,
-          maxOutputTokens: options?.maxTokens ?? DEFAULT_MAX_TOKENS,
-          stopSequences: options?.stop,
-        },
-      });
+      const response = await withDeadline(this.name, options, (signal) =>
+        this.client.models.generateContent({
+          model: this.model,
+          contents: conversation,
+          config: {
+            systemInstruction: system || undefined,
+            maxOutputTokens: options?.maxTokens ?? DEFAULT_MAX_TOKENS,
+            stopSequences: options?.stop,
+            ...(signal ? { abortSignal: signal } : {}),
+          },
+        }),
+      );
 
       return {
         content: response.text ?? '',
@@ -94,6 +98,8 @@ function splitSystem(messages: Message[]): { system: string | null; conversation
 }
 
 function toProviderError(error: unknown): ProviderError {
+  // Timeouts and caller aborts are already classified by `withDeadline`.
+  if (error instanceof ProviderError) return error;
   if (error instanceof ApiError) {
     const code = classifyApiError(error.status, error.message);
     return new ProviderError(error.message, { code, provider: 'gemini', cause: error });

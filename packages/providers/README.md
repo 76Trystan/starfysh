@@ -57,7 +57,32 @@ Every provider implements:
 - `name: string`, the provider identifier (e.g. `'anthropic'`, `'openai'`, `'gemini'`, `'ollama'`).
 - `complete(messages, options?)`, send a conversation and receive a `Completion`.
 
-`CompleteOptions` supports `maxTokens` and `stop` sequences. Providers apply their own defaults when these are omitted.
+`CompleteOptions` supports `maxTokens` and `stop` sequences. Providers apply their own defaults when these are omitted. It also takes `timeoutMs` and `signal`, described next.
+
+## Timeouts and cancellation
+
+Pass `timeoutMs` to give up after a fixed time, `signal` to cancel from outside, or both.
+
+```ts
+const controller = new AbortController();
+
+try {
+  await provider.complete(messages, { timeoutMs: 60_000, signal: controller.signal });
+} catch (error) {
+  if (error instanceof ProviderError && error.code === 'timeout') {
+    // Took longer than 60 seconds. Retryable.
+  }
+  if (error instanceof ProviderError && error.code === 'aborted') {
+    // controller.abort() was called. The signal's reason is on error.cause.
+  }
+}
+```
+
+There is no default timeout. Without one, a call waits as long as the vendor SDK allows, which is ten minutes for the Anthropic and OpenAI clients. Anything that must not hang should set its own.
+
+The signal is handed to the vendor SDK so the HTTP request is cancelled, and the call is also raced against the deadline inside this package. A backend that ignores the signal therefore still times out on schedule. A signal that is already aborted rejects before any request is made.
+
+Neither option changes what the model is asked, so `CachedProvider` leaves both out of the cache key. A call that times out or is aborted is not cached.
 
 ## Stop reason
 
@@ -92,10 +117,12 @@ Provider failures throw `ProviderError` with a typed `code` field:
 | `model_not_found` | Requested model does not exist           | No        |
 | `server_error`    | 5xx from the API                         | Yes       |
 | `network`         | Connection or DNS failure                | No        |
+| `timeout`         | The call ran longer than `timeoutMs`     | Yes       |
+| `aborted`         | The caller's `signal` aborted the call   | No        |
 | `unknown`         | Unclassified error                       | No        |
 
 The `retryable` flag lets callers decide whether to retry without inspecting the code directly.
 
 ## Status
 
-Private workspace package (0.0.0). All four providers, the cache layer, and 108 tests are implemented.
+Private workspace package (0.0.0). All four providers, the cache layer, and 136 tests are implemented.
