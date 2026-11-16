@@ -65,7 +65,7 @@ Two points about the message rules.
 
 **A number in a message is not a status code.** `Expected 500 rows` and `Price 502.00` do not match rule 10. The number has to sit beside a word that makes it an HTTP status.
 
-`task` has one rule today, and it only fires with a `response`, which browser failures do not have. For the browser surface, deciding that a failure is a task change (the site now demands something the workflow has no answer for) is left to the healer, which can see the page snapshot. The kind is in the union now so consumers can handle it from the start.
+`task` has one rule here, and it only fires with a `response`, which browser failures do not have. For the browser surface, deciding that a failure is a task change (the site now demands something the workflow has no answer for) needs the page snapshot, so that rule lives in `@sfysh/healer`: `classifyOutcome()` there calls `classify()` and then reclassifies a `site` failure as `task`, with the rule code `page_requires_field`, when the page is asking for a field the workflow left empty.
 
 ## Status
 

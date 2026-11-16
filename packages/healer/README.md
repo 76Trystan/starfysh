@@ -2,7 +2,43 @@
 
 Healer for Starfysh. When a workflow step fails and triage classifies the failure as a site change, the healer asks a model to re-derive that one step, validates the patch, verifies the patched workflow against the live site, and hands a reviewable diff to a person.
 
-**Status: in progress.** The package is private and unpublished. The model input builder and the output parser are implemented; `heal()` still throws `HealerNotImplementedError`, and nothing here calls a model yet.
+**Status: in progress.** The package is private and unpublished. Triage wiring, the model input builder and the output parser are implemented; `heal()` still throws `HealerNotImplementedError`, and nothing here calls a model yet.
+
+## Triage before any model
+
+Most failures should never reach a model. `triageFailure()` classifies a failed replay with `@sfysh/triage`, retries once when that is worth trying, and says where the failure goes.
+
+```ts
+import { triageFailure } from '@sfysh/healer';
+
+const failed = report.replays.find((r) => r.status === 'failed');
+
+const decision = await triageFailure(failed, {
+  retry: () => runOnce(), // returns a ReplayOutcome; called at most once
+});
+
+if (decision.recovered) {
+  // The retry passed. Nothing to heal.
+} else {
+  decision.route; // where it goes next
+  decision.triage; // why
+  decision.outcome; // the failure to work from (the retry, if one ran)
+}
+```
+
+| Triage kind | Route                | What happens                                                    |
+| ----------- | -------------------- | --------------------------------------------------------------- |
+| `flake`     | `backoff`            | Retry later with backoff. No model.                             |
+| `auth`      | `reauthenticate`     | Re-run the login sub-workflow. No model.                        |
+| `site`      | `heal`               | The site changed. Build a prompt for the failed step.           |
+| `task`      | `draft_for_approval` | The task changed. A draft is allowed; a person must approve it. |
+| `unknown`   | `escalate`           | Nothing matched. Hand it to a person.                           |
+
+**One retry, then route.** Triage marks every flake as retryable, and also a timeout waiting for an element, where one retry separates a slow page from a changed one. If the retry passes, `recovered` is true and the healer is not woken. If it fails, the second failure is classified and routed and is not retried again. The second failure is the one routed on because its snapshot is the fresher evidence.
+
+**The page asking for a field is a task change.** `@sfysh/triage` classifies from the error alone. This package adds one rule that needs the page snapshot: a failure that would be `site`, on a page showing a validation message such as "Delivery phone is required", is reclassified as `task` with the rule code `page_requires_field`. A new selector cannot fix that, because the workflow has no value for the field. The rule is a narrow text match (a "* Required" legend does not trigger it) and it never applies to a flake, an auth failure or a failed extraction. When it matches by mistake, a healable failure goes to a person for approval, which is slower but safe.
+
+`classifyOutcome(outcome)` gives the classification without the retry. It works best in the process that ran the replay, where the raw error is still attached; for an outcome read back from JSON it falls back to the redacted name and message.
 
 ## Model input
 

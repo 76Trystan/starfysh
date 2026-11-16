@@ -17,6 +17,15 @@ export type {
 export { parseHealResponse, RATIONALE_MAX_CHARS, RESPONSE_MAX_CHARS } from './response.js';
 export type { HealPatchContext, HealResponse, HealResponseErrorCode } from './response.js';
 
+export {
+  classifyOutcome,
+  pageRequiresField,
+  PAGE_REQUIRES_FIELD,
+  routeFor,
+  triageFailure,
+} from './triage.js';
+export type { HealerTriage, HealRoute, TriageDecision, TriageOptions } from './triage.js';
+
 /**
  * Thrown by `heal()` until the healer is implemented. The package is a
  * scaffold: it exists so the workspace wiring, the dependency graph and the
