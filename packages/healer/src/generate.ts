@@ -1,5 +1,7 @@
-// The selector-patch generator: one model call, from a failed step to a
-// checked patch.
+// The patch generators: one model call, from a failed step to a checked
+// patch. There is one for each kind of heal, and they share everything
+// but the instructions the model is given and the rules the answer is
+// held to.
 //
 // This is the only place in the package that calls a model. The order of
 // work is fixed:
@@ -11,7 +13,7 @@
 //    vendor cannot hang the heal.
 // 3. Parse the answer (`parseHealResponse`) into a well-formed patch.
 // 4. Put the candidates in ranked order.
-// 5. Run every patch check (`checkPatch`) for the `selector` class.
+// 5. Run every patch check (`checkPatch`) for the class that was asked for.
 //
 // Nothing here applies the patch, runs it or verifies it. A patch that
 // comes back is a proposal that broke no rule.
@@ -20,6 +22,7 @@ import type { SelectorCandidate, Step, StepPatch, Workflow } from '@sfysh/ir';
 import { ProviderError, RedactingProvider } from '@sfysh/providers';
 import type { Provider, ProviderErrorCode, RedactFn, TokenUsage } from '@sfysh/providers';
 import type { PageSnapshot } from '@sfysh/runtime';
+import type { PatchClass } from './allowlist.js';
 import { checkPatch } from './check.js';
 import type { PatchViolation } from './check.js';
 import { buildHealPrompt, HealInputError } from './prompt.js';
@@ -47,10 +50,10 @@ export const CANDIDATE_ORDER: readonly SelectorCandidate['kind'][] = [
   'css',
 ];
 
-export interface SelectorPatchInput {
+export interface GeneratePatchInput {
   /** The workflow as it was when the run failed. */
   workflow: Workflow;
-  /** The failure. Must name a step that has a `target`. */
+  /** The failure. Must name a step. For a selector heal the step must have a `target`. */
   failure: HealFailure;
   /** Accessibility snapshot of the page at the point of failure. */
   snapshot: PageSnapshot;
@@ -79,7 +82,7 @@ export interface HealCall {
   usage: TokenUsage;
 }
 
-export type SelectorPatchRejection =
+export type GeneratePatchRejection =
   | {
       /** No model call was made: a safe prompt could not be built, or the step has no target. */
       stage: 'input';
@@ -115,7 +118,7 @@ export type SelectorPatchRejection =
  * accepted until a person has confirmed each listed point, whatever a
  * later verification run says.
  */
-export type SelectorPatchResult =
+export type GeneratePatchResult =
   | { status: 'patch'; patch: StepPatch; call: HealCall }
   | { status: 'needs_approval'; patch: StepPatch; approvals: ReachApproval[]; call: HealCall }
   | {
@@ -124,7 +127,7 @@ export type SelectorPatchResult =
       rationale: string;
       call: HealCall;
     }
-  | ({ status: 'rejected' } & SelectorPatchRejection)
+  | ({ status: 'rejected' } & GeneratePatchRejection)
   | {
       /** The model call itself failed. */
       status: 'provider_error';
@@ -149,9 +152,41 @@ export type SelectorPatchResult =
  * the arguments (a bad `timeoutMs`, a `redact` that does not return a
  * string), because retrying or escalating would not fix that.
  */
-export async function generateSelectorPatch(
-  input: SelectorPatchInput,
-): Promise<SelectorPatchResult> {
+export function generateSelectorPatch(input: SelectorPatchInput): Promise<SelectorPatchResult> {
+  return generate(input, 'selector');
+}
+
+/**
+ * Ask a model for one new step to run before a failed step, and return a
+ * checked patch.
+ *
+ * This is for a page that now puts something in the way of a step that
+ * is itself still right: a banner to dismiss, an extra button to press,
+ * content that takes longer to appear. The new step is a `click` or a
+ * `wait` for a condition, inserted before the failed step. Its id and its
+ * position are chosen here, not by the model.
+ *
+ * Everything said about `generateSelectorPatch` holds: call it only for a
+ * failure routed to `heal`, one call is one attempt, and it throws only
+ * for a mistake in the arguments. Which of the two to try, and in what
+ * order, is the caller's decision.
+ */
+export function generateInsertStepPatch(
+  input: InsertStepPatchInput,
+): Promise<InsertStepPatchResult> {
+  return generate(input, 'insert_step');
+}
+
+export type SelectorPatchInput = GeneratePatchInput;
+export type SelectorPatchResult = GeneratePatchResult;
+export type SelectorPatchRejection = GeneratePatchRejection;
+export type InsertStepPatchInput = GeneratePatchInput;
+export type InsertStepPatchResult = GeneratePatchResult;
+
+async function generate(
+  input: GeneratePatchInput,
+  patchClass: PatchClass,
+): Promise<GeneratePatchResult> {
   const { workflow, redact } = input;
 
   let prompt;
@@ -161,6 +196,7 @@ export async function generateSelectorPatch(
       failure: input.failure,
       snapshot: input.snapshot,
       redact,
+      patchClass,
       ...(input.triage !== undefined ? { triage: input.triage } : {}),
       ...(input.maxSnapshotChars !== undefined ? { maxSnapshotChars: input.maxSnapshotChars } : {}),
       ...(input.nonce !== undefined ? { nonce: input.nonce } : {}),
@@ -171,7 +207,7 @@ export async function generateSelectorPatch(
     }
     throw error;
   }
-  if ((prompt.before as { target?: unknown }).target === undefined) {
+  if (patchClass === 'selector' && (prompt.before as { target?: unknown }).target === undefined) {
     return {
       status: 'rejected',
       stage: 'input',
@@ -218,7 +254,7 @@ export async function generateSelectorPatch(
   if ('code' in ordered) return { status: 'rejected', stage: 'candidates', ...ordered, call };
   const patch = ordered.patch;
 
-  const verdict = checkPatch(patch, workflow, 'selector');
+  const verdict = checkPatch(patch, workflow, patchClass);
   if (verdict.status === 'rejected') {
     const first = verdict.violations[0]!;
     return {

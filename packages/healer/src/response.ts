@@ -61,9 +61,11 @@ export type HealResponse =
     };
 
 /** The parts of a `HealPrompt` the parser needs. Pass the prompt itself. */
-export type HealPatchContext = Pick<HealPrompt, 'workflowId' | 'stepId' | 'before' | 'baseHash'>;
+export type HealPatchContext = Pick<HealPrompt, 'workflowId' | 'stepId' | 'before' | 'baseHash'> &
+  Partial<Pick<HealPrompt, 'op' | 'newStepId'>>;
 
-const PATCH_KEYS = new Set(['after', 'rationale', 'confidence']);
+const REPLACE_KEYS = new Set(['after', 'rationale', 'confidence']);
+const INSERT_KEYS = new Set(['step', 'rationale', 'confidence']);
 const CANNOT_HEAL_KEYS = new Set(['cannotHeal', 'rationale']);
 
 /**
@@ -74,7 +76,12 @@ const CANNOT_HEAL_KEYS = new Set(['cannotHeal', 'rationale']);
  * field can leave a complete object behind, and that object would be a
  * patch the model never finished writing.
  *
- * The answer must be exactly one of the two forms in `HEAL_SYSTEM_PROMPT`.
+ * The form of the answer depends on `context.op`. For a `replace` (the
+ * default) the model gives the whole replacement step under `after`. For
+ * an `insert_before` it gives the new step under `step`, and the step is
+ * given `context.newStepId` whatever id the model wrote, if any.
+ *
+ * The answer must be exactly one of the two forms in the system prompt.
  * Any other key is a rejection, so the model cannot supply `stepId`, `op`,
  * `baseHash` or `before`; those come from `context`, which the healer
  * built from the workflow.
@@ -130,12 +137,26 @@ export function parseHealResponse(completion: Completion, context: HealPatchCont
     return { status: 'cannot_heal', rationale };
   }
 
-  const extra = keys.filter((key) => !PATCH_KEYS.has(key));
+  const inserting = context.op === 'insert_before';
+  const stepKey = inserting ? 'step' : 'after';
+  const allowedKeys = inserting ? INSERT_KEYS : REPLACE_KEYS;
+  const extra = keys.filter((key) => !allowedKeys.has(key));
   if (extra.length > 0) {
     return reject('wrong_shape', `The answer has ${extra.length} key(s) it must not have.`);
   }
-  if (!('after' in answer)) {
-    return reject('wrong_shape', 'The answer has neither "after" nor "cannotHeal".');
+  if (!(stepKey in answer)) {
+    return reject('wrong_shape', `The answer has neither "${stepKey}" nor "cannotHeal".`);
+  }
+  let proposed: unknown = answer[stepKey];
+  if (inserting) {
+    if (context.newStepId === undefined) {
+      throw new TypeError('An insert_before context must carry newStepId.');
+    }
+    if (!isPlainObject(proposed)) {
+      return reject('wrong_shape', '"step" must be a JSON object.');
+    }
+    // The id is the healer's to choose. Whatever the model wrote is replaced.
+    proposed = { ...proposed, id: context.newStepId };
   }
   const rationale = cleanRationale(answer.rationale);
   if (rationale === undefined) {
@@ -149,12 +170,12 @@ export function parseHealResponse(completion: Completion, context: HealPatchCont
     return reject('wrong_shape', '"confidence" must be a number from 0 to 1.');
   }
 
-  const step = validateStep(answer.after);
+  const step = validateStep(proposed);
   if (!step.valid || step.value === undefined) {
     return {
       status: 'rejected',
       code: 'invalid_step',
-      message: '"after" is not a valid step.',
+      message: `"${stepKey}" is not a valid step.`,
       errors: step.errors,
     };
   }
@@ -163,8 +184,9 @@ export function parseHealResponse(completion: Completion, context: HealPatchCont
     workflowId: context.workflowId,
     baseHash: context.baseHash,
     stepId: context.stepId,
-    op: 'replace',
-    before: context.before,
+    ...(inserting
+      ? { op: 'insert_before' as const }
+      : { op: 'replace' as const, before: context.before }),
     after: step.value as Step,
     rationale,
     ...(confidence !== undefined ? { confidence } : {}),

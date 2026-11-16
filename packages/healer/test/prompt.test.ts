@@ -6,7 +6,7 @@ import type { Page, PageSnapshot } from '@sfysh/runtime';
 import {
   buildHealPrompt,
   DEFAULT_PROMPT_SNAPSHOT_MAX_CHARS,
-  HEAL_SYSTEM_PROMPT,
+  SELECTOR_SYSTEM_PROMPT,
   HealInputError,
   PROMPT_ERROR_MAX_CHARS,
   PROMPT_OUTLINE_MAX_STEPS,
@@ -131,7 +131,7 @@ describe('buildHealPrompt()', () => {
   it('returns a constant system message and one user message', () => {
     const { messages } = buildHealPrompt(input());
     expect(messages.map((m) => m.role)).toEqual(['system', 'user']);
-    expect(messages[0]!.content).toBe(HEAL_SYSTEM_PROMPT);
+    expect(messages[0]!.content).toBe(SELECTOR_SYSTEM_PROMPT);
   });
 
   it('reports the step, the step as it was, and the base hash for the patch', () => {

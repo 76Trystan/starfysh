@@ -11,7 +11,7 @@ import {
   DEFAULT_HEAL_MAX_TOKENS,
   DEFAULT_HEAL_TIMEOUT_MS,
   generateSelectorPatch,
-  HEAL_SYSTEM_PROMPT,
+  SELECTOR_SYSTEM_PROMPT,
   MAX_SELECTOR_CANDIDATES,
 } from '../src/index.js';
 import type { HealFailure, SelectorPatchInput, SelectorPatchResult } from '../src/index.js';
@@ -183,7 +183,7 @@ describe('generateSelectorPatch(): a good answer', () => {
     expect(provider.calls).toHaveLength(1);
     const { messages, options } = provider.calls[0]!;
     expect(messages.map((m) => m.role)).toEqual(['system', 'user']);
-    expect(messages[0]!.content).toBe(HEAL_SYSTEM_PROMPT);
+    expect(messages[0]!.content).toBe(SELECTOR_SYSTEM_PROMPT);
     expect(messages[1]!.content).toContain('button "Log in"');
     expect(options).toEqual({ maxTokens: 2000, timeoutMs: 60000 });
     expect(DEFAULT_HEAL_MAX_TOKENS).toBe(2000);
@@ -217,7 +217,7 @@ describe('generateSelectorPatch(): redaction', () => {
       return text;
     };
     await generateSelectorPatch(input(fakeProvider(answer(healed())), { redact }));
-    expect(seen).toContain(HEAL_SYSTEM_PROMPT);
+    expect(seen).toContain(SELECTOR_SYSTEM_PROMPT);
   });
 
   it('keeps a secret on the page, in the error and in the step away from the provider', async () => {

@@ -2,7 +2,7 @@
 
 Healer for Starfysh. When a workflow step fails and triage classifies the failure as a site change, the healer asks a model to re-derive that one step, validates the patch, verifies the patched workflow against the live site, and hands a reviewable diff to a person.
 
-**Status: in progress.** The package is private and unpublished. Triage wiring, the model input builder, the output parser, and the four patch checks (scope, allowlist by patch class, origins and secrets, URL patterns) are implemented, and `generateSelectorPatch()` puts them together around one model call. `heal()` itself still throws `HealerNotImplementedError`: nothing here verifies or applies a patch yet.
+**Status: in progress.** The package is private and unpublished. Triage wiring, the model input builder, the output parser, and the four patch checks (scope, allowlist by patch class, origins and secrets, URL patterns) are implemented, and `generateSelectorPatch()` and `generateInsertStepPatch()` put them together around one model call each. `heal()` itself still throws `HealerNotImplementedError`: nothing here verifies or applies a patch yet.
 
 ## Triage before any model
 
@@ -102,7 +102,7 @@ if (result.status === 'patch') {
 }
 ```
 
-The model supplies only the replacement step, a rationale and an optional confidence. The workflow id, base hash, step id, operation and `before` on the patch come from the prompt the healer built, and an answer that tries to set any of them is rejected. A patch is returned only after `validateStep` has passed on the new step and `validatePatch` on the assembled patch.
+The model supplies only a step, a rationale and an optional confidence: the whole replacement step under `after` for a selector heal, or the new step under `step` for an insert-step heal. The workflow id, base hash, step id, operation and `before` on the patch come from the prompt the healer built, and an answer that tries to set any of them is rejected. A patch is returned only after `validateStep` has passed on the new step and `validatePatch` on the assembled patch.
 
 | Code            | Meaning                                                                       |
 | --------------- | ----------------------------------------------------------------------------- |
@@ -161,6 +161,26 @@ The function does not throw for anything the model, the provider or the page can
 
 Nothing here applies, runs or verifies the patch. A `patch` result is a proposal that broke no rule, and a `needs_approval` result must not be accepted on the strength of a passing verification alone.
 
+## Generating an insert-step patch
+
+Sometimes the failed step is still right and something new stands in its way: a consent dialog over the button, an extra "Continue" screen, a panel that takes longer to load. New selectors do not fix that. `generateInsertStepPatch()` asks the model for one new step to run immediately before the failed one.
+
+```ts
+import { generateInsertStepPatch } from '@sfysh/healer';
+
+const result = await generateInsertStepPatch({ workflow, failure, snapshot, redact, provider });
+```
+
+It takes the same input as `generateSelectorPatch()`, returns the same result type and works the same way: one call through the redacting wrapper, with a timeout, then parse, order candidates and `checkPatch()`, this time for the `insert_step` class. What differs:
+
+- **The model writes only the new step**, under `step` in its answer. It is told the step must be a `click` or a `wait` for a condition.
+- **The healer chooses where the step goes and what it is called.** The patch is always an `insert_before` on the failed step, and the new step gets an id no step in the workflow uses (`healed_001`, or the next free number). An id the model writes is replaced.
+- **The failed step does not need a target.** A `navigate` or an `assert` can have a step put in front of it.
+
+Which generator to try, and in what order, is the caller's decision. Neither is tried automatically after the other answers `cannot_heal`.
+
+An inserted `click` can still target any element on the page. The model is told not to click anything that submits, buys, deletes or confirms something the workflow did not already intend, but no code enforces that yet. Until confidence scoring and human approval exist, treat every insert-step patch as one a person must read.
+
 ## Patch scope
 
 A well-formed patch can still do things a heal must not. `checkPatchScope()` compares the step before and after and rejects any change outside what one heal may touch. It trusts nothing the model said about the patch and does not apply it.
@@ -211,7 +231,7 @@ The class comes from the code that asked the model for the patch. It is never re
 | Class         | Operation                         | What the patch may do                                                                                          |
 | ------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `selector`    | `replace`                         | Change `target.candidates` on a step that has a target. Every other field must equal the step in the workflow. |
-| `insert_step` | `insert_before` or `insert_after` | Add one `click` or one `wait`. Never a `fill`, a `navigate` or any other action.                               |
+| `insert_step` | `insert_before` or `insert_after` | Add one `click`, or one `wait` for a condition. Never a `fill`, a `navigate` or any other action.              |
 
 | Code                 | Rejected because                                                            |
 | -------------------- | --------------------------------------------------------------------------- |
@@ -221,6 +241,8 @@ The class comes from the code that asked the model for the patch. It is never re
 | `field_not_allowed`  | A selector patch changed, added or removed a field other than `target`.     |
 | `no_change`          | A selector patch left the candidates as they were.                          |
 | `action_not_allowed` | An inserted step is not a `click` or a `wait`.                              |
+| `fixed_wait`         | An inserted wait pauses for a fixed time, or has no condition to wait for.  |
+| `timeout_too_long`   | An inserted step sets a timeout above one minute.                           |
 
 A selector patch is compared with the step in the workflow, not with the `before` the patch reports. An inserted `fill` is refused because it would put a value into a form the workflow's author never saw, and an inserted `navigate` because it would take the run somewhere else. This check narrows `checkPatchScope()` and does not replace it, so run both.
 
@@ -301,7 +323,7 @@ All four always run, so a rejected patch comes back with everything that is wron
 
 ## What is still to come
 
-- A generator for insert-step patches, and a confidence score for each patch.
+- A confidence score for each patch.
 - Verify the patched workflow with `@sfysh/verifier` and require human approval by default.
 
 ## How it fits with the other packages

@@ -1,7 +1,10 @@
 export {
   buildHealPrompt,
   HealInputError,
-  HEAL_SYSTEM_PROMPT,
+  HEALED_STEP_ID_PREFIX,
+  INSERT_STEP_SYSTEM_PROMPT,
+  SELECTOR_SYSTEM_PROMPT,
+  systemPromptFor,
   DEFAULT_PROMPT_SNAPSHOT_MAX_CHARS,
   PROMPT_ERROR_MAX_CHARS,
   PROMPT_OUTLINE_MAX_STEPS,
@@ -29,7 +32,7 @@ export type { HealerTriage, HealRoute, TriageDecision, TriageOptions } from './t
 export { checkPatchScope, STEP_FIELDS } from './scope.js';
 export type { ScopeResult, ScopeViolation, ScopeViolationCode } from './scope.js';
 
-export { checkPatchClass, INSERTABLE_ACTIONS } from './allowlist.js';
+export { checkPatchClass, INSERTABLE_ACTIONS, INSERTED_STEP_MAX_TIMEOUT_MS } from './allowlist.js';
 export type {
   AllowlistResult,
   AllowlistViolation,
@@ -66,11 +69,17 @@ export {
   CANDIDATE_ORDER,
   DEFAULT_HEAL_MAX_TOKENS,
   DEFAULT_HEAL_TIMEOUT_MS,
+  generateInsertStepPatch,
   generateSelectorPatch,
   MAX_SELECTOR_CANDIDATES,
 } from './generate.js';
 export type {
+  GeneratePatchInput,
+  GeneratePatchRejection,
+  GeneratePatchResult,
   HealCall,
+  InsertStepPatchInput,
+  InsertStepPatchResult,
   SelectorPatchInput,
   SelectorPatchRejection,
   SelectorPatchResult,

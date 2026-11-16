@@ -36,7 +36,11 @@ export type AllowlistViolationCode =
   /** A selector patch left the candidates as they were. */
   | 'no_change'
   /** An inserted step has an action the class does not allow. */
-  | 'action_not_allowed';
+  | 'action_not_allowed'
+  /** An inserted wait pauses for a fixed time instead of waiting for a condition. */
+  | 'fixed_wait'
+  /** An inserted step sets a timeout above `INSERTED_STEP_MAX_TIMEOUT_MS`. */
+  | 'timeout_too_long';
 
 export interface AllowlistViolation {
   code: AllowlistViolationCode;
@@ -47,6 +51,9 @@ export interface AllowlistViolation {
 }
 
 export type AllowlistResult = { ok: true } | { ok: false; violations: AllowlistViolation[] };
+
+/** Longest `timeoutMs` an inserted step may set, in milliseconds. */
+export const INSERTED_STEP_MAX_TIMEOUT_MS = 60_000;
 
 /** The actions an `insert_step` patch may add. */
 export const INSERTABLE_ACTIONS: readonly string[] = ['click', 'wait'];
@@ -64,7 +71,9 @@ type Loose = Record<string, unknown>;
  * they were is rejected too: verifying it would spend replays on nothing.
  *
  * An `insert_step` patch must be an `insert_before` or `insert_after`, and
- * the new step must be a `click` or a `wait`. A `fill` would put a value
+ * the new step must be a `click` or a `wait`. A wait must be for a
+ * condition, with no fixed pause, and neither kind may set a timeout above
+ * one minute. A `fill` would put a value
  * into a form the workflow's author never saw, and a `navigate` would take
  * the run somewhere else.
  *
@@ -116,6 +125,23 @@ export function checkPatchClass(
     }
     if (typeof after.action !== 'string' || !INSERTABLE_ACTIONS.includes(after.action)) {
       add('action_not_allowed', '/after/action', 'An inserted step must be a click or a wait.');
+    }
+    if (after.action === 'wait') {
+      // A fixed pause is how a heal would paper over a page it does not
+      // understand, and it slows every later run by that much.
+      if (after.millis !== undefined) {
+        add('fixed_wait', '/after/millis', 'An inserted wait must not pause for a fixed time.');
+      }
+      if (after.forCondition === undefined) {
+        add('fixed_wait', '/after/forCondition', 'An inserted wait must wait for a condition.');
+      }
+    }
+    if (typeof after.timeoutMs === 'number' && after.timeoutMs > INSERTED_STEP_MAX_TIMEOUT_MS) {
+      add(
+        'timeout_too_long',
+        '/after/timeoutMs',
+        `An inserted step may set a timeout of at most ${INSERTED_STEP_MAX_TIMEOUT_MS} ms.`,
+      );
     }
   }
 
