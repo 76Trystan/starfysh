@@ -1,3 +1,19 @@
+export {
+  buildHealPrompt,
+  HealInputError,
+  HEAL_SYSTEM_PROMPT,
+  DEFAULT_PROMPT_SNAPSHOT_MAX_CHARS,
+  PROMPT_ERROR_MAX_CHARS,
+  PROMPT_OUTLINE_MAX_STEPS,
+} from './prompt.js';
+export type {
+  HealFailure,
+  HealInputErrorCode,
+  HealPrompt,
+  HealPromptInput,
+  HealTriage,
+} from './prompt.js';
+
 /**
  * Thrown by `heal()` until the healer is implemented. The package is a
  * scaffold: it exists so the workspace wiring, the dependency graph and the
