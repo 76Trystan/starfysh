@@ -20,3 +20,4 @@ export {
   type CacheStore,
   type CachedProviderConfig,
 } from './cache.js';
+export { RedactingProvider, type RedactFn } from './redact.js';

@@ -50,6 +50,22 @@ provider.misses; // 1
 
 The default store is in-memory. Plug in a custom `CacheStore` (with `get`/`set` methods) for disk or Redis backing.
 
+## Redaction
+
+`RedactingProvider` wraps any provider and runs a function over every message's `content` and every `stop` string before the request is made. Give it the function that removes your secrets; in a Starfysh run that is the context's `redact`.
+
+```ts
+import { RedactingProvider, CachedProvider, AnthropicProvider } from '@sfysh/providers';
+
+const provider = new RedactingProvider(new CachedProvider(new AnthropicProvider()), ctx.redact);
+
+await provider.complete(messages); // the vendor and the cache only see redacted text
+```
+
+Put it outermost, around any `CachedProvider`, as above. The cache then only ever sees redacted text, so its keys and anything a custom `CacheStore` writes to disk hold no secrets, and two requests that differ only in a secret's value share one cache entry. With the cache on the outside the vendor is still protected, but the cache is keyed on the raw request.
+
+This is a backstop. Whatever builds the prompt should already redact what goes into it; the wrapper is there for the code path that forgets. It fails closed: if the function throws or returns something that is not a string, the call rejects and no request is made. The response is not redacted, because the model was never shown the secret.
+
 ## Provider interface
 
 Every provider implements:
@@ -125,4 +141,4 @@ The `retryable` flag lets callers decide whether to retry without inspecting the
 
 ## Status
 
-Private workspace package (0.0.0). All four providers, the cache layer, and 136 tests are implemented.
+Private workspace package (0.0.0). All four providers, the cache layer, the redaction wrapper, and 159 tests are implemented.
