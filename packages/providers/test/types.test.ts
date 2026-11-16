@@ -71,6 +71,7 @@ describe('Provider interface', () => {
       name: 'stub',
       complete: async (messages: Message[]): Promise<Completion> => ({
         content: `echo: ${messages.length} messages`,
+        stopReason: 'end',
         usage: { inputTokens: 10, outputTokens: 5 },
         model: 'stub-1',
       }),
@@ -87,6 +88,7 @@ describe('Provider interface', () => {
       name: 'stub',
       complete: async () => ({
         content: 'ok',
+        stopReason: 'end',
         usage: { inputTokens: 0, outputTokens: 0 },
         model: 'stub-1',
       }),

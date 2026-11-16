@@ -59,6 +59,27 @@ Every provider implements:
 
 `CompleteOptions` supports `maxTokens` and `stop` sequences. Providers apply their own defaults when these are omitted.
 
+## Stop reason
+
+Every `Completion` carries a `stopReason` saying why the model stopped writing. Check it before parsing `content`: output that was cut off can still look well formed.
+
+| `stopReason`    | Meaning                                                                   | Content complete |
+| --------------- | ------------------------------------------------------------------------- | ---------------- |
+| `end`           | The model finished its answer.                                            | Yes              |
+| `stop_sequence` | One of the caller's `stop` strings was produced.                          | Yes              |
+| `max_tokens`    | The output hit `maxTokens` or the model's context window.                 | No               |
+| `refusal`       | The model declined, or a safety filter cut the output.                    | No               |
+| `other`         | Anything else, including a reason the vendor did not report or a new one. | Unknown          |
+
+```ts
+const completion = await provider.complete(messages, { maxTokens: 2_000 });
+if (completion.stopReason !== 'end' && completion.stopReason !== 'stop_sequence') {
+  throw new Error(`Incomplete model output: ${completion.stopReason}`);
+}
+```
+
+Only Anthropic reports a stop sequence separately. OpenAI-compatible APIs (including Ollama) and Gemini report it the same way as a natural finish, so those providers return `end` for both. A cached completion keeps its stop reason, so a truncated answer served from `CachedProvider` still reads as truncated.
+
 ## Error handling
 
 Provider failures throw `ProviderError` with a typed `code` field:
@@ -77,4 +98,4 @@ The `retryable` flag lets callers decide whether to retry without inspecting the
 
 ## Status
 
-Private workspace package (0.0.0). All four providers, the cache layer, and 77 tests are implemented.
+Private workspace package (0.0.0). All four providers, the cache layer, and 108 tests are implemented.

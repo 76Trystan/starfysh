@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { Message, CompleteOptions, Completion, ProviderConfig } from './types.js';
+import type { Message, CompleteOptions, Completion, ProviderConfig, StopReason } from './types.js';
 import { ProviderError, type ProviderErrorCode } from './types.js';
 import type { Provider } from './types.js';
 
@@ -45,6 +45,7 @@ export class AnthropicProvider implements Provider {
 
       return {
         content: text,
+        stopReason: toStopReason(response.stop_reason),
         usage: {
           inputTokens: response.usage.input_tokens,
           outputTokens: response.usage.output_tokens,
@@ -54,6 +55,26 @@ export class AnthropicProvider implements Provider {
     } catch (error) {
       throw toProviderError(error);
     }
+  }
+}
+
+function toStopReason(reason: string | null | undefined): StopReason {
+  switch (reason) {
+    case 'end_turn':
+      return 'end';
+    case 'max_tokens':
+    // The output hit the context window before it hit `max_tokens`. Either
+    // way the content was cut off.
+    case 'model_context_window_exceeded':
+      return 'max_tokens';
+    case 'stop_sequence':
+      return 'stop_sequence';
+    case 'refusal':
+      return 'refusal';
+    default:
+      // `tool_use` and `pause_turn` cannot happen here because no tools are
+      // sent. They, a missing reason, and any value added later are `other`.
+      return 'other';
   }
 }
 

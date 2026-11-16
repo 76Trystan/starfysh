@@ -4,6 +4,7 @@ export type {
   Message,
   CompleteOptions,
   Completion,
+  StopReason,
   TokenUsage,
   ProviderErrorCode,
 } from './types.js';

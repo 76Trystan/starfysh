@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import type { Message, CompleteOptions, Completion, ProviderConfig } from './types.js';
+import type { Message, CompleteOptions, Completion, ProviderConfig, StopReason } from './types.js';
 import { ProviderError, type ProviderErrorCode } from './types.js';
 import type { Provider } from './types.js';
 
@@ -41,6 +41,7 @@ export class OpenAIProvider implements Provider {
 
       return {
         content,
+        stopReason: toStopReason(choice?.finish_reason),
         usage: {
           inputTokens: response.usage?.prompt_tokens ?? 0,
           outputTokens: response.usage?.completion_tokens ?? 0,
@@ -50,6 +51,24 @@ export class OpenAIProvider implements Provider {
     } catch (error) {
       throw toProviderError(error, this.name);
     }
+  }
+}
+
+function toStopReason(reason: string | null | undefined): StopReason {
+  switch (reason) {
+    // The chat completions API reports a caller's stop sequence as `stop`
+    // too, so the two cannot be told apart here.
+    case 'stop':
+      return 'end';
+    case 'length':
+      return 'max_tokens';
+    case 'content_filter':
+      return 'refusal';
+    default:
+      // `tool_calls` and `function_call` cannot happen here because no tools
+      // are sent. They, a missing choice, and any value an OpenAI-compatible
+      // server invents are `other`.
+      return 'other';
   }
 }
 

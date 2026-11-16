@@ -1,6 +1,6 @@
 import { GoogleGenAI, ApiError } from '@google/genai';
 import type { Content } from '@google/genai';
-import type { Message, CompleteOptions, Completion, ProviderConfig } from './types.js';
+import type { Message, CompleteOptions, Completion, ProviderConfig, StopReason } from './types.js';
 import { ProviderError, type ProviderErrorCode } from './types.js';
 import type { Provider } from './types.js';
 
@@ -40,6 +40,7 @@ export class GeminiProvider implements Provider {
 
       return {
         content: response.text ?? '',
+        stopReason: toStopReason(response.candidates?.[0]?.finishReason),
         usage: {
           inputTokens: response.usageMetadata?.promptTokenCount ?? 0,
           outputTokens: response.usageMetadata?.candidatesTokenCount ?? 0,
@@ -49,6 +50,27 @@ export class GeminiProvider implements Provider {
     } catch (error) {
       throw toProviderError(error);
     }
+  }
+}
+
+function toStopReason(reason: string | undefined): StopReason {
+  switch (reason) {
+    // Gemini reports a caller's stop sequence as `STOP` too, so the two
+    // cannot be told apart here.
+    case 'STOP':
+      return 'end';
+    case 'MAX_TOKENS':
+      return 'max_tokens';
+    case 'SAFETY':
+    case 'RECITATION':
+    case 'BLOCKLIST':
+    case 'PROHIBITED_CONTENT':
+    case 'SPII':
+      return 'refusal';
+    default:
+      // No candidate at all (a blocked prompt returns none), an unspecified
+      // reason, and the tool and image reasons this provider never triggers.
+      return 'other';
   }
 }
 

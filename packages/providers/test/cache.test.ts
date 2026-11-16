@@ -7,6 +7,7 @@ function stubProvider(result?: Partial<Completion>): Provider {
     name: 'stub',
     complete: vi.fn().mockResolvedValue({
       content: result?.content ?? 'response',
+      stopReason: result?.stopReason ?? 'end',
       usage: result?.usage ?? { inputTokens: 10, outputTokens: 5 },
       model: result?.model ?? 'stub-model',
     }),
@@ -119,6 +120,7 @@ describe('MemoryCacheStore', () => {
     const store = new MemoryCacheStore();
     const entry: Completion = {
       content: 'cached',
+      stopReason: 'end',
       usage: { inputTokens: 1, outputTokens: 1 },
       model: 'm',
     };
@@ -131,6 +133,7 @@ describe('MemoryCacheStore', () => {
     const store = new MemoryCacheStore();
     const entry: Completion = {
       content: 'cached',
+      stopReason: 'end',
       usage: { inputTokens: 1, outputTokens: 1 },
       model: 'm',
     };

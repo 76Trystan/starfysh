@@ -32,14 +32,37 @@ export interface TokenUsage {
 }
 
 /**
+ * Why the model stopped writing, normalised across vendors.
+ *
+ * - `end`: the model finished its answer on its own.
+ * - `max_tokens`: the output was cut off, either by `maxTokens` or by the
+ *   model's context window. `content` is incomplete.
+ * - `stop_sequence`: one of the caller's `stop` strings was produced. Only
+ *   Anthropic reports this separately; OpenAI-compatible APIs and Gemini
+ *   report a stop sequence the same way as a natural finish, so those
+ *   providers return `end` for both.
+ * - `refusal`: the model declined or a safety filter cut the output.
+ *   `content` may be empty or partial.
+ * - `other`: anything else, including a reason the vendor did not report.
+ *
+ * Only `end` and `stop_sequence` mean the content is what the model meant
+ * to write. A caller that parses the content (the healer parses it into a
+ * patch) must check this first, because truncated output can still look
+ * well formed.
+ */
+export type StopReason = 'end' | 'max_tokens' | 'stop_sequence' | 'refusal' | 'other';
+
+/**
  * The structured result of a completion call. `content` is the raw
- * model output (the healer parses it into a patch); `usage` carries
- * token counts for cost tracking; `model` names the exact model
- * string the provider resolved to (useful when a provider alias
- * like "claude-sonnet" resolves to a dated snapshot).
+ * model output (the healer parses it into a patch); `stopReason` says
+ * whether that output is complete; `usage` carries token counts for
+ * cost tracking; `model` names the exact model string the provider
+ * resolved to (useful when a provider alias like "claude-sonnet"
+ * resolves to a dated snapshot).
  */
 export interface Completion {
   content: string;
+  stopReason: StopReason;
   usage: TokenUsage;
   model: string;
 }
