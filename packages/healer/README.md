@@ -2,7 +2,7 @@
 
 Healer for Starfysh. When a workflow step fails and triage classifies the failure as a site change, the healer asks a model to re-derive that one step, validates the patch, verifies the patched workflow against the live site, and hands a reviewable diff to a person.
 
-**Status: in progress.** The package is private and unpublished. Triage wiring, the model input builder, the output parser, the patch scope check and the allowlist by patch class are implemented; `heal()` still throws `HealerNotImplementedError`, and nothing here calls a model yet.
+**Status: in progress.** The package is private and unpublished. Triage wiring, the model input builder, the output parser, and the three patch checks (scope, allowlist by patch class, origins and secrets) are implemented; `heal()` still throws `HealerNotImplementedError`, and nothing here calls a model yet.
 
 ## Triage before any model
 
@@ -148,7 +148,7 @@ An inserted step is rejected when it carries nested steps (`nested_steps_added`)
 
 Before any of that, the patch has to match the workflow: the right workflow id (`wrong_workflow`), the current hash (`stale_base`), an anchor step that exists (`unknown_step`), and a `before` equal to the step that is really there (`before_mismatch`). Without the last check, a patch could hide a dropped condition by leaving it out of both sides.
 
-This is the general rule for every patch. The narrower limits for each kind of patch are described next. The rules on URLs and secrets are separate checks that have not landed yet.
+This is the general rule for every patch. The narrower limits for each kind of patch, and the rules on URLs and secrets, are described in the next two sections.
 
 ## Allowlist by patch class
 
@@ -182,9 +182,41 @@ The class comes from the code that asked the model for the patch. It is never re
 
 A selector patch is compared with the step in the workflow, not with the `before` the patch reports. An inserted `fill` is refused because it would put a value into a form the workflow's author never saw, and an inserted `navigate` because it would take the run somewhere else. This check narrows `checkPatchScope()` and does not replace it, so run both.
 
+## Origins and secrets
+
+Two things a heal must never do quietly: send the browser to a site the workflow has never visited, and change what happens to a secret. `checkPatchReach()` covers both.
+
+```ts
+import { checkPatchReach } from '@sfysh/healer';
+
+const reach = checkPatchReach(patch, workflow);
+
+if (reach.status === 'rejected') {
+  reach.violations; // [{ code, path, message }]
+} else if (reach.status === 'needs_approval') {
+  reach.approvals; // a person must confirm each of these before the patch is accepted
+}
+```
+
+Only `status: 'ok'` lets a patch go ahead on its own. The result has three states on purpose, so that code which checks for a pass cannot mistake "needs a person" for one.
+
+| Code                | Outcome        | Why                                                                                                                                 |
+| ------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `new_origin`        | Rejected       | A `navigate` URL, a `urlEquals` or an origin written into a `urlMatches` pattern names an origin the workflow does not already use. |
+| `secret_added`      | Rejected       | The new step references a secret the old one did not. An inserted step may reference none.                                          |
+| `secret_removed`    | Rejected       | A secret reference was replaced by something else.                                                                                  |
+| `secret_changed`    | Rejected       | A reference now points at a different secret.                                                                                       |
+| `unknown_step`      | Rejected       | The step being replaced is not in the workflow.                                                                                     |
+| `secret_retargeted` | Needs approval | The step types a secret and the patch changes which element it is typed into.                                                       |
+
+**Origins.** An origin is scheme, host and port, so `http` in place of `https`, a subdomain and another port are all new. The known set is every origin already in the workflow. A relative URL passes because it stays where the run already is. A `javascript:`, `data:` or `file:` URL, a protocol-relative `//host` and a URL that does not parse are all treated as new origins. A workflow whose only URL is a parameter has no known origin, so a patch can add no literal URL to it.
+
+**Secrets.** A renamed password field is the commonest reason to heal a login step, and "type the password into the search box" looks the same to code. That is why a new target on a step with a `{secret}` value is neither rejected nor accepted: it goes to a person.
+
+**Known limit.** A `urlMatches` pattern that names a host without a scheme (`evil\.test/login`) reads the same as a path and is not caught. Such a condition can only be added alongside the existing ones, because the scope check does not let a `post` condition be replaced.
+
 ## What is still to come
 
-- Rules on URLs and secrets, before a patch is applied or run.
 - Verify the patched workflow with `@sfysh/verifier` and require human approval by default.
 
 ## How it fits with the other packages

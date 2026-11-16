@@ -37,6 +37,15 @@ export type {
   PatchClass,
 } from './allowlist.js';
 
+export { checkPatchReach } from './reach.js';
+export type {
+  ReachApproval,
+  ReachApprovalCode,
+  ReachResult,
+  ReachViolation,
+  ReachViolationCode,
+} from './reach.js';
+
 /**
  * Thrown by `heal()` until the healer is implemented. The package is a
  * scaffold: it exists so the workspace wiring, the dependency graph and the
