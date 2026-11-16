@@ -81,10 +81,24 @@ export interface DescribedFailure {
   attribution: FailureAttribution;
 }
 
+// Terminal escape sequences: CSI (colours, cursor movement) and OSC
+// (hyperlinks, window titles). Playwright colours parts of its error
+// messages with these even when the output is not going to a terminal.
+const ANSI_PATTERN = /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)/g;
+
+function stripAnsi(text: string): string {
+  return text.replace(ANSI_PATTERN, '');
+}
+
 /**
  * Turn a thrown value into the report shape shared by `run()` and the
  * verifier. Unwraps `StepFailure`, pulls condition details off a
- * `PostconditionViolation`, and passes every string through `ctx.redact`.
+ * `PostconditionViolation`, strips terminal colour codes from the message
+ * and reason, and passes every string through `ctx.redact`.
+ *
+ * Colour codes are stripped before redaction, not after. A browser backend
+ * that colours part of a quoted value would otherwise split a secret with
+ * an escape sequence and the redactor would not recognise it.
  */
 export function describeFailure(ctx: WorkflowContext, err: unknown): DescribedFailure {
   const wrapped = err instanceof StepFailure ? err : undefined;
@@ -108,7 +122,7 @@ export function describeFailure(ctx: WorkflowContext, err: unknown): DescribedFa
     attribution.stepId = cause.stepId;
     attribution.phase = cause.phase;
     attribution.condition = redactCondition(ctx, cause.condition);
-    attribution.reason = ctx.redact(cause.reason);
+    attribution.reason = ctx.redact(stripAnsi(cause.reason));
   }
 
   const rawMessage = cause instanceof Error ? cause.message : String(cause);
@@ -119,7 +133,7 @@ export function describeFailure(ctx: WorkflowContext, err: unknown): DescribedFa
 
   return {
     name: cause instanceof Error ? cause.name : 'Error',
-    message: ctx.redact(prefix + rawMessage),
+    message: ctx.redact(prefix + stripAnsi(rawMessage)),
     cause,
     attribution,
   };

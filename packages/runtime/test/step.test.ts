@@ -194,6 +194,57 @@ describe('describeFailure()', () => {
     // The raw cause is untouched; it is for triage and never serialised.
     expect(described.cause).toBe(violation);
   });
+
+  it('strips terminal colour codes from a Playwright-style message', () => {
+    const coloured =
+      'locator.click: Timeout 30000ms exceeded.\n' +
+      'Call log:\n' +
+      "\u001b[2m  - waiting for getByRole('button', { name: 'Sign in' })\u001b[22m\n" +
+      '\u001b[31mfailed\u001b[39m';
+    const original = new Error(coloured);
+    const described = describeFailure(newCtx(), new StepFailure(clickInfo, original));
+
+    expect(described.message).toBe(
+      '[click_003] locator.click: Timeout 30000ms exceeded.\n' +
+        'Call log:\n' +
+        "  - waiting for getByRole('button', { name: 'Sign in' })\n" +
+        'failed',
+    );
+    // The raw cause keeps its original text.
+    expect((described.cause as Error).message).toBe(coloured);
+  });
+
+  it('strips hyperlink sequences and keeps the link text', () => {
+    const linked = 'see \u001b]8;;https://example.com/docs\u0007the docs\u001b]8;;\u0007 for help';
+    expect(describeFailure(newCtx(), new Error(linked)).message).toBe('see the docs for help');
+  });
+
+  it('strips colour codes from a violated condition reason', () => {
+    const violation = new PostconditionViolation({
+      stepId: 'click_003',
+      phase: 'post',
+      condition: { urlMatches: '/dashboard' },
+      reason: '\u001b[31mURL did not match\u001b[39m',
+    });
+    const described = describeFailure(newCtx(), violation);
+    expect(described.attribution.reason).toBe('URL did not match');
+    expect(described.message).not.toContain('\u001b');
+  });
+
+  it('redacts a secret that a colour code splits in two', () => {
+    const ctx = newCtx(stubPage(), 'hunter2-secret');
+    ctx.vault('portal_pass');
+    const described = describeFailure(
+      ctx,
+      new Error('fill failed for value "hunter2\u001b[1m-secret\u001b[22m"'),
+    );
+    expect(described.message).toBe('fill failed for value "[REDACTED:portal_pass]"');
+  });
+
+  it('leaves a message with no escape sequences unchanged', () => {
+    const plain = 'Expected [1 of 3] rows; got [0m] in column [A]';
+    expect(describeFailure(newCtx(), new Error(plain)).message).toBe(plain);
+  });
 });
 
 describe('run(): failure attribution', () => {
