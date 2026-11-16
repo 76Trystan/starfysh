@@ -7,6 +7,7 @@ import {
   capturePageSnapshot,
   createWorkflowContext,
   describeFailure,
+  EnvVaultResolver,
   getWorkflow,
   type PageSnapshot,
   type WorkflowContext,
@@ -140,7 +141,10 @@ async function runOnce(
   const page = await options.pageFactory();
   const ctx: WorkflowContext = createWorkflowContext({
     page,
-    ...(options.vaultResolver ? { vaultResolver: options.vaultResolver } : {}),
+    // The default resolver is limited to the secrets this workflow declares,
+    // so a runner cannot read an environment variable the workflow never
+    // asked for. A resolver supplied by the caller is used as it is.
+    vaultResolver: options.vaultResolver ?? new EnvVaultResolver({ allow: workflow.secrets ?? [] }),
   });
 
   const start = Date.now();

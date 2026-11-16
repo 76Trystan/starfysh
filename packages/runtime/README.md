@@ -35,13 +35,30 @@ Failure classification lives in `@sfysh/triage`, not here. `RunResult.error` car
 
 ### Secrets
 
-| Export                    | Purpose                                                                                                      |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `vault(name)`             | Resolves a secret by name through the active resolver. Generated code uses this; literal secrets never ship. |
-| `setVaultResolver(r)`     | Swaps the active resolver. Call once at startup if you are not using the default.                            |
-| `EnvVaultResolver`        | Default resolver. Reads secrets from `process.env`.                                                          |
-| `VaultResolver`           | Interface for custom resolvers (`{ resolve(name): string \| undefined }`).                                   |
-| `VaultSecretMissingError` | Thrown when a secret cannot be resolved. `@sfysh/triage` classifies it as an `auth` failure.                 |
+| Export                       | Purpose                                                                                                            |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `vault(name)`                | Resolves a secret by name through the active resolver. Generated code uses this; literal secrets never ship.       |
+| `setVaultResolver(r)`        | Swaps the active resolver. Call once at startup if you are not using the default.                                  |
+| `EnvVaultResolver`           | Default resolver. Reads `SFYSH_SECRET_<NAME>` from the environment. Takes `prefix` and `allow` options.            |
+| `VaultSecretNotAllowedError` | Thrown when a secret is not on the resolver's `allow` list. Not a missing credential, so it is not treated as one. |
+| `VaultResolver`              | Interface for custom resolvers (`{ resolve(name): string \| undefined }`).                                         |
+| `VaultSecretMissingError`    | Thrown when a secret cannot be resolved. `@sfysh/triage` classifies it as an `auth` failure.                       |
+
+#### Where the default resolver looks
+
+`vault('supplier_password')` reads the environment variable `SFYSH_SECRET_SUPPLIER_PASSWORD`: the prefix, then the name in upper case. The prefix is there so that a workflow definition cannot name an unrelated variable, such as `aws_secret_access_key`, and type it into a page. A workflow can only reach what an operator put under the prefix.
+
+```ts
+import { EnvVaultResolver } from '@sfysh/runtime';
+
+new EnvVaultResolver(); // SFYSH_SECRET_<NAME>, with the deprecated fallback below
+new EnvVaultResolver({ prefix: 'ACME_' }); // ACME_<NAME> only
+new EnvVaultResolver({ allow: ['supplier_password'] }); // any other name throws
+```
+
+**Deprecated fallback.** Earlier versions read the unprefixed variable (`SUPPLIER_PASSWORD`). With no `prefix` option, the resolver still falls back to it when the prefixed variable is not set, and emits a `DeprecationWarning` (code `SFYSH_UNPREFIXED_SECRET`) once per secret name. The fallback will be removed in a later release. Setting `prefix`, even to the default `SFYSH_SECRET_`, turns it off now. Pass `prefix: ''` if you want unprefixed variables on purpose.
+
+**Allowlist.** `allow` limits the resolver to a list of secret names, compared exactly. Any other name throws `VaultSecretNotAllowedError` whether or not the variable is set. `@sfysh/verifier` passes the workflow's declared `secrets` here by default.
 
 ### Extraction
 
@@ -125,5 +142,5 @@ test/
 ## Design notes
 
 - **Backend-agnostic by design.** `Page` and `Locator` are structural interfaces, not Playwright types. A Playwright page satisfies them because Playwright is a structural superset; CDP, Puppeteer, or an in-house driver can satisfy them too. See `@sfysh/playwright-adapter` for the Playwright bridge.
-- **Secrets never materialise in generated code.** Templates emit `vault('NAME')` calls; the resolver reads from the environment (or a custom source) at run time. Compiled scripts can be committed and reviewed safely.
+- **Secrets never materialise in generated code.** Templates emit `vault('NAME')` calls; the resolver reads from `SFYSH_SECRET_` variables in the environment (or a custom source) at run time. Compiled scripts can be committed and reviewed safely.
 - **Errors are reported, not classified here.** The runner returns the raw error shape (`message`, `cause`, `stepId?`, `phase?`). Triage lives in `@sfysh/triage` so classification rules can stay surface-agnostic and extend to the HTTP surface in Phase 2 without touching the runtime.

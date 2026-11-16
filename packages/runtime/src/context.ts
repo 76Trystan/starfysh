@@ -148,8 +148,8 @@ function mapStrings(value: unknown, fn: (s: string) => string): unknown {
 export interface WorkflowContextInit {
   page: Page;
   /**
-   * Resolver used by `ctx.vault(name)`. Defaults to `EnvVaultResolver` which
-   * reads `process.env[NAME.toUpperCase()]`.
+   * Resolver used by `ctx.vault(name)`. Defaults to `EnvVaultResolver`, which
+   * reads the environment variable `SFYSH_SECRET_` plus the upper-cased name.
    */
   vaultResolver?: VaultResolver;
 }

@@ -19,8 +19,13 @@ export { assert, poll, AssertionError } from './assert.js';
 export { evaluateCondition, assertCondition, PostconditionViolation } from './conditions.js';
 export type { ConditionEvaluation } from './conditions.js';
 
-export { EnvVaultResolver, VaultSecretMissingError } from './vault.js';
-export type { VaultResolver } from './vault.js';
+export {
+  DEFAULT_SECRET_ENV_PREFIX,
+  EnvVaultResolver,
+  VaultSecretMissingError,
+  VaultSecretNotAllowedError,
+} from './vault.js';
+export type { EnvVaultResolverOptions, VaultResolver } from './vault.js';
 
 export { ExtractionError, extractTable, extractValue, extractList } from './emit.js';
 export type { ColumnSchema, TableRow } from './emit.js';

@@ -40,6 +40,8 @@ process.stdout.write(humanReport(report));
 
 `pageFactory` is called once per replay so each run starts from a fresh session.
 
+Secrets come from the `vaultResolver` option. When you leave it out, each replay uses the runtime's `EnvVaultResolver` limited to the names in the workflow's `secrets` list, so a runner that asks for a secret the workflow never declared fails with `VaultSecretNotAllowedError`.
+
 Set `runTimeoutMs` to cap how long one replay may take. A replay that runs past it is recorded as failed with a `RunTimeoutError` and the verifier moves on to the next. There is no limit by default. The runner cannot be cancelled, so make sure your `dispose` closes the page, which ends whatever the runner was still doing.
 
 When outputs differ between runs, `report.stability.drift` lists each field by its dotted path with the distinct values seen. A field that one run produced and another did not is listed with `missing: true`.

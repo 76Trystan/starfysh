@@ -260,3 +260,54 @@ describe('replay', () => {
     expect(report.replays[0]?.error?.message).not.toContain('hunter2');
   });
 });
+
+describe('replay(): default vault resolver', () => {
+  const declared = (): Workflow => ({ ...wf(), secrets: ['portal_pass'] });
+
+  async function errorFor(workflow: Workflow, secret: string) {
+    const report = await replay(workflow, {
+      pageFactory: () => stubPage(),
+      runner: async (ctx) => {
+        ctx.vault(secret);
+      },
+      runs: 1,
+    });
+    return report.replays[0]?.error;
+  }
+
+  it('resolves a secret the workflow declares', async () => {
+    process.env['SFYSH_SECRET_PORTAL_PASS'] = 'hunter2';
+    try {
+      expect(await errorFor(declared(), 'portal_pass')).toBeUndefined();
+    } finally {
+      delete process.env['SFYSH_SECRET_PORTAL_PASS'];
+    }
+  });
+
+  it('refuses a secret the workflow does not declare, even when the variable is set', async () => {
+    process.env['AWS_SECRET_ACCESS_KEY'] = 'do-not-read';
+    try {
+      const error = await errorFor(declared(), 'aws_secret_access_key');
+      expect(error?.name).toBe('VaultSecretNotAllowedError');
+      expect(error?.message).not.toContain('do-not-read');
+    } finally {
+      delete process.env['AWS_SECRET_ACCESS_KEY'];
+    }
+  });
+
+  it('refuses every secret when the workflow declares none', async () => {
+    expect((await errorFor(wf(), 'portal_pass'))?.name).toBe('VaultSecretNotAllowedError');
+  });
+
+  it('leaves a resolver supplied by the caller alone', async () => {
+    const report = await replay(wf(), {
+      pageFactory: () => stubPage(),
+      runner: async (ctx) => {
+        ctx.vault('anything_at_all');
+      },
+      runs: 1,
+      vaultResolver: { resolve: () => 'value' },
+    });
+    expect(report.replays[0]?.error).toBeUndefined();
+  });
+});

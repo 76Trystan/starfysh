@@ -79,7 +79,8 @@ export interface VerifyOptions {
   tolerance?: ToleranceMap;
   /**
    * Vault resolver passed through to each run's WorkflowContext. Defaults
-   * to `EnvVaultResolver` when absent.
+   * to an `EnvVaultResolver` limited to the names in `workflow.secrets`
+   * when absent.
    */
   vaultResolver?: VaultResolver;
   /**
