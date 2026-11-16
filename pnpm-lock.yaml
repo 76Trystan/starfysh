@@ -73,6 +73,24 @@ importers:
         specifier: ^3.4.0
         version: 3.9.10
 
+  packages/healer:
+    dependencies:
+      '@sfysh/ir':
+        specifier: workspace:*
+        version: link:../ir
+      '@sfysh/providers':
+        specifier: workspace:*
+        version: link:../providers
+      '@sfysh/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+      '@sfysh/triage':
+        specifier: workspace:*
+        version: link:../triage
+      '@sfysh/verifier':
+        specifier: workspace:*
+        version: link:../verifier
+
   packages/ir:
     dependencies:
       ajv:
