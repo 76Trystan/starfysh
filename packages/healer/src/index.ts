@@ -85,6 +85,15 @@ export type {
   SelectorPatchResult,
 } from './generate.js';
 
+export { CONFIDENCE_HIGH, CONFIDENCE_MEDIUM, INSERT_STEP_MAX_SCORE, scorePatch } from './score.js';
+export type {
+  ConfidenceLevel,
+  PatchScore,
+  ScorePatchInput,
+  ScoreSignal,
+  ScoreSignalCode,
+} from './score.js';
+
 /**
  * Thrown by `heal()` until the healer is implemented. The package is a
  * scaffold: it exists so the workspace wiring, the dependency graph and the

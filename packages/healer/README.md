@@ -137,7 +137,7 @@ const result = await generateSelectorPatch({
 });
 
 switch (result.status) {
-  case 'patch': // result.patch broke no rule. Next: verify it.
+  case 'patch': // result.patch broke no rule, and result.score says how well grounded it is. Next: verify it.
   case 'needs_approval': // result.patch plus result.approvals. A person must confirm.
   case 'cannot_heal': // the model said new selectors will not fix it
   case 'rejected': // result.stage says where: input, response, candidates or policy
@@ -180,6 +180,44 @@ It takes the same input as `generateSelectorPatch()`, returns the same result ty
 Which generator to try, and in what order, is the caller's decision. Neither is tried automatically after the other answers `cannot_heal`.
 
 An inserted `click` can still target any element on the page. The model is told not to click anything that submits, buys, deletes or confirms something the workflow did not already intend, but no code enforces that yet. Until confidence scoring and human approval exist, treat every insert-step patch as one a person must read.
+
+## Confidence score
+
+Every patch a generator returns carries a `score`. It is worked out in code from the page snapshot, not taken from the model. A model reports its confidence after reading a page that may have misled it, so that number can lower the score and never raise it.
+
+```ts
+import { scorePatch } from '@sfysh/healer';
+
+const score = scorePatch({ patch, workflow, snapshot, patchClass: 'selector' });
+
+score.score; // 0 to 1
+score.level; // 'high' (0.8 and above), 'medium' (0.5 and above) or 'low'
+score.signals; // [{ code, effect, detail }], everything that went into it
+score.modelConfidence; // what the model reported, kept for the record
+```
+
+The generators call this for you and set `patch.confidence` to the score, so anything that reads the patch later sees the evidence-based number.
+
+| Signal                         | Effect            | When                                                                                       |
+| ------------------------------ | ----------------- | ------------------------------------------------------------------------------------------ |
+| `base`                         | +0.5 or +0.3      | Starting value: 0.5 for new selectors, 0.3 for a new step.                                 |
+| `first_candidate_unique`       | +0.3              | The first selector names exactly one element in the snapshot.                              |
+| `first_candidate_ambiguous`    | +0.05             | It names more than one.                                                                    |
+| `first_candidate_not_found`    | -0.3              | It names nothing in the snapshot.                                                          |
+| `first_candidate_unverifiable` | 0                 | It is a css selector or a test id, which an accessibility tree cannot confirm.             |
+| `first_candidate_kind`         | +0.1 to -0.1      | role +0.1, testid +0.05, label and text 0, css -0.1.                                       |
+| `fallback_grounded`            | +0.05             | A later candidate names exactly one element.                                               |
+| `fallback_not_found`           | -0.1              | A later candidate names nothing, so the model made it up.                                  |
+| `same_role`                    | +0.05             | A selector heal kept the role of the old first candidate.                                  |
+| `wait_text_found`              | +0.1              | The text an inserted wait looks for is in the snapshot.                                    |
+| `snapshot_truncated`           | -0.1              | The snapshot was cut short. Not applied on top of a "not found".                           |
+| `risky_click`                  | -0.4              | An inserted click names something that reads like a commitment (buy, delete, submit, pay). |
+| `insert_step_cap`              | down to 0.6       | An insert-step patch cannot score above 0.6, so it is never `high`.                        |
+| `model_less_confident`         | down to its value | The model reported less than the evidence gave.                                            |
+
+A role selector is matched on its role and, when it has one, its accessible name as a case-insensitive substring. Label and text selectors are matched against the snapshot text.
+
+**What the score is not.** It is evidence that the selector points at something real, gathered before the patch has run. It says nothing about whether that element is the right one, which is what verification and a reviewer are for. The weights are starting values chosen by hand and have not been calibrated against real heals, and the commitment words are an English word list. Nothing in this package acts on the score yet.
 
 ## Patch scope
 
@@ -323,7 +361,6 @@ All four always run, so a rejected patch comes back with everything that is wron
 
 ## What is still to come
 
-- A confidence score for each patch.
 - Verify the patched workflow with `@sfysh/verifier` and require human approval by default.
 
 ## How it fits with the other packages

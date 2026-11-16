@@ -14,6 +14,7 @@
 // 3. Parse the answer (`parseHealResponse`) into a well-formed patch.
 // 4. Put the candidates in ranked order.
 // 5. Run every patch check (`checkPatch`) for the class that was asked for.
+// 6. Score the patch (`scorePatch`) on the evidence in the snapshot.
 //
 // Nothing here applies the patch, runs it or verifies it. A patch that
 // comes back is a proposal that broke no rule.
@@ -29,6 +30,8 @@ import { buildHealPrompt, HealInputError } from './prompt.js';
 import type { HealFailure, HealTriage } from './prompt.js';
 import { parseHealResponse } from './response.js';
 import type { ReachApproval } from './reach.js';
+import { scorePatch } from './score.js';
+import type { PatchScore } from './score.js';
 
 /** How long one model call may take before the generator gives up, in milliseconds. */
 export const DEFAULT_HEAL_TIMEOUT_MS = 60_000;
@@ -119,8 +122,14 @@ export type GeneratePatchRejection =
  * later verification run says.
  */
 export type GeneratePatchResult =
-  | { status: 'patch'; patch: StepPatch; call: HealCall }
-  | { status: 'needs_approval'; patch: StepPatch; approvals: ReachApproval[]; call: HealCall }
+  | { status: 'patch'; patch: StepPatch; score: PatchScore; call: HealCall }
+  | {
+      status: 'needs_approval';
+      patch: StepPatch;
+      score: PatchScore;
+      approvals: ReachApproval[];
+      call: HealCall;
+    }
   | {
       status: 'cannot_heal';
       /** The model's explanation. Untrusted text, cleaned for display. */
@@ -266,10 +275,23 @@ async function generate(
       call,
     };
   }
+
+  // The score replaces the confidence the model reported. Anything that
+  // reads the patch later sees a number worked out from evidence, and the
+  // model's own figure stays on the score for the record.
+  const score = scorePatch({ patch, workflow, snapshot: input.snapshot, patchClass });
+  const scored: StepPatch = { ...patch, confidence: score.score };
+
   if (verdict.status === 'needs_approval') {
-    return { status: 'needs_approval', patch, approvals: verdict.approvals, call };
+    return {
+      status: 'needs_approval',
+      patch: scored,
+      score,
+      approvals: verdict.approvals,
+      call,
+    };
   }
-  return { status: 'patch', patch, call };
+  return { status: 'patch', patch: scored, score, call };
 }
 
 type CandidateProblem = {
