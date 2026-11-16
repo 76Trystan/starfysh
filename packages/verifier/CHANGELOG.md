@@ -1,5 +1,12 @@
 # @sfysh/verifier
 
+## 0.2.1
+
+### Patch Changes
+
+- Updated dependencies [f7d3d06]
+  - @sfysh/runtime@0.5.1
+
 ## 0.2.0
 
 ### Minor Changes
