@@ -2,7 +2,7 @@
 
 Healer for Starfysh. When a workflow step fails and triage classifies the failure as a site change, the healer asks a model to re-derive that one step, validates the patch, verifies the patched workflow against the live site, and hands a reviewable diff to a person.
 
-**Status: in progress.** The package is private and unpublished. The model input builder is implemented; `heal()` still throws `HealerNotImplementedError`, and nothing here calls a model yet.
+**Status: in progress.** The package is private and unpublished. The model input builder and the output parser are implemented; `heal()` still throws `HealerNotImplementedError`, and nothing here calls a model yet.
 
 ## Model input
 
@@ -47,9 +47,45 @@ When a safe prompt cannot be built, `buildHealPrompt` throws `HealInputError` wi
 
 Send the messages through a `RedactingProvider` from `@sfysh/providers` built with the same `redact`. The builder is the first layer of redaction; the provider wrapper is the second.
 
+## Model output
+
+`parseHealResponse()` turns a model's completion into one of three results. It never throws.
+
+```ts
+import { parseHealResponse } from '@sfysh/healer';
+
+const completion = await provider.complete(prompt.messages, { timeoutMs: 60_000 });
+const result = parseHealResponse(completion, prompt);
+
+if (result.status === 'patch') {
+  result.patch; // a well-formed StepPatch: not yet policy-checked, not applied
+} else if (result.status === 'cannot_heal') {
+  result.rationale; // the model said the snapshot does not show a fix
+} else {
+  result.code; // why the answer was thrown away
+}
+```
+
+The model supplies only the replacement step, a rationale and an optional confidence. The workflow id, base hash, step id, operation and `before` on the patch come from the prompt the healer built, and an answer that tries to set any of them is rejected. A patch is returned only after `validateStep` has passed on the new step and `validatePatch` on the assembled patch.
+
+| Code            | Meaning                                                                       |
+| --------------- | ----------------------------------------------------------------------------- |
+| `truncated`     | The output hit the token limit. Checked before parsing.                       |
+| `refused`       | The model declined, or a safety filter cut the output.                        |
+| `incomplete`    | Any other stop reason that does not mean the output is complete.              |
+| `too_large`     | The answer is over 100,000 characters.                                        |
+| `not_json`      | The answer is not a single JSON value. Prose around the JSON counts.          |
+| `wrong_shape`   | The JSON is not one of the two answer forms, or has a key it must not have.   |
+| `invalid_step`  | `after` is not a valid IR step. `errors` carries the schema errors.           |
+| `invalid_patch` | The assembled patch is not valid, for example the replacement changed the id. |
+
+One Markdown code fence around the whole answer is tolerated, because models add one even when told not to. Nothing else is: the parser does not search free text for something that looks like a patch. The rationale is model-written text that a reviewer will read in a terminal, so control characters are removed from it and it is cut to 2,000 characters.
+
+A patch from this function is well formed, not approved. Limits on what a heal may change are a separate check that has not landed yet, and nothing in this package applies or runs a patch.
+
 ## What is still to come
 
-- Parse the model's answer as a typed patch to a single step and validate it before anything runs.
+- Check each patch against limits on what a heal may change before it is applied or run.
 - Verify the patched workflow with `@sfysh/verifier` and require human approval by default.
 
 ## How it fits with the other packages

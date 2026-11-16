@@ -76,6 +76,8 @@ export interface HealPromptInput {
 export interface HealPrompt {
   /** A constant system message followed by one user message. */
   messages: Message[];
+  /** Id of the workflow. Becomes `workflowId` on the patch. */
+  workflowId: string;
   /** Id of the step the model is asked to replace. */
   stepId: string;
   /** The step as it is in the workflow. Becomes `before` on the patch. */
@@ -232,6 +234,7 @@ export function buildHealPrompt(input: HealPromptInput): HealPrompt {
       { role: 'system', content: HEAL_SYSTEM_PROMPT },
       { role: 'user', content: user },
     ],
+    workflowId: workflow.id,
     stepId,
     before,
     baseHash: hashWorkflow(workflow),

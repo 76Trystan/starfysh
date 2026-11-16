@@ -14,6 +14,9 @@ export type {
   HealTriage,
 } from './prompt.js';
 
+export { parseHealResponse, RATIONALE_MAX_CHARS, RESPONSE_MAX_CHARS } from './response.js';
+export type { HealPatchContext, HealResponse, HealResponseErrorCode } from './response.js';
+
 /**
  * Thrown by `heal()` until the healer is implemented. The package is a
  * scaffold: it exists so the workspace wiring, the dependency graph and the
