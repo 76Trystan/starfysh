@@ -4,11 +4,13 @@ End-to-end benchmark harness for Starfysh. Runs a suite of real-browser tasks, r
 
 ## Running locally
 
-Install Playwright's Chromium browser once:
+Install Playwright's Chromium browser once, and again whenever `playwright-core` is upgraded:
 
 ```sh
-npx playwright install chromium
+pnpm --filter @sfysh/benchmark exec playwright-core install chromium chromium-headless-shell
 ```
+
+Use this command and not `npx playwright install`. The repo depends on `playwright-core` only, so `npx playwright` downloads the newest Playwright release, which installs a different browser build from the one the benchmark launches.
 
 Then run the suite from the repo root:
 

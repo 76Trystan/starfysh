@@ -24,8 +24,13 @@ jobs:
       # chrome-headless-shell binary. Playwright 1.49+ launches via
       # chrome-headless-shell when `headless: true` is set, so installing
       # only `chromium` leaves the launch call looking at an empty
-      # cache directory (see 2026-11-15 gotcha).
-      - run: npx playwright install --with-deps chromium chromium-headless-shell
+      # cache directory.
+      #
+      # The install has to run through the benchmark's own playwright-core.
+      # `npx playwright` is not a dependency of this repo, so npx fetches
+      # the newest release from npm, and that release downloads a different
+      # browser build from the one the locked playwright-core launches.
+      - run: pnpm --filter @sfysh/benchmark exec playwright-core install --with-deps chromium chromium-headless-shell
 
       - run: pnpm --filter @sfysh/benchmark bench
 
