@@ -2,7 +2,7 @@
 
 Healer for Starfysh. When a workflow step fails and triage classifies the failure as a site change, the healer asks a model to re-derive that one step, validates the patch, verifies the patched workflow against the live site, and hands a reviewable diff to a person.
 
-**Status: in progress.** The package is private and unpublished. Triage wiring, the model input builder, the output parser and the patch scope check are implemented; `heal()` still throws `HealerNotImplementedError`, and nothing here calls a model yet.
+**Status: in progress.** The package is private and unpublished. Triage wiring, the model input builder, the output parser, the patch scope check and the allowlist by patch class are implemented; `heal()` still throws `HealerNotImplementedError`, and nothing here calls a model yet.
 
 ## Triage before any model
 
@@ -148,11 +148,43 @@ An inserted step is rejected when it carries nested steps (`nested_steps_added`)
 
 Before any of that, the patch has to match the workflow: the right workflow id (`wrong_workflow`), the current hash (`stale_base`), an anchor step that exists (`unknown_step`), and a `before` equal to the step that is really there (`before_mismatch`). Without the last check, a patch could hide a dropped condition by leaving it out of both sides.
 
-This is the general rule for every patch. Narrower limits for particular kinds of patch, and the rules on URLs and secrets, are separate checks that have not landed yet.
+This is the general rule for every patch. The narrower limits for each kind of patch are described next. The rules on URLs and secrets are separate checks that have not landed yet.
+
+## Allowlist by patch class
+
+The scope check still lets a replacement reword the intent, add a condition or change a timeout. A heal that was asked for new selectors has no reason to do any of that. `checkPatchClass()` holds a patch to the kind of heal it was requested as.
+
+```ts
+import { checkPatchClass, checkPatchScope } from '@sfysh/healer';
+
+const scope = checkPatchScope(patch, workflow);
+const allowed = checkPatchClass(patch, workflow, 'selector');
+if (!scope.ok || !allowed.ok) {
+  // Reject the patch. Both results list every violation as { code, path, message }.
+}
+```
+
+The class comes from the code that asked the model for the patch. It is never read from the model's answer.
+
+| Class         | Operation                         | What the patch may do                                                                                          |
+| ------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `selector`    | `replace`                         | Change `target.candidates` on a step that has a target. Every other field must equal the step in the workflow. |
+| `insert_step` | `insert_before` or `insert_after` | Add one `click` or one `wait`. Never a `fill`, a `navigate` or any other action.                               |
+
+| Code                 | Rejected because                                                            |
+| -------------------- | --------------------------------------------------------------------------- |
+| `wrong_op`           | The operation does not belong to the class.                                 |
+| `unknown_step`       | The step the patch is anchored to is not in the workflow.                   |
+| `no_target`          | A selector patch for a step with no target, such as a `navigate` or a loop. |
+| `field_not_allowed`  | A selector patch changed, added or removed a field other than `target`.     |
+| `no_change`          | A selector patch left the candidates as they were.                          |
+| `action_not_allowed` | An inserted step is not a `click` or a `wait`.                              |
+
+A selector patch is compared with the step in the workflow, not with the `before` the patch reports. An inserted `fill` is refused because it would put a value into a form the workflow's author never saw, and an inserted `navigate` because it would take the run somewhere else. This check narrows `checkPatchScope()` and does not replace it, so run both.
 
 ## What is still to come
 
-- Limits by kind of patch, and rules on URLs and secrets, before a patch is applied or run.
+- Rules on URLs and secrets, before a patch is applied or run.
 - Verify the patched workflow with `@sfysh/verifier` and require human approval by default.
 
 ## How it fits with the other packages

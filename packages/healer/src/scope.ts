@@ -12,8 +12,9 @@
 // Nothing here trusts the model's rationale or confidence, and nothing
 // here applies the patch.
 
-import { findStep, hashStep, hashWorkflow } from '@sfysh/ir';
-import type { Step, StepPatch, Workflow } from '@sfysh/ir';
+import { findStep, hashWorkflow } from '@sfysh/ir';
+import type { StepPatch, Workflow } from '@sfysh/ir';
+import { canonical, pointer, same } from './equal.js';
 
 export type ScopeViolationCode =
   /** The patch is for a different workflow. */
@@ -221,17 +222,6 @@ export function checkPatchScope(patch: StepPatch, workflow: Workflow): ScopeResu
   return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
 
-/** Deep equality that ignores object key order. */
-function same(a: unknown, b: unknown): boolean {
-  return canonical(a) === canonical(b);
-}
-
-function canonical(value: unknown): string {
-  // `hashStep` hashes any JSON value with its keys sorted; a step is just
-  // the value it is usually given.
-  return value === undefined ? 'undefined' : hashStep(value as Step);
-}
-
 function unknownFields(step: Loose): string[] {
   const known = typeof step.action === 'string' ? STEP_FIELDS[step.action] : undefined;
   if (known === undefined) return [];
@@ -252,9 +242,4 @@ function parameterRefs(step: Loose): string[] {
     }
   }
   return names.sort();
-}
-
-/** Escape a key for use in a JSON Pointer. */
-function pointer(key: string): string {
-  return key.replace(/~/g, '~0').replace(/[/]/g, '~1');
 }
