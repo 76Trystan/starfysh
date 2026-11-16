@@ -2,7 +2,7 @@
 
 Healer for Starfysh. When a workflow step fails and triage classifies the failure as a site change, the healer asks a model to re-derive that one step, validates the patch, verifies the patched workflow against the live site, and hands a reviewable diff to a person.
 
-**Status: in progress.** The package is private and unpublished. Triage wiring, the model input builder, the output parser, and the four patch checks (scope, allowlist by patch class, origins and secrets, URL patterns) are implemented; `heal()` still throws `HealerNotImplementedError`, and nothing here calls a model yet.
+**Status: in progress.** The package is private and unpublished. Triage wiring, the model input builder, the output parser, and the four patch checks (scope, allowlist by patch class, origins and secrets, URL patterns) are implemented, and `generateSelectorPatch()` puts them together around one model call. `heal()` itself still throws `HealerNotImplementedError`: nothing here verifies or applies a patch yet.
 
 ## Triage before any model
 
@@ -118,6 +118,48 @@ The model supplies only the replacement step, a rationale and an optional confid
 One Markdown code fence around the whole answer is tolerated, because models add one even when told not to. Nothing else is: the parser does not search free text for something that looks like a patch. The rationale is model-written text that a reviewer will read in a terminal, so control characters are removed from it and it is cut to 2,000 characters.
 
 A patch from this function is well formed, not approved. Limits on what a heal may change are a separate check, described next, and nothing in this package applies or runs a patch.
+
+## Generating a selector patch
+
+`generateSelectorPatch()` is the one place in this package that calls a model. It takes a failure that triage routed to `heal` and returns a patch that has passed every check, or says why there is none.
+
+```ts
+import { generateSelectorPatch } from '@sfysh/healer';
+import { AnthropicProvider } from '@sfysh/providers';
+
+const result = await generateSelectorPatch({
+  workflow,
+  failure: decision.outcome.error,
+  snapshot: decision.outcome.snapshot,
+  redact: ctx.redact,
+  provider: new AnthropicProvider(),
+  triage: decision.triage,
+});
+
+switch (result.status) {
+  case 'patch': // result.patch broke no rule. Next: verify it.
+  case 'needs_approval': // result.patch plus result.approvals. A person must confirm.
+  case 'cannot_heal': // the model said new selectors will not fix it
+  case 'rejected': // result.stage says where: input, response, candidates or policy
+  case 'provider_error': // result.retryable says whether one more try is reasonable
+}
+```
+
+In order, it:
+
+1. builds the prompt with `buildHealPrompt()`. If a safe prompt cannot be built, or the step has no `target`, no call is made;
+2. calls the provider through `RedactingProvider` from `@sfysh/providers`, so the whole request passes the redaction function a second time on its way out, with a timeout (60 seconds by default) and an output cap (2,000 tokens);
+3. parses the answer with `parseHealResponse()`;
+4. puts the candidates in preference order (role, testid, label, text, css), drops exact repeats, and refuses a `visual` candidate or more than five;
+5. runs `checkPatch(patch, workflow, 'selector')`, described below.
+
+One call is one attempt. There is no retry inside, so the caller decides whether a retryable `provider_error` or a malformed answer is worth another. Every result that got an answer back carries `call`, the model name and token usage, for cost tracking.
+
+The function does not throw for anything the model, the provider or the page can cause. It does throw for a mistake in the arguments, such as a `redact` that does not return a string, and in that case no request is sent.
+
+**Candidate order is fixed in code.** The prompt asks for role first, then testid, then css, and the generator sorts them anyway. Generated code uses the first candidate, so it should always be the most durable kind the model found. A `visual` candidate is refused because its value is a reference to a stored embedding, which a model cannot have.
+
+Nothing here applies, runs or verifies the patch. A `patch` result is a proposal that broke no rule, and a `needs_approval` result must not be accepted on the strength of a passing verification alone.
 
 ## Patch scope
 
@@ -239,8 +281,27 @@ A pattern that is already in the workflow, character for character, is not check
 
 The nested-quantifier rule looks at the shape of the pattern and refuses when unsure, so some harmless patterns fail it (`(/\d+)*` is one). It does not catch a repeated alternation whose branches overlap, such as `(a|a)*`. `checkUrlPattern(pattern)` runs the same limits on one string.
 
+## Running every check
+
+The four checks above are separate functions so each has its own codes and tests. `checkPatch()` runs all of them, and code that decides whether a patch may go ahead should call it instead of the four.
+
+```ts
+import { checkPatch } from '@sfysh/healer';
+
+const verdict = checkPatch(patch, workflow, 'selector');
+
+if (verdict.status === 'rejected') {
+  verdict.violations; // [{ check, code, path, message }] from every check that objected
+} else if (verdict.status === 'needs_approval') {
+  verdict.approvals;
+}
+```
+
+All four always run, so a rejected patch comes back with everything that is wrong with it, and `check` names the one each violation came from (`scope`, `class`, `reach` or `pattern`). A violation from any check rejects the patch even when another only asked for approval. Only `status: 'ok'` lets a patch go ahead on its own.
+
 ## What is still to come
 
+- A generator for insert-step patches, and a confidence score for each patch.
 - Verify the patched workflow with `@sfysh/verifier` and require human approval by default.
 
 ## How it fits with the other packages

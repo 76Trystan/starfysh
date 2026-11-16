@@ -59,6 +59,23 @@ export type {
   UrlPatternProblem,
 } from './pattern.js';
 
+export { checkPatch } from './check.js';
+export type { PatchCheckName, PatchVerdict, PatchViolation } from './check.js';
+
+export {
+  CANDIDATE_ORDER,
+  DEFAULT_HEAL_MAX_TOKENS,
+  DEFAULT_HEAL_TIMEOUT_MS,
+  generateSelectorPatch,
+  MAX_SELECTOR_CANDIDATES,
+} from './generate.js';
+export type {
+  HealCall,
+  SelectorPatchInput,
+  SelectorPatchRejection,
+  SelectorPatchResult,
+} from './generate.js';
+
 /**
  * Thrown by `heal()` until the healer is implemented. The package is a
  * scaffold: it exists so the workspace wiring, the dependency graph and the
