@@ -124,6 +124,23 @@ export {
 } from './limits.js';
 export type { HealHistory, HealLimits } from './limits.js';
 
+export {
+  compareCandidates,
+  printable,
+  RENDER_VALUE_MAX_CHARS,
+  renderSemanticDiff,
+  semanticDiff,
+} from './diff.js';
+export type {
+  CandidateChange,
+  CandidateChangeKind,
+  FieldChange,
+  RankedCandidate,
+  SemanticDiff,
+} from './diff.js';
+export { renderReview } from './review.js';
+export type { RenderReviewOptions } from './review.js';
+
 export { findReversions, patchRecord } from './revert.js';
 export type { PatchRecord, Reversion, ReversionCode } from './revert.js';
 

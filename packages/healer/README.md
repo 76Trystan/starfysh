@@ -458,9 +458,53 @@ A reversion is not a rejection: the site may really have gone back, and the patc
 
 Keep patch records for as long as the workflow exists. An oscillation can span weeks.
 
+## Reviewing a patch
+
+`renderReview()` turns a decision into the text a reviewer reads. `semanticDiff()` and `renderSemanticDiff()` give the diff part on its own.
+
+```ts
+import { renderReview, semanticDiff } from '@sfysh/healer';
+
+if (result.status === 'decided') {
+  console.log(renderReview(result.decision, { workflow }));
+}
+
+semanticDiff(patch, workflow); // the same diff as data, for JSON output
+```
+
+A review shows, in this order: what was decided and every reason a person is needed; what the patch changes; the evidence (live runs, timing, and the confidence score with each signal); and last, the model's own explanation, marked as unverified.
+
+```
+Heal of workflow wf_orders, step click_002: waiting for approval.
+
+Why a person must look:
+  - Every patch is reviewed by a person under the current policy.
+
+Step click_002 ("Open the orders page."):
+  Selectors reordered. Now tried first: css "nav a.orders" (was #2).
+    Before, the first choice was role "link[name='Orders']".
+    1. css "nav a.orders" (was #2)
+    2. role "link[name='Orders']" (was #1)
+
+Verification: 3 of 3 live runs passed, and every run's outputs matched the last known-good run.
+...
+```
+
+**Selector lists are read as lists.** The field-level diff in `@sfysh/ir` compares arrays position by position, so promoting the second candidate shows as a change at every index. The semantic diff says what happened instead:
+
+| Kind                | Meaning                                                               |
+| ------------------- | --------------------------------------------------------------------- |
+| `reordered`         | The same candidates in a different order.                             |
+| `inserted_at_front` | New candidates in front; the old ones follow, unchanged and in order. |
+| `changed`           | Anything else. Removed candidates are listed.                         |
+
+Every candidate change names the selector compiled code will now try first, and where it came from, because that is the one that decides whether the workflow runs. Other fields are listed one by one with readable paths (`post[1].urlMatches`). An inserted step is described by its action, intent, target and fallbacks.
+
+**Untrusted text.** Selector values, intents and the rationale were written by a model that read a web page. Every value is printed on one line with control characters, escape sequences and Unicode line separators replaced by a space, and cut to 200 characters (2,000 for the rationale), so nothing in a patch can recolour the terminal, clear it, or forge a line such as "Approved: yes".
+
 ## What is still to come
 
-- A renderer for the semantic diff a reviewer reads, a local corpus of heal attempts, and the `compile heal` command.
+- A local corpus of heal attempts, and the `compile heal` command.
 
 ## How it fits with the other packages
 

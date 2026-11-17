@@ -94,7 +94,7 @@ describe('parseRoleSelector', () => {
       options: { name: 'Save\nand close' },
       unparsed: [],
     });
-    expect(parseRoleSelector("button[name='a b']").options.name).toBe('a b');
+    expect(parseRoleSelector("button[name='a\u2028b']").options.name).toBe('a\u2028b');
   });
 
   it('accepts an empty attribute value', () => {
