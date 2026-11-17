@@ -94,6 +94,28 @@ export type {
   ScoreSignalCode,
 } from './score.js';
 
+export {
+  approvePatch,
+  decidePatch,
+  DEFAULT_ACCEPTANCE_POLICY,
+  MIN_ACCEPT_RUNS,
+  verifyPatch,
+} from './accept.js';
+export type {
+  AcceptancePolicy,
+  ApprovalReason,
+  ApprovalReasonCode,
+  ApprovePatchInput,
+  ApprovePatchResult,
+  DecidePatchInput,
+  KnownGood,
+  PatchDecision,
+  PatchVerification,
+  VerificationFailure,
+  VerificationFailureCode,
+  VerifyPatchInput,
+} from './accept.js';
+
 /**
  * Thrown by `heal()` until the healer is implemented. The package is a
  * scaffold: it exists so the workspace wiring, the dependency graph and the
