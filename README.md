@@ -6,7 +6,7 @@
 
 A browser-automation compiler that turns one AI-recorded session into a deterministic, self-healing script. The agent authors the code once, the runtime runs it indefinitely.
 
-> **Status: Phase 1 in progress.** The paragraph above is the vision. Phase 0 (IR, compiler, runtime, Playwright adapter) shipped on npm at 0.1.x and has since seen several minor releases. Phase 1 (parser, verifier, triage, healer, CLI, MCP server) is in progress. The parser and verifier are published on npm. The triage classifier, model providers, CLI, and the healer's patch pipeline work inside the repo but are not yet published, and the healer does not yet apply or accept patches. The sections below separate what you can use today from what is coming.
+> **Status: Phase 1 in progress.** The paragraph above is the vision. Phase 0 (IR, compiler, runtime, Playwright adapter) shipped on npm at 0.1.x and has since seen several minor releases. Phase 1 (parser, verifier, triage, healer, CLI, MCP server) is in progress. The parser and verifier are published on npm. The triage classifier, model providers, CLI, and the healer's patch pipeline work inside the repo but are not yet published, and the healer, which now verifies patches and holds them for approval, has not yet been run against a real model. The sections below separate what you can use today from what is coming.
 
 ## What ships today
 
@@ -23,16 +23,16 @@ Six `@sfysh/*` packages are published on npm today. The Phase 0 core gives you t
 
 Four more packages are in the repo but not yet published:
 
-| Package            | What it does                                                                                                                                                                                                                                                                        |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@sfysh/triage`    | Deterministic failure classifier. Maps a failed run to a `FailureKind` (flake, auth, site, task, unknown) so the healer can route failures without invoking a model.                                                                                                                |
-| `@sfysh/providers` | A small `Provider` interface over Anthropic, OpenAI, Gemini, and Ollama (or any OpenAI-compatible local server), with timeouts, a content-hash cache, and an outbound redaction hook so secrets never reach a model.                                                                |
-| `@sfysh/healer`    | In progress. Builds a redacted prompt from a failure, asks a model for a selector patch or an inserted step, and checks the answer against scope, allowlist, origin, secret, and regex rules before scoring it on snapshot evidence. Does not yet verify, apply, or accept a patch. |
-| `@sfysh/cli`       | Command-line front end for the toolchain (`compile parse`, `compile verify`; `compile heal` once the healer lands).                                                                                                                                                                 |
+| Package            | What it does                                                                                                                                                                                                                                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@sfysh/triage`    | Deterministic failure classifier. Maps a failed run to a `FailureKind` (flake, auth, site, task, unknown) so the healer can route failures without invoking a model.                                                                                                                                    |
+| `@sfysh/providers` | A small `Provider` interface over Anthropic, OpenAI, Gemini, and Ollama (or any OpenAI-compatible local server), with timeouts, a content-hash cache, and an outbound redaction hook so secrets never reach a model.                                                                                    |
+| `@sfysh/healer`    | In progress. Asks a model for a selector patch or an inserted step for the failed step, checks it against scope, allowlist, origin, secret, and regex rules, verifies it live against the last known-good outputs, and holds it for human approval, within caps on attempts, tokens, and heals per day. |
+| `@sfysh/cli`       | Command-line front end for the toolchain (`compile parse`, `compile verify`; `compile heal` once the healer lands).                                                                                                                                                                                     |
 
 **What this means in practice.** You can hand-author a workflow IR following the schema in `@sfysh/ir`, compile it with `@sfysh/compiler`, and execute the result via `@sfysh/runtime` plus Playwright. Or start from an existing Playwright script, lift it into IR with `@sfysh/parser`, and feed it into the same pipeline. That is a working, deterministic path from JSON (or TypeScript) to a running browser automation.
 
-**What is not here yet.** A healer that closes the loop (verifies a patch against the live site, shows you the diff, and ships it once you approve), and the MCP server that lets coding agents drive the stack. Those are the remaining components that take Starfysh from "a well-typed Playwright toolkit" to "an automation you can actually leave running". See the [roadmap](#roadmap).
+**What is not here yet.** The last pieces of the healer loop (a readable diff for the reviewer, the `compile heal` command, and a first run against a real model), and the MCP server that lets coding agents drive the stack. Those are the remaining components that take Starfysh from "a well-typed Playwright toolkit" to "an automation you can actually leave running". See the [roadmap](#roadmap).
 
 ## Try it in 5 minutes
 
@@ -178,10 +178,10 @@ Done so far:
 - `@sfysh/verifier` is published and replays workflows N times with postcondition evaluation, output-stability checks, an IR interpreter, and cassette replay.
 - `@sfysh/triage` classifies failures deterministically without a model: postcondition results first, then typed runtime errors, with HTTP status rules reserved for Phase 2.
 - `@sfysh/providers` wraps Anthropic, OpenAI, Gemini, and Ollama behind one interface, with redaction applied before anything leaves the process.
-- `@sfysh/healer` turns a failure into a candidate patch (a new set of ranked selectors, or one inserted `click` or `wait`), rejects anything outside a narrow allowlist, and scores what remains against the page snapshot.
+- `@sfysh/healer` turns a failure into a candidate patch (a new set of ranked selectors, or one inserted `click` or `wait`), rejects anything outside a narrow allowlist, scores what remains against the page snapshot, and verifies it live against the last known-good outputs before holding it for a person to approve.
 - `@sfysh/cli` drives parse and verify from the command line.
 
-Remaining: the healer's verify-and-approve loop with a readable semantic diff, the MCP server so coding agents can drive the stack, a 20-task benchmark with a synthetic-drift suite to measure the false-heal rate, and a private beta followed by the public launch.
+Remaining: a readable semantic diff for healer approvals and the `compile heal` command, the MCP server so coding agents can drive the stack, a 20-task benchmark with a synthetic-drift suite to measure the false-heal rate, and a private beta followed by the public launch.
 
 ### Phase 2: API healing
 

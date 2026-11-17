@@ -2,7 +2,56 @@
 
 Healer for Starfysh. When a workflow step fails and triage classifies the failure as a site change, the healer asks a model to re-derive that one step, validates the patch, verifies the patched workflow against the live site, and hands a reviewable diff to a person.
 
-**Status: in progress.** The package is private and unpublished. Triage wiring, the model input builder, the output parser, and the four patch checks (scope, allowlist by patch class, origins and secrets, URL patterns) are implemented, and `generateSelectorPatch()` and `generateInsertStepPatch()` put them together around one model call each. `heal()` itself still throws `HealerNotImplementedError`: nothing here verifies or applies a patch yet.
+**Status: in progress.** The package is private and unpublished, and no real model has answered its prompts yet. `heal()` runs the whole path: triage, the patch generators, the patch checks, live verification against known-good outputs, and an acceptance decision that waits for a person by default, all inside caps on attempts, tokens and heals per day. Nothing here writes a patched workflow anywhere; storing an accepted one is the caller's job.
+
+## Healing a failure
+
+```ts
+import { approvePatch, heal, MemoryHealHistory } from '@sfysh/healer';
+import { AnthropicProvider } from '@sfysh/providers';
+
+const result = await heal({
+  workflow,
+  outcome: failed, // a failed ReplayOutcome, with its page snapshot
+  knownGood: { outputs: lastPassingRun.outputs },
+  provider: new AnthropicProvider(),
+  redact: ctx.redact,
+  pageFactory: () => openFreshPage(), // live pages for verification
+  history, // a HealHistory; MemoryHealHistory for one process
+  retry: () => runOnce(), // optional, for triage's single retry
+});
+
+switch (result.status) {
+  case 'recovered': // triage's retry passed
+  case 'routed': // result.route: backoff, reauthenticate, draft_for_approval or escalate. No model.
+  case 'no_evidence': // no snapshot, or no failed step named. No model.
+  case 'capped': // result.cap: heals_per_day, attempts or tokens
+  case 'not_healed': // every patch class was tried and none verified
+  case 'decided': // result.decision is 'accepted' or 'awaiting_approval'
+}
+
+// Later, once a person has read the diff:
+const approved = approvePatch({ decision: result.decision, current: workflow, reviewer: 'alex' });
+```
+
+In order, `heal()`:
+
+1. triages the failure. Only a failure routed to `heal` goes further. A task change (`draft_for_approval`) is returned without a model call, because neither generator can add the missing input;
+2. checks the daily cap for the workflow and records the run. Every run that gets this far counts, whatever its outcome;
+3. tries new selectors, then an inserted step. A failure whose message says the element was covered ("intercepts pointer events") tries the inserted step first. Each class gets one model call, plus a retry of the same class after a transient provider error;
+4. verifies each patch live and decides on it (below). The first patch that verifies ends the heal. One that fails verification moves on to the next class.
+
+Every attempt, with its generator result, verification and decision, is on `result.attempts`, and `result.usage` sums the tokens.
+
+### Limits
+
+| Limit                       | Default | Counts                                                                       |
+| --------------------------- | ------- | ---------------------------------------------------------------------------- |
+| `maxAttemptsPerFailure`     | 3       | Model calls in one `heal()`. A class refused before any call does not count. |
+| `maxTokensPerHeal`          | 20,000  | Input plus output tokens in one `heal()`.                                    |
+| `maxHealsPerWorkflowPerDay` | 3       | `heal()` runs that reached the patch stage for one workflow in 24 hours.     |
+
+Both per-heal caps are checked before every model call, and each call's output cap is lowered to what is left of the token budget. Input tokens are only known after a call, so one call can take a heal past its budget by the size of its prompt; no call starts once the budget is spent. The day is a rolling 24 hours, not a calendar day. `HealHistory` is a two-method interface (`count`, `record`) so the count can live wherever run history already does.
 
 ## Triage before any model
 
@@ -177,9 +226,9 @@ It takes the same input as `generateSelectorPatch()`, returns the same result ty
 - **The healer chooses where the step goes and what it is called.** The patch is always an `insert_before` on the failed step, and the new step gets an id no step in the workflow uses (`healed_001`, or the next free number). An id the model writes is replaced.
 - **The failed step does not need a target.** A `navigate` or an `assert` can have a step put in front of it.
 
-Which generator to try, and in what order, is the caller's decision. Neither is tried automatically after the other answers `cannot_heal`.
+Called directly, neither generator tries the other. `heal()` decides the order (see above).
 
-An inserted `click` can still target any element on the page. The model is told not to click anything that submits, buys, deletes or confirms something the workflow did not already intend, but no code enforces that yet. Until confidence scoring and human approval exist, treat every insert-step patch as one a person must read.
+An inserted `click` can still target any element on the page. The model is told not to click anything that submits, buys, deletes or confirms something the workflow did not already intend, but no code enforces that. This is why `decidePatch()` always holds an insert-step patch for a person.
 
 ## Confidence score
 
@@ -217,7 +266,7 @@ The generators call this for you and set `patch.confidence` to the score, so any
 
 A role selector is matched on its role and, when it has one, its accessible name as a case-insensitive substring. Label and text selectors are matched against the snapshot text.
 
-**What the score is not.** It is evidence that the selector points at something real, gathered before the patch has run. It says nothing about whether that element is the right one, which is what verification and a reviewer are for. The weights are starting values chosen by hand and have not been calibrated against real heals, and the commitment words are an English word list. Nothing in this package acts on the score yet.
+**What the score is not.** It is evidence that the selector points at something real, gathered before the patch has run. It says nothing about whether that element is the right one, which is what verification and a reviewer are for. The weights are starting values chosen by hand and have not been calibrated against real heals, and the commitment words are an English word list. The only thing that acts on the score is the opt-in automatic acceptance policy, which should stay off until the score has been calibrated.
 
 ## Patch scope
 
@@ -359,9 +408,46 @@ if (verdict.status === 'rejected') {
 
 All four always run, so a rejected patch comes back with everything that is wrong with it, and `check` names the one each violation came from (`scope`, `class`, `reach` or `pattern`). A violation from any check rejects the patch even when another only asked for approval. Only `status: 'ok'` lets a patch go ahead on its own.
 
+## Verifying and accepting a patch
+
+A patch that passed every check is still a proposal. `heal()` runs these for you; they are exported for callers that drive the generators themselves.
+
+```ts
+import { approvePatch, decidePatch, verifyPatch } from '@sfysh/healer';
+
+const verification = await verifyPatch({
+  workflow,
+  patch: result.patch,
+  knownGood: { outputs: lastPassingRun.outputs },
+  pageFactory: () => openFreshPage(),
+});
+const decision = decidePatch({
+  workflow,
+  patchClass: 'selector',
+  score: result.score,
+  verification,
+});
+```
+
+**Verification.** `verifyPatch()` applies the patch and replays the patched workflow live, at least three times. It passes only if every run passes, the runs agree with each other, and every run's outputs match the outputs of the last run that worked. Agreement between runs is not enough on its own: a patch that reads the wrong column reads it the same way every time. With the default runner (the IR interpreter, first candidate only) it also fails any run in which the patched or inserted step did not run, so a patch inside a guard that was never taken cannot pass trivially. Secrets come from `SFYSH_SECRET_` variables for the workflow's declared secrets only.
+
+| Failure                | Meaning                                                    |
+| ---------------------- | ---------------------------------------------------------- |
+| `run_failed`           | A run threw or violated a terminal postcondition.          |
+| `unstable`             | The runs produced different outputs.                       |
+| `output_mismatch`      | A run's outputs differ from the known-good outputs.        |
+| `patched_step_not_run` | A run passed without the patched step running and passing. |
+
+Never verify against a cassette: it replays what the old site returned, so it says nothing about a patch.
+
+**Decision.** `decidePatch()` runs `checkPatch()` again itself, then returns `rejected`, `awaiting_approval` with every reason, or `accepted`. The default policy, `{ mode: 'human' }`, holds every patch for a person. `{ mode: 'auto', minScore }` (with `minScore` at least 0.8) accepts a verified selector patch without review, but still holds an insert-step patch, one the checks flagged for approval, one scoring below `minScore`, and one whose step run was not confirmed.
+
+**Approval.** `approvePatch()` is the only way a held patch becomes accepted. It records the reviewer and the time, and refuses if the workflow has changed since the patch was verified.
+
 ## What is still to come
 
-- Verify the patched workflow with `@sfysh/verifier` and require human approval by default.
+- Remember the workflow hashes a heal has produced and refuse a patch that would return to one, so heals cannot oscillate.
+- A renderer for the semantic diff a reviewer reads, a local corpus of heal attempts, and the `compile heal` command.
 
 ## How it fits with the other packages
 

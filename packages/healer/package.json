@@ -2,7 +2,7 @@
   "name": "@sfysh/healer",
   "version": "0.0.0",
   "private": true,
-  "description": "Healer for Starfysh. Takes a workflow step that triage classified as a site change, asks a model for a patch to that one step, and accepts the patch only after it validates and verifies. Scaffold only; not yet implemented.",
+  "description": "Healer for Starfysh. Takes a workflow step that triage classified as a site change, asks a model for a patch to that one step, and accepts the patch only after it validates and verifies.",
   "keywords": [
     "starfysh",
     "healer",
