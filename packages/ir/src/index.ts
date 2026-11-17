@@ -27,7 +27,7 @@ export type { ApplyPatchResult, StepChange, StepDiff, StepLocation, StepPatch } 
 export { planExtract } from './extract.js';
 export type { ColumnType, ExtractPlan } from './extract.js';
 export { parseRoleSelector } from './selectors.js';
-export type { RoleSelector } from './selectors.js';
+export type { RoleOptionValue, RoleSelector } from './selectors.js';
 
 /**
  * Semantic version of the IR schema this package publishes.

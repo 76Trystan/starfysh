@@ -228,7 +228,11 @@ describe('interpreter: extract outputs', () => {
   it('emits once per iteration for an extract inside a loop', async () => {
     const { page } = loggingPage({
       all: { 'locator("tr")': 3 },
-      texts: { 'locator("td")': ['cell'] },
+      texts: {
+        'locator("tr").all[0].locator("td")': ['first'],
+        'locator("tr").all[1].locator("td")': ['second'],
+        'locator("tr").all[2].locator("td")': ['third'],
+      },
     });
     const ctx = createWorkflowContext({ page });
     await interpretWorkflow(
@@ -243,7 +247,8 @@ describe('interpreter: extract outputs', () => {
         },
       ]),
     );
-    expect(ctx.drainOutputs()).toEqual([{ cell: 'cell' }, { cell: 'cell' }, { cell: 'cell' }]);
+    // Each iteration reads its own row.
+    expect(ctx.drainOutputs()).toEqual([{ cell: 'first' }, { cell: 'second' }, { cell: 'third' }]);
   });
 
   it('emits nothing for a step whose postcondition fails', async () => {

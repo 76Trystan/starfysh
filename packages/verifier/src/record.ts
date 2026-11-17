@@ -243,6 +243,35 @@ class RecordingLocator implements Locator {
     ]);
   }
 
+  getByRole(role: string, options?: Record<string, unknown>): Locator {
+    const args: unknown[] = options === undefined ? [role] : [role, options];
+    return new RecordingLocator(this.live.getByRole(role, options), this.queries, this.effects, [
+      ...this.path,
+      segment('getByRole', args),
+    ]);
+  }
+
+  getByTestId(value: string): Locator {
+    return new RecordingLocator(this.live.getByTestId(value), this.queries, this.effects, [
+      ...this.path,
+      segment('getByTestId', [value]),
+    ]);
+  }
+
+  getByText(value: string): Locator {
+    return new RecordingLocator(this.live.getByText(value), this.queries, this.effects, [
+      ...this.path,
+      segment('getByText', [value]),
+    ]);
+  }
+
+  getByLabel(value: string): Locator {
+    return new RecordingLocator(this.live.getByLabel(value), this.queries, this.effects, [
+      ...this.path,
+      segment('getByLabel', [value]),
+    ]);
+  }
+
   async all(): Promise<Locator[]> {
     // .all() is not supported by the v1 cassette format. Let the live call
     // through so a user who runs the recorder on a workflow that needs

@@ -94,11 +94,10 @@ This is the quickest way to check a workflow you have just edited: no generated 
 
 Under `'fallthrough'`, a run that passes with `candidateIndex` above 0 means the primary selector is broken. The compiled workflow only uses the first candidate and would fail, so treat that result as a prompt to fix the selector order, not as a pass.
 
-The interpreter and generated code are kept in step by a test that runs both against the same scripted page and compares every page call. They differ in three deliberate ways. The interpreter:
+The interpreter and generated code are kept in step by a test that runs both against the same scripted page and compares every page call and failure report. Loop caps (`maxIterations`, default 100), step deadlines (`timeoutMs`), flow conditions and `foreach` scoping go through the same `@sfysh/runtime` helpers in both, so they behave the same. `LoopLimitError` and `StepTimeoutError` are defined in the runtime and re-exported here. Two deliberate differences remain. The interpreter:
 
-- enforces `maxIterations` on loops (default 100) and `timeoutMs` on steps, failing with `LoopLimitError` or `StepTimeoutError`;
-- evaluates conditions in `guard`, `wait`, `assert` and `loop.while` with the same evaluator as pre and post checks, so `urlMatches` accepts a substring there as well as a regex;
-- accepts `{ param }` values, which the compiler does not support yet.
+- accepts `{ param }` values, which the compiler does not support yet;
+- can fall through ranked candidates (`candidates: 'fallthrough'`), which generated code does not do yet.
 
 Generated code is still what ships and what runs on a schedule. If a workflow passes under the interpreter, run the compiled version once before relying on it.
 

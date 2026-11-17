@@ -105,7 +105,9 @@ describe('codegen: comment text cannot break out into code', () => {
     expect(body[1]).toMatch(/^await step\(ctx, \{ id: 'step_nav', action: 'navigate' \}/);
     expect(body[1]).toContain("await page.goto('https://example.com');");
     expect(body[2]).toMatch(/^await step\(ctx, \{ id: 'step_guard', action: 'guard' \}/);
-    expect(body[2]).toContain("if (await page.locator('#banner').isVisible()) {");
+    expect(body[2]).toContain(
+      "if (await conditionHolds(page, { selectorVisible: '#banner' }, 'step_guard')) {",
+    );
     // The payload text survives only as comment text.
     for (const line of source.split('\n')) {
       if (line.includes('attacker.example')) expect(line.trimStart().startsWith('//')).toBe(true);
@@ -131,6 +133,18 @@ describe('codegen: string values cannot break out of their literal', () => {
     '*/ evil(); /*',
     '</script><script>evil()</script>',
   ];
+
+  /**
+   * A role selector carrying `value` as its accessible name, quoted with a
+   * quote character the value does not contain. A value with both kinds
+   * cannot be written as a role name, so it gets a bare role instead; the
+   * other steps still carry it.
+   */
+  function roleNamed(value: string): string {
+    if (!value.includes("'")) return `button[name='${value}']`;
+    if (!value.includes('"')) return `button[name="${value}"]`;
+    return 'button';
+  }
 
   function workflowWith(value: string): Workflow {
     return {
@@ -173,7 +187,7 @@ describe('codegen: string values cannot break out of their literal', () => {
           id: 'step_role',
           intent: 'Click by role.',
           action: 'click',
-          target: { candidates: [{ kind: 'role', value }] },
+          target: { candidates: [{ kind: 'role', value: roleNamed(value) }] },
         },
         {
           id: 'step_assert',
@@ -213,6 +227,26 @@ describe('codegen: string values cannot break out of their literal', () => {
       for (const statement of body.slice(1)) {
         expect(statement.startsWith('await step(')).toBe(true);
       }
+    },
+  );
+
+  it.each(hostileStrings.map((s) => [JSON.stringify(s), s]))(
+    'refuses %s as a whole role selector instead of compiling it',
+    async (_label, value) => {
+      const wf = {
+        irVersion: '1.0.0',
+        id: 'wf_bad_role',
+        name: 'Bad role',
+        steps: [
+          {
+            id: 'step_role',
+            intent: 'Click by role.',
+            action: 'click',
+            target: { candidates: [{ kind: 'role', value }] },
+          },
+        ],
+      } as unknown as Workflow;
+      await expect(compile(wf)).rejects.toThrow(/cannot be read/);
     },
   );
 

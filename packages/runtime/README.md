@@ -33,6 +33,23 @@ Failure classification lives in `@sfysh/triage`, not here. `RunResult.error` car
 | `poll(fn, opts)`    | Polls until `fn` returns a truthy value or the timeout fires. Returns the value.                           |
 | `AssertionError`    | Thrown by `assert`. `@sfysh/triage` classifies it as a `site` failure.                                     |
 
+### Control flow
+
+Generated code and the verifier's IR interpreter both call these, so a loop cap, a step deadline or a flow condition behaves the same way whichever one runs the workflow.
+
+| Export                                           | Purpose                                                                                                                                                        |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `step(ctx, info, body, { timeoutMs })`           | Runs one IR step and attributes any failure to it. With `timeoutMs` above zero, the step fails with `StepTimeoutError` if it runs longer.                      |
+| `conditionHolds(page, condition, stepId)`        | Evaluates a guard, wait, assert or loop condition with the same evaluator as pre and post checks. Throws `UnsupportedConditionError` for one it cannot answer. |
+| `forEachItem(stepId, max, items, body)`          | Runs `body(item)` for each item, failing with `LoopLimitError` on the iteration after `max`.                                                                   |
+| `whileHolds(page, stepId, condition, max, body)` | Runs `body()` while the condition holds, failing with `LoopLimitError` on the iteration after `max`.                                                           |
+| `withTimeout(stepId, timeoutMs, body)`           | The deadline `step()` uses, for code that needs one outside a step.                                                                                            |
+| `DEFAULT_MAX_ITERATIONS`                         | 100, the IR schema's default for `maxIterations`.                                                                                                              |
+
+**`foreach` bodies are scoped to the item.** Inside a `foreach` loop, generated code looks every target up within the current item (`item.getByRole(...)`, `item.locator(...)`), not across the page. That is why `Locator` has `getByRole`, `getByTestId`, `getByText` and `getByLabel`, as `Page` does. Conditions are still read from the page, also inside a loop: a guard's `selectorVisible` checks the whole page, while the click inside it acts within the item.
+
+A timeout cannot cancel the work it gives up on, so a step that timed out may still be acting on the page. The run has failed by then; close the page.
+
 ### Secrets
 
 | Export                       | Purpose                                                                                                            |

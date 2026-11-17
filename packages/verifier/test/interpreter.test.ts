@@ -7,6 +7,7 @@ import {
   createWorkflowContext,
   PostconditionViolation,
   StepFailure,
+  UnsupportedConditionError,
   VaultSecretMissingError,
 } from '@sfysh/runtime';
 import type { WorkflowContext } from '@sfysh/runtime';
@@ -279,11 +280,12 @@ describe('interpreter: control flow', () => {
         },
       ]),
     );
+    // The body is scoped to each row, as in generated code.
     expect(log).toEqual([
       'locator("tr").all',
-      'locator(".open").click',
-      'locator(".open").click',
-      'locator(".open").click',
+      'locator("tr").all[0].locator(".open").click',
+      'locator("tr").all[1].locator(".open").click',
+      'locator("tr").all[2].locator(".open").click',
     ]);
   });
 
@@ -346,7 +348,8 @@ describe('interpreter: control flow', () => {
         ]),
       ),
     );
-    expect(thrown.cause).toBeInstanceOf(InterpreterError);
+    // The same error generated code raises: both go through conditionHolds.
+    expect(thrown.cause).toBeInstanceOf(UnsupportedConditionError);
     expect(thrown.message).toContain('cannot be evaluated');
     expect(thrown.step.id).toBe('guard_001');
   });
@@ -409,7 +412,10 @@ describe('interpreter: conditions, timeouts and attribution', () => {
   });
 
   it('keeps the innermost step for a failure inside nested bodies', async () => {
-    const { ctx } = setup({ failAction: { 'locator(".open")': 'detached' } });
+    const { ctx } = setup({
+      all: { 'locator("tr")': 1 },
+      failAction: { 'locator("tr").all[0].locator(".open")': 'detached' },
+    });
     const thrown = await failure(
       interpretWorkflow(
         ctx,

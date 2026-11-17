@@ -70,6 +70,15 @@ export function loggingPage(script: PageScript = {}): LoggingPage {
     },
     locator: (selector: string) => locator(`${path}.locator(${JSON.stringify(selector)})`),
     nth: (i: number) => locator(`${path}.nth(${i})`),
+    getByRole: (role, options) =>
+      locator(
+        options === undefined
+          ? `${path}.getByRole(${JSON.stringify(role)})`
+          : `${path}.getByRole(${JSON.stringify(role)},${JSON.stringify(options)})`,
+      ),
+    getByTestId: (value) => locator(`${path}.getByTestId(${JSON.stringify(value)})`),
+    getByText: (value) => locator(`${path}.getByText(${JSON.stringify(value)})`),
+    getByLabel: (value) => locator(`${path}.getByLabel(${JSON.stringify(value)})`),
   });
 
   const page: Page = {

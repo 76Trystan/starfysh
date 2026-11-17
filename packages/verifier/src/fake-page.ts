@@ -103,6 +103,23 @@ class FakeLocator implements Locator {
     return new FakeLocator(this.cassette, [...this.path, segment('nth', [i])]);
   }
 
+  getByRole(role: string, options?: Record<string, unknown>): Locator {
+    const args: unknown[] = options === undefined ? [role] : [role, options];
+    return new FakeLocator(this.cassette, [...this.path, segment('getByRole', args)]);
+  }
+
+  getByTestId(value: string): Locator {
+    return new FakeLocator(this.cassette, [...this.path, segment('getByTestId', [value])]);
+  }
+
+  getByText(value: string): Locator {
+    return new FakeLocator(this.cassette, [...this.path, segment('getByText', [value])]);
+  }
+
+  getByLabel(value: string): Locator {
+    return new FakeLocator(this.cassette, [...this.path, segment('getByLabel', [value])]);
+  }
+
   async all(): Promise<Locator[]> {
     // Cassette format does not support .all() in v1. A runner that needs it
     // belongs on live or on a v2 cassette format.

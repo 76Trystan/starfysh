@@ -173,7 +173,9 @@ describe('compile: guard step rendering', () => {
       }),
     );
     expect(source).toContain('// [grd_cookie]');
-    expect(source).toContain("await page.locator('.cookie-banner').isVisible()");
+    expect(source).toContain(
+      "if (await conditionHolds(page, { selectorVisible: '.cookie-banner' }, 'grd_cookie')) {",
+    );
     expect(source).toContain('// [clk_accept]');
     expect(source).toContain("page.getByRole('button', { name: 'Accept' }).click()");
     expect(source).not.toContain('else');
@@ -205,7 +207,9 @@ describe('compile: guard step rendering', () => {
       }),
     );
     expect(source).toContain('// [grd_modal]');
-    expect(source).toContain("(await page.getByText('Accept cookies').count()) > 0");
+    expect(source).toContain(
+      "if (await conditionHolds(page, { textPresent: 'Accept cookies' }, 'grd_modal')) {",
+    );
     expect(source).toContain('} else {');
     expect(source).toContain('// [clk_accept]');
     expect(source).toContain('// [clk_skip]');
@@ -296,10 +300,14 @@ describe('compile: loop step rendering', () => {
       }),
     );
     expect(source).toContain('// [lp_rows]');
-    expect(source).toContain('for (const item of');
-    expect(source).toContain("page.getByRole('row').all()");
+    expect(source).toContain(
+      "await forEachItem('lp_rows', 100, await page.getByRole('row').all(), async (item) => {",
+    );
     expect(source).toContain('// [clk_row]');
-    expect(source).not.toContain('while (');
+    // The body is scoped to the row.
+    expect(source).toContain("await item.getByRole('button').click();");
+    expect(source).not.toContain("page.getByRole('button')");
+    expect(source).not.toContain('whileHolds');
   });
 
   it('renders a while loop with a condition', async () => {
@@ -320,10 +328,13 @@ describe('compile: loop step rendering', () => {
       }),
     );
     expect(source).toContain('// [lp_pages]');
-    expect(source).toContain('while (');
-    expect(source).toContain("await page.locator('.next-page').isVisible()");
+    expect(source).toContain(
+      "await whileHolds(page, 'lp_pages', { selectorVisible: '.next-page' }, 100, async () => {",
+    );
     expect(source).toContain('// [clk_next]');
-    expect(source).not.toContain('for (const item of');
+    // A while body is not scoped: there is no item.
+    expect(source).toContain("await page.locator('.next-page').click();");
+    expect(source).not.toContain('forEachItem');
   });
 
   it('renders all steps in a multi-step do block', async () => {
@@ -380,7 +391,12 @@ describe('compile: loop step rendering', () => {
       }),
     );
     expect(source).toContain('// [lp_with_guard]');
-    expect(source).toContain('for (const item of');
+    expect(source).toContain('await forEachItem(');
+    // The guard condition is read from the page; the click inside it from the row.
+    expect(source).toContain(
+      "conditionHolds(page, { selectorVisible: '.checkbox' }, 'grd_in_loop')",
+    );
+    expect(source).toContain("await item.locator('.checkbox').click();");
     expect(source).toContain('// [grd_in_loop]');
     expect(source).toContain('// [clk_check]');
     // Guard appears inside the loop body.

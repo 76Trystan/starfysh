@@ -17,11 +17,6 @@ import { COMPILER_VERSION } from './version.js';
 export function createTemplater(): Templater {
   const hb = Handlebars.create();
   registerHelpers(hb);
-
-  let self: Templater | null = null;
-  hb.registerPartial('renderStep', (context: Step) => {
-    return self!.renderStep(context);
-  });
   hb.registerHelper('jsonLiteral', (value: unknown) => new hb.SafeString(jsLiteral(value)));
 
   const entries = Object.entries(STEP_TEMPLATES) as Array<[Step['action'], string]>;
@@ -29,9 +24,15 @@ export function createTemplater(): Templater {
     entries.map(([action, source]) => [action, hb.compile(source, { noEscape: true })]),
   ) as Record<Step['action'], HandlebarsTemplateDelegate>;
 
-  self = new Templater(hb, stepTemplates);
-  return self;
+  return new Templater(hb, stepTemplates);
 }
+
+/**
+ * The variable element lookups start from. `page` everywhere except inside
+ * a `foreach` body, where every target is looked up within the current
+ * item. Conditions are always evaluated against the page.
+ */
+type Root = 'page' | 'item';
 
 export class Templater {
   constructor(
@@ -39,12 +40,23 @@ export class Templater {
     private readonly stepTemplates: Record<Step['action'], HandlebarsTemplateDelegate>,
   ) {}
 
-  renderStep(step: Step, indent = '  '): string {
+  renderStep(step: Step, indent = '  ', root: Root = 'page'): string {
     const template = this.stepTemplates[step.action];
     if (!template) {
       throw new CompilerError(`Unknown step action: ${(step as { action: string }).action}`);
     }
-    const context = buildStepContext(step);
+    const context = buildStepContext(step, root);
+    // Nested bodies are rendered here rather than through a partial so the
+    // lookup root can change: a `foreach` body is scoped to its item.
+    const nested = (steps: readonly Step[], r: Root): string =>
+      steps.map((s) => this.renderStep(s, '  ', r)).join('\n\n');
+    if (step.action === 'guard') {
+      context.thenSource = nested(step.then, root);
+      if (step.else) context.elseSource = nested(step.else, root);
+    }
+    if (step.action === 'loop') {
+      context.doSource = nested(step.do, step.foreach ? 'item' : root);
+    }
     const body = template(context).trimEnd();
     // `id` is required by the schema and verified by validateWorkflow; the
     // non-null assertion covers the json-schema-to-typescript quirk where
@@ -75,15 +87,20 @@ export class Templater {
       .filter((s) => s.length > 0)
       .join('\n');
     const declaration = bind ? `const ${bind} = ` : '';
+    // `timeoutMs` is enforced by the runtime's `step()`, the same way the
+    // interpreter enforces it. Zero means no limit, as in the interpreter.
+    const timeoutMs = (step as { timeoutMs?: number }).timeoutMs;
+    const options = timeoutMs !== undefined && timeoutMs > 0 ? `, { timeoutMs: ${timeoutMs} }` : '';
     const assembled =
       `${comment}\n` +
       `${declaration}await step(ctx, ${jsLiteral(stepInfo(step))}, async () => {\n` +
       (inner.length > 0 ? `${indentLines(inner, '  ')}\n` : '') +
-      `});`;
+      `}${options});`;
     return indentLines(assembled, indent);
   }
 
   renderWorkflow(workflow: Workflow): string {
+    checkBindNames(workflow.steps);
     const stepsSource = workflow.steps.map((step) => this.renderStep(step)).join('\n\n');
     return WORKFLOW_TEMPLATE({
       workflowId: workflow.id,
@@ -92,9 +109,154 @@ export class Templater {
       compilerVersion: COMPILER_HEADER_VERSION,
       destructure: computeContextDestructure(workflow),
       needsAssertCondition: containsConditionAsserts(workflow.steps),
+      flowHelpers: flowHelpersUsed(workflow.steps),
       steps: stepsSource,
     });
   }
+}
+
+/** Iteration cap for a loop without `maxIterations`. The IR schema default, and the runtime's `DEFAULT_MAX_ITERATIONS`. */
+const DEFAULT_MAX_ITERATIONS = 100;
+
+/**
+ * Names generated code already uses in the scope where a bind is declared.
+ * A bind with one of these names would shadow it (`const page = ...`) or
+ * fail to compile.
+ */
+const GENERATED_NAMES = new Set([
+  'ctx',
+  'page',
+  'vault',
+  'emit',
+  'item',
+  // EXTRACT_LOCAL, written out: that constant is declared further down.
+  'extracted',
+  'workflow',
+  'step',
+  'assert',
+  'poll',
+  'assertCondition',
+  'conditionHolds',
+  'forEachItem',
+  'whileHolds',
+]);
+
+/** Reserved words, strict-mode reserved words, and globals a `const` must not take. */
+const RESERVED = new Set([
+  'await',
+  'break',
+  'case',
+  'catch',
+  'class',
+  'const',
+  'continue',
+  'debugger',
+  'default',
+  'delete',
+  'do',
+  'else',
+  'enum',
+  'export',
+  'extends',
+  'false',
+  'finally',
+  'for',
+  'function',
+  'if',
+  'import',
+  'in',
+  'instanceof',
+  'new',
+  'null',
+  'return',
+  'super',
+  'switch',
+  'this',
+  'throw',
+  'true',
+  'try',
+  'typeof',
+  'var',
+  'void',
+  'while',
+  'with',
+  'yield',
+  'let',
+  'static',
+  'implements',
+  'interface',
+  'package',
+  'private',
+  'protected',
+  'public',
+  'arguments',
+  'eval',
+  'undefined',
+  'NaN',
+  'Infinity',
+  'globalThis',
+]);
+
+/**
+ * Refuse `bind` names generated code cannot declare: reserved words, names
+ * the generated function already uses, and a name bound twice. A repeat
+ * would be a redeclaration in the same scope, or two extracts writing the
+ * same output key.
+ */
+function checkBindNames(steps: readonly Step[], seen = new Map<string, string>()): void {
+  for (const s of steps) {
+    if (s.action === 'extract') {
+      const bind = (s as { bind?: string }).bind;
+      if (bind !== undefined) {
+        if (RESERVED.has(bind)) {
+          throw new CompilerError(
+            `Extract step '${s.id}' binds '${bind}', which is a reserved word.`,
+          );
+        }
+        if (GENERATED_NAMES.has(bind)) {
+          throw new CompilerError(
+            `Extract step '${s.id}' binds '${bind}', which generated code already uses. Choose another name.`,
+          );
+        }
+        const earlier = seen.get(bind);
+        if (earlier !== undefined) {
+          throw new CompilerError(
+            `Extract steps '${earlier}' and '${s.id}' both bind '${bind}'. Each bind name must be unique.`,
+          );
+        }
+        seen.set(bind, s.id!);
+      }
+    }
+    if (s.action === 'guard') {
+      checkBindNames(s.then, seen);
+      if (s.else) checkBindNames(s.else, seen);
+    }
+    if (s.action === 'loop') checkBindNames(s.do, seen);
+  }
+}
+
+/** Which flow-control helpers the generated file must import. */
+function flowHelpersUsed(steps: readonly Step[]): string[] {
+  const used = new Set<string>();
+  const walk = (list: readonly Step[]): void => {
+    for (const s of list) {
+      if (s.action === 'guard') {
+        used.add('conditionHolds');
+        walk(s.then);
+        if (s.else) walk(s.else);
+      }
+      if (s.action === 'assert') used.add('conditionHolds');
+      if (s.action === 'wait' && (s as { forCondition?: unknown }).forCondition) {
+        used.add('conditionHolds');
+      }
+      if (s.action === 'loop') {
+        used.add(s.foreach ? 'forEachItem' : 'whileHolds');
+        walk(s.do);
+      }
+    }
+  };
+  walk(steps);
+  return ['conditionHolds', 'forEachItem', 'whileHolds'].filter((name) => used.has(name));
 }
 
 /**
@@ -221,38 +383,38 @@ export class CompilerError extends Error {
 }
 
 function registerHelpers(hb: typeof Handlebars): void {
-  hb.registerHelper('target', (target: Target) => new hb.SafeString(renderTarget(target)));
+  hb.registerHelper(
+    'target',
+    (target: Target, root: Root) => new hb.SafeString(renderTarget(target, root)),
+  );
   hb.registerHelper('value', (value: ValueSource) => new hb.SafeString(renderValueSource(value)));
-  hb.registerHelper('cond', (cond: Condition) => new hb.SafeString(renderCondition(cond)));
 }
 
 /**
- * Render a Target as a Playwright locator chain. Walks the candidates in
- * order: role first, then testid, text, label, css, visual. The runtime
- * is responsible for trying candidates and falling through on failure.
- * The first-tried candidate is emitted inline; the full ranked list is
- * emitted as a provenance comment the healer can read.
+ * Render a Target as a locator lookup from `root` (`page`, or `item` inside
+ * a `foreach` body). Generated code uses the first candidate only; falling
+ * through to the others is a later change.
  */
-function renderTarget(target: Target): string {
+function renderTarget(target: Target, root: Root): string {
   const primary = target.candidates[0];
   if (!primary) {
     throw new CompilerError('Target has no candidates');
   }
-  return renderSelector(primary);
+  return renderSelector(primary, root);
 }
 
-function renderSelector(sel: SelectorCandidate): string {
+function renderSelector(sel: SelectorCandidate, root: Root): string {
   switch (sel.kind) {
     case 'role':
-      return renderRoleSelector(sel.value);
+      return renderRoleSelector(sel.value, root);
     case 'testid':
-      return `page.getByTestId(${quote(sel.value)})`;
+      return `${root}.getByTestId(${quote(sel.value)})`;
     case 'text':
-      return `page.getByText(${quote(sel.value)})`;
+      return `${root}.getByText(${quote(sel.value)})`;
     case 'label':
-      return `page.getByLabel(${quote(sel.value)})`;
+      return `${root}.getByLabel(${quote(sel.value)})`;
     case 'css':
-      return `page.locator(${quote(sel.value)})`;
+      return `${root}.locator(${quote(sel.value)})`;
     case 'visual':
       throw new CompilerError(
         `Visual selector '${sel.value}' encountered but visual-fallback codegen is not implemented in v1`,
@@ -267,15 +429,21 @@ function renderSelector(sel: SelectorCandidate): string {
  * getByRole call. Falls back to a plain role lookup if no attributes are
  * present.
  */
-function renderRoleSelector(value: string): string {
+function renderRoleSelector(value: string, root: Root): string {
   // The format is parsed in @sfysh/ir so the interpreter reads it the same way.
-  const { role, options } = parseRoleSelector(value);
+  const { role, options, unparsed } = parseRoleSelector(value);
+  if (unparsed.length > 0) {
+    throw new CompilerError(
+      `Role selector ${quote(value)} has parts that cannot be read: ${unparsed.map(quote).join(', ')}. ` +
+        `Write attributes as name='value', level=2 or exact=true.`,
+    );
+  }
   const entries = Object.entries(options);
   if (entries.length === 0) {
-    return `page.getByRole(${quote(role)})`;
+    return `${root}.getByRole(${quote(role)})`;
   }
-  const optionLiteral = `{ ${entries.map(([k, v]) => `${k}: ${quote(v)}`).join(', ')} }`;
-  return `page.getByRole(${quote(role)}, ${optionLiteral})`;
+  const optionLiteral = `{ ${entries.map(([k, v]) => `${k}: ${jsLiteral(v)}`).join(', ')} }`;
+  return `${root}.getByRole(${quote(role)}, ${optionLiteral})`;
 }
 
 function renderValueSource(value: ValueSource): string {
@@ -297,38 +465,34 @@ function renderValueSource(value: ValueSource): string {
 }
 
 /**
- * Render a Condition as a Playwright assertion expression. Returns a
- * boolean-valued expression suitable for use in `if`, `expect`, or
- * `await`.
+ * Render a flow condition (guard `if`, wait `forCondition`, assert
+ * `condition`, loop `while`) as a call to the runtime's `conditionHolds`,
+ * which evaluates it exactly as pre and post checks are evaluated.
+ * Conditions are always read from the page, also inside a `foreach` body.
  */
-function renderCondition(cond: Condition): string {
-  if ('urlMatches' in cond) {
-    return `new RegExp(${quote(cond.urlMatches)}).test(page.url())`;
-  }
-  if ('urlEquals' in cond) {
-    return `page.url() === ${quote(cond.urlEquals)}`;
-  }
-  if ('selectorVisible' in cond) {
-    return `await page.locator(${quote(cond.selectorVisible)}).isVisible()`;
-  }
-  if ('selectorAbsent' in cond) {
-    return `(await page.locator(${quote(cond.selectorAbsent)}).count()) === 0`;
-  }
-  if ('textPresent' in cond) {
-    return `(await page.getByText(${quote(cond.textPresent)}).count()) > 0`;
-  }
+function renderFlowCondition(cond: Condition, stepId: string): string {
   if ('responseStatus' in cond) {
     throw new CompilerError(
       `responseStatus condition (${cond.responseStatus}) is not supported until Phase 2 response tracking is wired`,
     );
   }
-  throw new CompilerError('Unknown Condition shape');
+  return `await conditionHolds(page, ${jsLiteral(cond)}, ${quote(stepId)})`;
+}
+
+/** A loop's `while` condition as a literal for `whileHolds`, which evaluates it itself. */
+function flowConditionLiteral(cond: Condition): string {
+  if ('responseStatus' in cond) {
+    throw new CompilerError(
+      `responseStatus condition (${cond.responseStatus}) is not supported until Phase 2 response tracking is wired`,
+    );
+  }
+  return jsLiteral(cond);
 }
 
 /** Local variable an extract step without `bind` stores its value in. */
 const EXTRACT_LOCAL = 'extracted';
 
-function buildStepContext(step: Step): Record<string, unknown> {
+function buildStepContext(step: Step, root: Root): Record<string, unknown> {
   const schema =
     step.action === 'extract' ? (step as { schema?: Record<string, unknown> }).schema : undefined;
   // The schema decides the read: one value, a flat list, or typed table
@@ -337,8 +501,23 @@ function buildStepContext(step: Step): Record<string, unknown> {
   if (plan?.kind === 'unsupported') {
     throw new CompilerError(`Extract step '${step.id}' cannot be compiled: ${plan.reason}`);
   }
+  const flow = step as {
+    if?: Condition;
+    forCondition?: Condition;
+    condition?: Condition;
+    while?: Condition;
+    maxIterations?: number;
+  };
+  const id = step.id!;
   return {
     ...step,
+    root,
+    stepIdLiteral: quote(id),
+    maxIterations: flow.maxIterations ?? DEFAULT_MAX_ITERATIONS,
+    ifExpr: flow.if ? renderFlowCondition(flow.if, id) : undefined,
+    forConditionExpr: flow.forCondition ? renderFlowCondition(flow.forCondition, id) : undefined,
+    conditionExpr: flow.condition ? renderFlowCondition(flow.condition, id) : undefined,
+    whileLiteral: flow.while ? flowConditionLiteral(flow.while) : undefined,
     intent: commentText((step as { intent?: string }).intent ?? ''),
     isNavigate: step.action === 'navigate',
     isClick: step.action === 'click',
@@ -408,41 +587,33 @@ const STEP_TEMPLATES: Record<Step['action'], string> = {
 await page.goto({{{value url}}}{{#if waitUntil}}, { waitUntil: '{{waitUntil}}' }{{/if}});`,
 
   click: `// [{{id}}] {{intent}}
-await {{{target target}}}.click();`,
+await {{{target target root}}}.click();`,
 
   fill: `// [{{id}}] {{intent}}
-await {{{target target}}}.fill({{{value value}}});`,
+await {{{target target root}}}.fill({{{value value}}});`,
 
   extract: `// [{{id}}] {{intent}}
-const {{extractVar}} = await emit.{{extractMethod}}({{{target target}}}{{#if extractColumns}}, {{{jsonLiteral extractColumns}}}{{/if}});`,
+const {{extractVar}} = await emit.{{extractMethod}}({{{target target root}}}{{#if extractColumns}}, {{{jsonLiteral extractColumns}}}{{/if}});`,
 
   wait: `// [{{id}}] {{intent}}
-{{#if forCondition}}await poll(async () => {{{cond forCondition}}});{{/if}}{{#if millis}}await page.waitForTimeout({{millis}});{{/if}}`,
+{{#if forConditionExpr}}await poll(async () => {{{forConditionExpr}}});{{/if}}{{#if millis}}await page.waitForTimeout({{millis}});{{/if}}`,
 
   assert: `// [{{id}}] {{intent}}
-assert({{{cond condition}}});`,
+assert({{{conditionExpr}}});`,
 
   guard: `// [{{id}}] {{intent}}
-if ({{{cond if}}}) {
-{{#each then}}
-{{> renderStep this}}
-{{/each}}
-}{{#if else}} else {
-{{#each else}}
-{{> renderStep this}}
-{{/each}}
+if ({{{ifExpr}}}) {
+{{{thenSource}}}
+}{{#if elseSource}} else {
+{{{elseSource}}}
 }{{/if}}`,
 
   loop: `// [{{id}}] {{intent}}
-{{#if foreach}}for (const item of await {{{target foreach}}}.all()) {
-{{#each do}}
-{{> renderStep this}}
-{{/each}}
-}{{/if}}{{#if while}}while ({{{cond while}}}) {
-{{#each do}}
-{{> renderStep this}}
-{{/each}}
-}{{/if}}`,
+{{#if foreach}}await forEachItem({{{stepIdLiteral}}}, {{maxIterations}}, await {{{target foreach root}}}.all(), async (item) => {
+{{{doSource}}}
+});{{/if}}{{#if while}}await whileHolds(page, {{{stepIdLiteral}}}, {{{whileLiteral}}}, {{maxIterations}}, async () => {
+{{{doSource}}}
+});{{/if}}`,
 };
 
 const WORKFLOW_TEMPLATE = (tpl: {
@@ -452,10 +623,12 @@ const WORKFLOW_TEMPLATE = (tpl: {
   compilerVersion: string;
   destructure: string[];
   needsAssertCondition: boolean;
+  flowHelpers: string[];
   steps: string;
 }): string => {
   const runtimeImports = ['workflow', 'step', 'assert', 'poll'];
   if (tpl.needsAssertCondition) runtimeImports.push('assertCondition');
+  runtimeImports.push(...tpl.flowHelpers);
   return `// GENERATED by @sfysh/compiler v${tpl.compilerVersion} from workflow ${tpl.workflowId}
 // Intent: ${commentText(tpl.workflowName)}${tpl.description ? '\n// Description: ' + commentText(tpl.description) : ''}
 //

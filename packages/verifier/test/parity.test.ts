@@ -30,12 +30,19 @@ const supplierPortal = JSON.parse(
 
 /** Register generated source with the real runtime, as importing the file would. */
 function loadGenerated(source: string): void {
-  const withoutImport = source.replace(/^import \{[^}]*\} from '@sfysh\/runtime';$/m, '');
+  // The names come from the file's own import line, so this loader keeps up
+  // with whatever runtime helpers the compiler starts to use.
+  const importLine = /^import \{([^}]*)\} from '@sfysh\/runtime';$/m.exec(source);
+  expect(importLine).not.toBeNull();
+  const names = importLine![1]!
+    .split(',')
+    .map((n) => n.trim())
+    .filter((n) => n.length > 0) as (keyof typeof runtime)[];
+  const withoutImport = source.replace(importLine![0], '');
   expect(withoutImport).not.toContain('import ');
   const js = ts.transpileModule(withoutImport, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
   }).outputText;
-  const names = ['workflow', 'step', 'assert', 'poll', 'assertCondition'] as const;
   const load = new Function(...names, js) as (...args: unknown[]) => void;
   load(...names.map((n) => runtime[n]));
 }
@@ -269,7 +276,16 @@ describe('parity: compiled code and the interpreter drive the page identically',
     expect(compiled.log).toContain('getByTestId("continue").click');
     expect(compiled.log).not.toContain('getByText("Accept").click');
     expect(compiled.log.filter((l) => l === 'locator(".load-more").click')).toHaveLength(2);
-    expect(compiled.log.filter((l) => l === 'locator(".row-open").click')).toHaveLength(3);
+    // A foreach body is scoped to its item: each row's own button, not the page's.
+    expect(compiled.log).not.toContain('locator(".row-open").click');
+    expect(
+      compiled.log.filter((l) =>
+        /^locator\("table\.report tr"\)\.all\[\d\]\.locator\("\.row-open"\)\.click$/.test(l),
+      ),
+    ).toHaveLength(3);
+    expect(compiled.log).toContain(
+      'locator("table.report tr").all[0].locator("td.label").allTextContents',
+    );
     expect(compiled.log).toContain('waitForTimeout(200)');
   });
 
@@ -374,6 +390,126 @@ describe('parity: compiled code and the interpreter drive the page identically',
     expect(interpreted.outputs).toEqual(compiled.outputs);
     expect(interpreted.error).toEqual(compiled.error);
     expect(compiled.error).toMatchObject({ name: 'AssertionError', stepId: 'assert_010' });
+  });
+
+  it('when a while loop runs past maxIterations', async () => {
+    const runaway = {
+      irVersion: '1.0.0',
+      id: 'wf_runaway',
+      name: 'Runaway loop',
+      steps: [
+        {
+          id: 'loop_001',
+          intent: 'Load more until it stops.',
+          action: 'loop',
+          while: { selectorVisible: '.more' },
+          maxIterations: 3,
+          do: [
+            {
+              id: 'click_002',
+              intent: 'Load more.',
+              action: 'click',
+              target: { candidates: [{ kind: 'css', value: '.more' }] },
+            },
+          ],
+        },
+      ],
+    } as unknown as Workflow;
+    const { compiled, interpreted } = await both(runaway, {});
+
+    expect(compiled.status).toBe('failed');
+    expect(interpreted.log).toEqual(compiled.log);
+    expect(interpreted.error).toEqual(compiled.error);
+    expect(compiled.error).toMatchObject({ name: 'LoopLimitError', stepId: 'loop_001' });
+    expect(compiled.log.filter((l) => l === 'locator(".more").click')).toHaveLength(3);
+  });
+
+  it('when a foreach finds more items than maxIterations', async () => {
+    const tooMany = {
+      irVersion: '1.0.0',
+      id: 'wf_too_many',
+      name: 'Too many rows',
+      steps: [
+        {
+          id: 'loop_001',
+          intent: 'Each row.',
+          action: 'loop',
+          foreach: { candidates: [{ kind: 'css', value: 'tr' }] },
+          maxIterations: 2,
+          do: [
+            {
+              id: 'click_002',
+              intent: 'Open.',
+              action: 'click',
+              target: { candidates: [{ kind: 'role', value: "button[name='Open']" }] },
+            },
+          ],
+        },
+      ],
+    } as unknown as Workflow;
+    const { compiled, interpreted } = await both(tooMany, { all: { 'locator("tr")': 5 } });
+
+    expect(interpreted.log).toEqual(compiled.log);
+    expect(interpreted.error).toEqual(compiled.error);
+    expect(compiled.error).toMatchObject({ name: 'LoopLimitError', stepId: 'loop_001' });
+    // Role lookups are scoped to the row too.
+    expect(compiled.log).toContain(
+      'locator("tr").all[1].getByRole("button",{"name":"Open"}).click',
+    );
+  });
+
+  it('when a step runs past its timeoutMs', async () => {
+    const slow = {
+      irVersion: '1.0.0',
+      id: 'wf_slow',
+      name: 'Slow step',
+      steps: [
+        {
+          id: 'nav_001',
+          intent: 'Open.',
+          action: 'navigate',
+          url: 'https://x.test/',
+          timeoutMs: 20,
+        },
+      ],
+    } as unknown as Workflow;
+    runtime.resetWorkflows();
+    loadGenerated((await compile(slow)).source);
+    runtime.workflow('interpreted', (ctx) => interpretWorkflow(ctx, slow));
+    const runOn = async (id: string) => {
+      const { page } = loggingPage({});
+      const hanging = { ...page, goto: () => new Promise<void>(() => {}) };
+      const ctx = runtime.createWorkflowContext({ page: hanging });
+      const result = await runtime.run(id, ctx);
+      return JSON.parse(JSON.stringify(result.error ?? null)) as unknown;
+    };
+    const compiled = await runOn('wf_slow');
+    const interpreted = await runOn('interpreted');
+
+    expect(interpreted).toEqual(compiled);
+    expect(compiled).toMatchObject({ name: 'StepTimeoutError', stepId: 'nav_001' });
+  });
+
+  it('reads urlMatches in a flow condition as a substring when it is not a valid regex', async () => {
+    const odd = {
+      irVersion: '1.0.0',
+      id: 'wf_odd_url',
+      name: 'Odd URL pattern',
+      steps: [
+        {
+          id: 'assert_001',
+          intent: 'On the second page.',
+          action: 'assert',
+          condition: { urlMatches: '?page=(2' },
+        },
+      ],
+    } as unknown as Workflow;
+    const { compiled, interpreted } = await both(odd, { url: 'https://x.test/list?page=(2' });
+
+    // Before, compiled code built `new RegExp('?page=(2')` and threw.
+    expect(compiled.status).toBe('ok');
+    expect(interpreted.status).toBe('ok');
+    expect(interpreted.log).toEqual(compiled.log);
   });
 
   it('on the reference supplier-portal workflow', async () => {

@@ -58,6 +58,24 @@ if (!check.valid) throw new Error('invalid workflow');
 const { source } = await compile(check.value);
 ```
 
+## What the generated code does
+
+- **Loops** go through the runtime's `forEachItem` and `whileHolds`, which stop at the step's `maxIterations` (default 100) with `LoopLimitError`.
+- **`foreach` bodies are scoped to the item.** Every target inside the body is looked up within the current item (`item.getByRole(...)`), not the whole page.
+- **`timeoutMs`** on a step is passed to the runtime's `step()`, which fails the step with `StepTimeoutError` when it runs longer.
+- **Conditions** in `guard`, `wait`, `assert` and `loop.while` are evaluated by the runtime's `conditionHolds`, the same evaluator as pre and post checks.
+
+These are the same helpers the verifier's IR interpreter uses, and a parity test holds the two to the same page calls. Generated code needs a `@sfysh/runtime` that exports them.
+
+## What the compiler refuses
+
+Besides an invalid workflow, `compile()` throws `CompilerError` for:
+
+- an extract `bind` that is a reserved word, a name generated code already uses (`page`, `ctx`, `emit`, `vault`, `item`, `extracted` and the runtime helpers), or a name bound twice;
+- a `role` selector with any part it cannot read, such as `button[name='Go' disabled]`;
+- a `responseStatus` condition in a guard, wait, assert or loop, until response tracking lands;
+- a `{ param }` value, until the runtime supports parameters.
+
 ## Package layout
 
 ```

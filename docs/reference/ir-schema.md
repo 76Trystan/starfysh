@@ -38,7 +38,7 @@ Each step in `steps` has a set of common fields plus action-specific fields. The
 | `pre` | `Condition[]` | no | Preconditions that must hold before this step runs. Failure routes to triage, typically classified as a site change or auth decay. |
 | `post` | `Condition[]` | no | Postconditions that must hold after this step completes. These are what make healing tractable; without them, the healer cannot classify failures. |
 | `onFail` | `string` (enum) | no | What to do on failure: `retry`, `escalate_to_healer` (default), `stop`, `continue`. |
-| `timeoutMs` | `integer` | no | Maximum milliseconds before the verifier marks this step as possibly stuck. |
+| `timeoutMs` | `integer` | no | Maximum milliseconds the step may take, including its pre and post checks and any nested steps. Past it the step fails with `StepTimeoutError`. `0` means no limit. |
 
 ### Action types
 
@@ -129,7 +129,9 @@ Repeated execution. Exactly one of `foreach` or `while` must be present.
 | `foreach` | `Target` | one of | Iterates over all elements matching the target. |
 | `while` | `Condition` | one of | Repeats until the condition stops holding. |
 | `do` | `Step[]` | yes | Steps to run each iteration. |
-| `maxIterations` | `integer` | no | Hard cap to prevent runaway loops (default: 100). |
+| `maxIterations` | `integer` | no | Hard cap to prevent runaway loops (default: 100). The run fails with `LoopLimitError` on the iteration after the cap. |
+
+Inside a `foreach` body, every step's `target` is looked up within the current item, not across the page, and so are the targets of steps nested in a guard or another loop in that body. A nested `foreach` target is looked up within the outer item. Conditions (`pre`, `post`, a guard's `if`, a wait's `forCondition`) are always evaluated against the whole page.
 
 ---
 
@@ -158,7 +160,7 @@ Candidate order should follow: `role` > `testid` > `text` > `label` > `css` > `v
 | `kind` | `string` | `role`, `testid`, `text`, `label`, `css`, `visual` |
 | `value` | `string` | The selector string in the form expected by `kind`. |
 
-`role` format: `button[name="Submit"]`. `testid` format: `submit-button`. `visual` format: an embedding reference such as `emb_4f2a`.
+`role` format: a role, then attributes in brackets: `button[name="Submit"]`, `heading[level=2][name='Orders']`, `button[name=Submit exact=true]`. Values may be quoted with either quote, or unquoted; an unquoted value that is all digits is a number and `true` or `false` is a flag, except for `name` and `description`, which are always text. The compiler refuses a role value with any part it cannot read, rather than dropping it. `testid` format: `submit-button`. `visual` format: an embedding reference such as `emb_4f2a`.
 
 ### ValueSource
 

@@ -6,6 +6,7 @@
 import type { Condition, SelectorCandidate } from '@sfysh/ir';
 import type { WorkflowContext } from './context.js';
 import { PostconditionViolation } from './conditions.js';
+import { withTimeout } from './control.js';
 
 /** What generated code tells the runtime about the step it is entering. */
 export interface StepInfo {
@@ -36,19 +37,30 @@ export class StepFailure extends Error {
   }
 }
 
+/** Per-step limits, from the IR step. */
+export interface StepOptions {
+  /** The step's `timeoutMs`. The body fails with `StepTimeoutError` if it runs longer. Zero or absent: no limit. */
+  timeoutMs?: number;
+}
+
 /**
  * Run one IR step. Returns whatever the body returns. If the body throws,
  * the error is wrapped in a `StepFailure` naming this step. When steps are
  * nested (a click inside a guard inside a loop), the innermost step keeps
  * the attribution, because that is the one that actually failed.
+ *
+ * With `options.timeoutMs` the body, including its pre and post checks and
+ * any nested steps, must finish in that time. A timeout is attributed to
+ * this step like any other failure.
  */
 export async function step<T>(
   _ctx: WorkflowContext,
   info: StepInfo,
   body: () => Promise<T>,
+  options: StepOptions = {},
 ): Promise<T> {
   try {
-    return await body();
+    return await withTimeout(info.id, options.timeoutMs, body);
   } catch (err) {
     if (err instanceof StepFailure) throw err;
     throw new StepFailure(info, err);

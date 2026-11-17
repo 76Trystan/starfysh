@@ -9,19 +9,20 @@
 // the same id. The interpreter takes the IR object and runs it.
 //
 // It is built from the same runtime pieces generated code uses (`step`,
-// `assertCondition`, `evaluateCondition`, `poll`, `assert`, the emit sink),
+// `assertCondition`, `conditionHolds`, `poll`, `assert`, the emit sink),
 // so failures come out in the same shape, and a parity test holds its
 // sequence of Page calls equal to the compiled code's.
 //
+// Loop caps, step deadlines, flow conditions and `foreach` scoping go
+// through the runtime helpers generated code calls (`forEachItem`,
+// `whileHolds`, `conditionHolds`, `step` with `timeoutMs`), so the two
+// executors share one implementation of each.
+//
 // Where the two differ on purpose:
 //
-// - `maxIterations` and `timeoutMs` are enforced here. Generated code does
-//   not enforce them yet.
-// - Conditions in `guard`, `wait`, `assert` and `loop.while` use the
-//   runtime's `evaluateCondition`, the same evaluator as pre and post
-//   checks. Generated code inlines its own expression for those positions,
-//   which for `urlMatches` accepts a regex only, not a substring.
 // - Candidate fallthrough is available as an option (off by default).
+// - `{ param }` values come from the `params` option; the compiler
+//   cannot compile them yet.
 
 import {
   parseRoleSelector,
@@ -37,11 +38,17 @@ import {
 import {
   assert,
   assertCondition,
-  evaluateCondition,
+  conditionHolds,
+  DEFAULT_MAX_ITERATIONS,
+  forEachItem,
+  LoopLimitError,
   poll,
   step as runtimeStep,
+  StepTimeoutError,
+  whileHolds,
   type ColumnSchema,
   type Locator,
+  type Page,
   type StepInfo,
   type WorkflowContext,
 } from '@sfysh/runtime';
@@ -55,30 +62,9 @@ export class InterpreterError extends Error {
   }
 }
 
-/** Thrown when a loop runs more iterations than its `maxIterations` cap. */
-export class LoopLimitError extends Error {
-  readonly maxIterations: number;
-
-  constructor(stepId: string, maxIterations: number) {
-    super(
-      `loop '${stepId}' exceeded its cap of ${maxIterations} iterations. ` +
-        `Raise 'maxIterations' on the step if the page really has that many.`,
-    );
-    this.name = 'LoopLimitError';
-    this.maxIterations = maxIterations;
-  }
-}
-
-/** Thrown when a step runs longer than its `timeoutMs`. */
-export class StepTimeoutError extends Error {
-  readonly timeoutMs: number;
-
-  constructor(stepId: string, timeoutMs: number) {
-    super(`step '${stepId}' did not finish within its timeoutMs of ${timeoutMs}ms`);
-    this.name = 'StepTimeoutError';
-    this.timeoutMs = timeoutMs;
-  }
-}
+// The loop and timeout errors live in the runtime, which generated code
+// also uses. Re-exported here so existing imports keep working.
+export { DEFAULT_MAX_ITERATIONS, LoopLimitError, StepTimeoutError };
 
 /** One executed step, reported to `InterpreterOptions.onStep` as it finishes. */
 export interface StepTrace {
@@ -113,9 +99,6 @@ export interface InterpreterOptions {
   /** Called once for every step execution, after it finishes or fails. */
   onStep?: (trace: StepTrace) => void;
 }
-
-/** Iteration cap applied when a loop step does not set `maxIterations`. Matches the IR schema default. */
-export const DEFAULT_MAX_ITERATIONS = 100;
 
 /**
  * Build a runner that interprets the workflow it is given. The result is a
@@ -165,6 +148,9 @@ interface StepView {
   do?: Step[];
 }
 
+/** Where element lookups start: the page, or the current item inside a `foreach` body. */
+type Root = Page | Locator;
+
 /** Mutable record a step body fills in as it runs, for the trace. */
 interface StepOutcome {
   selector?: SelectorCandidate;
@@ -184,11 +170,15 @@ class Run {
     private readonly options: InterpreterOptions,
   ) {}
 
-  async steps(steps: readonly Step[]): Promise<void> {
-    for (const s of steps) await this.step(s as unknown as StepView);
+  /**
+   * Run a list of steps. `root` is where element lookups start: the page,
+   * or the current item inside a `foreach` body, as in generated code.
+   */
+  async steps(steps: readonly Step[], root: Root = this.ctx.page): Promise<void> {
+    for (const s of steps) await this.step(s as unknown as StepView, root);
   }
 
-  private async step(s: StepView): Promise<void> {
+  private async step(s: StepView, root: Root): Promise<void> {
     const primary = (s.target ?? s.foreach)?.candidates[0];
     // `info` is what a failure is attributed to. The body updates
     // `info.selector` when it moves to another candidate, so a failure
@@ -212,14 +202,17 @@ class Run {
     };
 
     try {
-      await runtimeStep(this.ctx, info, () =>
-        withTimeout(s.id, s.timeoutMs, async () => {
+      await runtimeStep(
+        this.ctx,
+        info,
+        async () => {
           for (const c of s.pre ?? []) await assertCondition(this.ctx, s.id, 'pre', c);
-          const pending = await this.body(s, info, outcome);
+          const pending = await this.body(s, info, outcome, root);
           for (const c of s.post ?? []) await assertCondition(this.ctx, s.id, 'post', c);
           // Emitted only once the post checks pass, as in generated code.
           if (pending) this.ctx.emit.output({ [pending.name]: pending.value });
-        }),
+        },
+        s.timeoutMs !== undefined ? { timeoutMs: s.timeoutMs } : {},
       );
     } catch (err) {
       finish('failed');
@@ -232,6 +225,7 @@ class Run {
     s: StepView,
     info: StepInfo,
     outcome: StepOutcome,
+    root: Root,
   ): Promise<PendingOutput | undefined> {
     const { page, emit } = this.ctx;
 
@@ -244,12 +238,12 @@ class Run {
       }
 
       case 'click':
-        await this.act(s.target!, info, outcome, (locator) => locator.click());
+        await this.act(s.target!, info, outcome, root, (locator) => locator.click());
         return;
 
       case 'fill': {
         const value = this.value(s.value!);
-        await this.act(s.target!, info, outcome, (locator) => locator.fill(value));
+        await this.act(s.target!, info, outcome, root, (locator) => locator.fill(value));
         return;
       }
 
@@ -261,7 +255,7 @@ class Run {
         if (plan.kind === 'unsupported') {
           throw new InterpreterError(`extract step '${s.id}' cannot be executed: ${plan.reason}`);
         }
-        const locator = this.locate(primaryOf(s.target!, s.id));
+        const locator = this.locate(primaryOf(s.target!, s.id), root);
         const value =
           plan.kind === 'value'
             ? await emit.value(locator)
@@ -274,41 +268,42 @@ class Run {
       case 'wait':
         if (s.forCondition) {
           const condition = s.forCondition;
-          await poll(() => this.holds(condition, s.id));
+          await poll(async () => await conditionHolds(page, condition, s.id));
         }
         if (s.millis) await page.waitForTimeout(s.millis);
         return;
 
       case 'assert':
-        assert(await this.holds(s.condition!, s.id));
+        assert(await conditionHolds(page, s.condition!, s.id));
         return;
 
       case 'guard':
-        if (await this.holds(s.if!, s.id)) {
-          await this.steps(s.then!);
+        if (await conditionHolds(page, s.if!, s.id)) {
+          await this.steps(s.then!, root);
         } else if (s.else) {
-          await this.steps(s.else);
+          await this.steps(s.else, root);
         }
         return;
 
       case 'loop': {
         const max = s.maxIterations ?? DEFAULT_MAX_ITERATIONS;
-        let iterations = 0;
         outcome.iterations = 0;
+        const iteration = (): void => {
+          outcome.iterations = (outcome.iterations ?? 0) + 1;
+        };
         if (s.foreach) {
-          const items = await this.locate(primaryOf(s.foreach, s.id)).all();
-          for (let i = 0; i < items.length; i++) {
-            if (++iterations > max) throw new LoopLimitError(s.id, max);
-            outcome.iterations = iterations;
-            await this.steps(s.do!);
-          }
+          // The body is scoped to each item: its targets are looked up
+          // within the item, not across the page.
+          const items = await this.locate(primaryOf(s.foreach, s.id), root).all();
+          await forEachItem(s.id, max, items, async (item) => {
+            iteration();
+            await this.steps(s.do!, item);
+          });
         } else {
-          const condition = s.while!;
-          while (await this.holds(condition, s.id)) {
-            if (++iterations > max) throw new LoopLimitError(s.id, max);
-            outcome.iterations = iterations;
-            await this.steps(s.do!);
-          }
+          await whileHolds(page, s.id, s.while!, max, async () => {
+            iteration();
+            await this.steps(s.do!, root);
+          });
         }
         return;
       }
@@ -331,10 +326,11 @@ class Run {
     target: Target,
     info: StepInfo,
     outcome: StepOutcome,
+    root: Root,
     action: (locator: Locator) => Promise<void>,
   ): Promise<void> {
     if (this.options.candidates !== 'fallthrough') {
-      await action(this.locate(primaryOf(target, info.id)));
+      await action(this.locate(primaryOf(target, info.id), root));
       return;
     }
 
@@ -354,7 +350,7 @@ class Run {
       outcome.selector = selector;
       outcome.candidateIndex = index;
       try {
-        await action(this.locate(candidate));
+        await action(this.locate(candidate, root));
         return;
       } catch (err) {
         if (firstError === undefined) firstError = err;
@@ -369,23 +365,27 @@ class Run {
     throw firstError;
   }
 
-  private locate(candidate: SelectorCandidate): Locator {
-    const { page } = this.ctx;
+  private locate(candidate: SelectorCandidate, root: Root): Locator {
     switch (candidate.kind) {
       case 'role': {
-        const { role, options } = parseRoleSelector(candidate.value);
+        const { role, options, unparsed } = parseRoleSelector(candidate.value);
+        if (unparsed.length > 0) {
+          throw new InterpreterError(
+            `role selector ${JSON.stringify(candidate.value)} has parts that cannot be read: ${unparsed.map((p) => JSON.stringify(p)).join(', ')}`,
+          );
+        }
         return Object.keys(options).length === 0
-          ? page.getByRole(role)
-          : page.getByRole(role, options);
+          ? root.getByRole(role)
+          : root.getByRole(role, options);
       }
       case 'testid':
-        return page.getByTestId(candidate.value);
+        return root.getByTestId(candidate.value);
       case 'text':
-        return page.getByText(candidate.value);
+        return root.getByText(candidate.value);
       case 'label':
-        return page.getByLabel(candidate.value);
+        return root.getByLabel(candidate.value);
       case 'css':
-        return page.locator(candidate.value);
+        return root.locator(candidate.value);
       case 'visual':
         throw new InterpreterError(
           `visual selector '${candidate.value}' cannot be executed: visual fallback is not implemented`,
@@ -408,50 +408,10 @@ class Run {
     }
     return supplied;
   }
-
-  /** Evaluate a condition that controls flow (guard, wait, assert, loop). */
-  private async holds(condition: Condition, stepId: string): Promise<boolean> {
-    const result = await evaluateCondition(this.ctx.page, condition);
-    if (result.status === 'unsupported') {
-      throw new InterpreterError(
-        `step '${stepId}' uses a condition that cannot be evaluated: ${result.reason ?? 'unsupported'}`,
-      );
-    }
-    return result.status === 'held';
-  }
 }
 
 function primaryOf(target: Target, stepId: string): SelectorCandidate {
   const primary = target.candidates[0];
   if (!primary) throw new InterpreterError(`step '${stepId}' has a target with no candidates`);
   return primary;
-}
-
-/**
- * Run `body`, failing with StepTimeoutError if it takes longer than
- * `timeoutMs`. A missing or zero timeout means no limit. The body cannot be
- * cancelled, so after a timeout it may still be running against the page;
- * the run has failed by then and the caller is expected to dispose the page.
- */
-async function withTimeout(
-  stepId: string,
-  timeoutMs: number | undefined,
-  body: () => Promise<void>,
-): Promise<void> {
-  if (!timeoutMs || timeoutMs <= 0) return body();
-
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const work = body();
-  // If the timeout wins, the body's eventual rejection has no listener.
-  work.catch(() => {});
-  try {
-    await Promise.race([
-      work,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new StepTimeoutError(stepId, timeoutMs)), timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
-  }
 }

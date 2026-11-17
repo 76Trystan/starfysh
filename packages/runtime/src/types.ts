@@ -18,6 +18,15 @@ export interface Locator {
   nth(i: number): Locator;
   allTextContents(): Promise<string[]>;
   all(): Promise<Locator[]>;
+  /**
+   * The same lookups a `Page` has, scoped to this element. Generated code
+   * uses them inside a `foreach` loop, where every target is looked up
+   * within the current item rather than across the whole page.
+   */
+  getByRole(role: string, options?: Record<string, unknown>): Locator;
+  getByTestId(value: string): Locator;
+  getByText(value: string): Locator;
+  getByLabel(value: string): Locator;
 }
 
 /**

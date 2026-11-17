@@ -160,12 +160,19 @@ describe('codegen: step() wrapper', () => {
  * workflow exactly as a real import of the generated file would.
  */
 function loadGenerated(source: string): void {
-  const withoutImport = source.replace(/^import \{[^}]*\} from '@sfysh\/runtime';$/m, '');
+  // The names come from the file's own import line, so this loader keeps up
+  // with whatever runtime helpers the compiler starts to use.
+  const importLine = /^import \{([^}]*)\} from '@sfysh\/runtime';$/m.exec(source);
+  expect(importLine).not.toBeNull();
+  const names = importLine![1]!
+    .split(',')
+    .map((n) => n.trim())
+    .filter((n) => n.length > 0) as (keyof typeof runtime)[];
+  const withoutImport = source.replace(importLine![0], '');
   expect(withoutImport).not.toContain('import ');
   const js = ts.transpileModule(withoutImport, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
   }).outputText;
-  const names = ['workflow', 'step', 'assert', 'poll', 'assertCondition'] as const;
   const load = new Function(...names, js) as (...args: unknown[]) => void;
   load(...names.map((n) => runtime[n]));
 }

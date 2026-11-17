@@ -33,6 +33,18 @@ export type { ColumnSchema, TableRow } from './emit.js';
 export { guard } from './guard.js';
 
 export { step, StepFailure, describeFailure } from './step.js';
+export type { StepOptions } from './step.js';
+
+export {
+  conditionHolds,
+  DEFAULT_MAX_ITERATIONS,
+  forEachItem,
+  LoopLimitError,
+  StepTimeoutError,
+  UnsupportedConditionError,
+  whileHolds,
+  withTimeout,
+} from './control.js';
 export type { StepInfo, FailureAttribution, DescribedFailure } from './step.js';
 
 export {
