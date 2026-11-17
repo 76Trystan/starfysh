@@ -14,7 +14,9 @@
 // 4. Verify each patch live against the known-good outputs, then decide
 //    (`verifyPatch`, `decidePatch`). The first patch that is accepted or
 //    held for approval ends the heal. A patch that fails verification moves
-//    on to the next class.
+//    on to the next class. A verified patch that undoes an earlier heal
+//    (`findReversions`) is always held for a person, and every decided
+//    heal is recorded in the history so later heals can be checked.
 //
 // The attempt and token caps are checked before every model call.
 
@@ -39,6 +41,8 @@ import type { GeneratePatchInput, GeneratePatchResult } from './generate.js';
 import { HEAL_WINDOW_MS, resolveHealLimits } from './limits.js';
 import type { HealHistory, HealLimits } from './limits.js';
 import type { HealFailure } from './prompt.js';
+import { findReversions, patchRecord } from './revert.js';
+import type { Reversion } from './revert.js';
 import { triageFailure } from './triage.js';
 import type { HealRoute, TriageDecision } from './triage.js';
 
@@ -95,6 +99,8 @@ export interface HealAttempt {
   verification?: PatchVerification;
   /** Present when verification passed. */
   decision?: PatchDecision;
+  /** Earlier heals this patch undoes. Present only when there are some. */
+  reversions?: Reversion[];
 }
 
 /**
@@ -273,15 +279,27 @@ export async function heal(input: HealInput): Promise<HealResult> {
       });
       attempt.verification = verification;
       if (verification.status === 'verified') {
+        const reversions = findReversions(
+          generated.patch,
+          workflow,
+          await input.history.patches(workflow.id),
+        );
+        if (reversions.length > 0) attempt.reversions = reversions;
         const decision = decidePatch({
           workflow,
           patchClass,
           score: generated.score,
           verification,
+          reversions,
           ...(input.policy !== undefined ? { policy: input.policy } : {}),
         });
         attempt.decision = decision;
         if (decision.status !== 'rejected') {
+          // Recorded whether accepted or held: the state this heal started
+          // from is one the workflow really was in, which is what a later
+          // reversion is measured against.
+          const record = patchRecord(workflow, generated.patch, decision.status, now());
+          if (record !== undefined) await input.history.recordPatch(record);
           return { status: 'decided', decision, patchClass, triage, attempts, usage };
         }
       }

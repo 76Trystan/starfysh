@@ -124,5 +124,8 @@ export {
 } from './limits.js';
 export type { HealHistory, HealLimits } from './limits.js';
 
+export { findReversions, patchRecord } from './revert.js';
+export type { PatchRecord, Reversion, ReversionCode } from './revert.js';
+
 export { heal, patchClassOrder } from './heal.js';
 export type { HealAttempt, HealCap, HealInput, HealResult, HealVerifyOptions } from './heal.js';

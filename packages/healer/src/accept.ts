@@ -36,6 +36,7 @@ import { checkPatch } from './check.js';
 import type { PatchViolation } from './check.js';
 import { same } from './equal.js';
 import type { ReachApproval } from './reach.js';
+import type { Reversion } from './revert.js';
 import { CONFIDENCE_HIGH } from './score.js';
 import type { PatchScore } from './score.js';
 
@@ -284,6 +285,8 @@ export type ApprovalReasonCode =
   | 'insert_step'
   /** The score is below the policy's `minScore`. */
   | 'score_below_threshold'
+  /** The patch undoes an earlier heal: the site may be switching between versions. */
+  | 'reverts_earlier_heal'
   /** Verification used a custom runner, so it did not confirm the patched step ran. */
   | 'step_not_confirmed';
 
@@ -301,6 +304,8 @@ export interface DecidePatchInput {
   verification: PatchVerification;
   /** Default `{ mode: 'human' }`. */
   policy?: AcceptancePolicy;
+  /** Earlier heals this patch undoes, from `findReversions`. Any entry holds the patch for a person. */
+  reversions?: readonly Reversion[];
 }
 
 export type PatchDecision =
@@ -394,6 +399,12 @@ export function decidePatch(input: DecidePatchInput): PatchDecision {
     reasons.push({
       code: 'checks_require_review',
       message: `The patch checks listed ${approvals.length} point(s) a person must confirm.`,
+    });
+  }
+  if (input.reversions !== undefined && input.reversions.length > 0) {
+    reasons.push({
+      code: 'reverts_earlier_heal',
+      message: `The patch undoes ${input.reversions.length === 1 ? 'an earlier heal' : `${input.reversions.length} earlier heals`}: ${input.reversions.map((r) => r.message).join(' ')} The site may be switching between versions.`,
     });
   }
   if (input.patchClass === 'insert_step') {

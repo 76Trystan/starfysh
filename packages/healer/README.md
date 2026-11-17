@@ -51,7 +51,7 @@ Every attempt, with its generator result, verification and decision, is on `resu
 | `maxTokensPerHeal`          | 20,000  | Input plus output tokens in one `heal()`.                                    |
 | `maxHealsPerWorkflowPerDay` | 3       | `heal()` runs that reached the patch stage for one workflow in 24 hours.     |
 
-Both per-heal caps are checked before every model call, and each call's output cap is lowered to what is left of the token budget. Input tokens are only known after a call, so one call can take a heal past its budget by the size of its prompt; no call starts once the budget is spent. The day is a rolling 24 hours, not a calendar day. `HealHistory` is a two-method interface (`count`, `record`) so the count can live wherever run history already does.
+Both per-heal caps are checked before every model call, and each call's output cap is lowered to what is left of the token budget. Input tokens are only known after a call, so one call can take a heal past its budget by the size of its prompt; no call starts once the budget is spent. The day is a rolling 24 hours, not a calendar day. `HealHistory` is a small interface (`count`, `record`, `patches`, `recordPatch`) so the daily count and the patch records below can live wherever run history already does.
 
 ## Triage before any model
 
@@ -440,13 +440,26 @@ const decision = decidePatch({
 
 Never verify against a cassette: it replays what the old site returned, so it says nothing about a patch.
 
-**Decision.** `decidePatch()` runs `checkPatch()` again itself, then returns `rejected`, `awaiting_approval` with every reason, or `accepted`. The default policy, `{ mode: 'human' }`, holds every patch for a person. `{ mode: 'auto', minScore }` (with `minScore` at least 0.8) accepts a verified selector patch without review, but still holds an insert-step patch, one the checks flagged for approval, one scoring below `minScore`, and one whose step run was not confirmed.
+**Decision.** `decidePatch()` runs `checkPatch()` again itself, then returns `rejected`, `awaiting_approval` with every reason, or `accepted`. The default policy, `{ mode: 'human' }`, holds every patch for a person. `{ mode: 'auto', minScore }` (with `minScore` at least 0.8) accepts a verified selector patch without review, but still holds an insert-step patch, one the checks flagged for approval, one scoring below `minScore`, one whose step run was not confirmed, and one that undoes an earlier heal.
 
 **Approval.** `approvePatch()` is the only way a held patch becomes accepted. It records the reviewer and the time, and refuses if the workflow has changed since the patch was verified.
 
+## Heals that undo earlier heals
+
+A site that flips between two designs (an A/B test, a staged rollout, a rollback) would otherwise have the healer switch the workflow back and forth, each heal verifying and each one costing a model call and a review. `heal()` records every heal that reaches a decision, with the state it started from, and checks each verified patch against those records with `findReversions()`.
+
+| Code                 | The patch...                                                       |
+| -------------------- | ------------------------------------------------------------------ |
+| `workflow_revisited` | produces a workflow identical to one an earlier heal started from. |
+| `step_reverted`      | puts the step back to the exact version an earlier heal replaced.  |
+| `selector_reverted`  | puts back the first selector an earlier heal moved away from.      |
+
+A reversion is not a rejection: the site may really have gone back, and the patch may be right. It holds the patch for a person under any policy, with the reason `reverts_earlier_heal`, so a reviewer sees that the site looks unstable. A heal that was held and never approved still counts as a state the workflow was in, because it records where the heal started, not where it went. Proposing the same rejected patch again is not a reversion.
+
+Keep patch records for as long as the workflow exists. An oscillation can span weeks.
+
 ## What is still to come
 
-- Remember the workflow hashes a heal has produced and refuse a patch that would return to one, so heals cannot oscillate.
 - A renderer for the semantic diff a reviewer reads, a local corpus of heal attempts, and the `compile heal` command.
 
 ## How it fits with the other packages

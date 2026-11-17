@@ -15,6 +15,8 @@
 // `HealHistory` the caller supplies. `MemoryHealHistory` is enough for
 // tests and for one long-lived process.
 
+import type { PatchRecord } from './revert.js';
+
 export interface HealLimits {
   /** Most model calls in one `heal()`, across both patch classes. */
   maxAttemptsPerFailure: number;
@@ -41,20 +43,28 @@ export const DEFAULT_HEAL_LIMITS: Readonly<HealLimits> = Object.freeze({
 export const HEAL_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Where past heal runs are counted. Implement it over whatever the caller
- * already stores run history in. Both methods may be synchronous or return
- * a promise.
+ * What `heal()` remembers between runs: when heals ran, for the daily cap,
+ * and what each decided heal changed, so a later heal that undoes one is
+ * caught (see `revert.ts`). Implement it over whatever the caller already
+ * stores run history in. Every method may be synchronous or return a
+ * promise. Patch records should be kept for as long as the workflow is:
+ * an oscillation can span weeks.
  */
 export interface HealHistory {
   /** Number of heal runs recorded for this workflow at or after `since`. */
   count(workflowId: string, since: Date): number | Promise<number>;
   /** Record that a heal run for this workflow started at `at`. */
   record(workflowId: string, at: Date): void | Promise<void>;
+  /** Every patch record for this workflow, in any order. */
+  patches(workflowId: string): readonly PatchRecord[] | Promise<readonly PatchRecord[]>;
+  /** Record a heal that reached a decision. */
+  recordPatch(record: PatchRecord): void | Promise<void>;
 }
 
 /** A `HealHistory` held in memory. Lost when the process exits. */
 export class MemoryHealHistory implements HealHistory {
   private readonly runs = new Map<string, number[]>();
+  private readonly records: PatchRecord[] = [];
 
   count(workflowId: string, since: Date): number {
     const from = since.getTime();
@@ -65,6 +75,14 @@ export class MemoryHealHistory implements HealHistory {
     const list = this.runs.get(workflowId) ?? [];
     list.push(at.getTime());
     this.runs.set(workflowId, list);
+  }
+
+  patches(workflowId: string): readonly PatchRecord[] {
+    return this.records.filter((r) => r.workflowId === workflowId);
+  }
+
+  recordPatch(record: PatchRecord): void {
+    this.records.push({ ...record });
   }
 }
 
