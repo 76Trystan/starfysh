@@ -231,7 +231,11 @@ describe('CachedProvider with deadlines', () => {
   };
 
   it('leaves timeoutMs and signal out of the cache key', async () => {
-    const inner: Provider = { name: 'stub', complete: vi.fn().mockResolvedValue(completion) };
+    const inner: Provider = {
+      name: 'stub',
+      model: 'stub-model',
+      complete: vi.fn().mockResolvedValue(completion),
+    };
     const cached = new CachedProvider(inner);
 
     await cached.complete(msgs, { maxTokens: 100 });
@@ -243,7 +247,11 @@ describe('CachedProvider with deadlines', () => {
   });
 
   it('passes timeoutMs and signal through to the inner provider on a miss', async () => {
-    const inner: Provider = { name: 'stub', complete: vi.fn().mockResolvedValue(completion) };
+    const inner: Provider = {
+      name: 'stub',
+      model: 'stub-model',
+      complete: vi.fn().mockResolvedValue(completion),
+    };
     const cached = new CachedProvider(inner);
     const options = { timeoutMs: 5_000, signal: new AbortController().signal };
 

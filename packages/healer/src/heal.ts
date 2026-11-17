@@ -97,7 +97,12 @@ export interface HealAttempt {
   decision?: PatchDecision;
 }
 
-export type HealCap = 'heals_per_day' | 'attempts' | 'tokens';
+/**
+ * Which limit stopped a heal. `budget` is a spend limit outside this heal: a
+ * `MeteredProvider` from `@sfysh/providers` refused the call because a
+ * budget shared across heals is spent.
+ */
+export type HealCap = 'heals_per_day' | 'attempts' | 'tokens' | 'budget';
 
 export type HealResult =
   | {
@@ -252,6 +257,9 @@ export async function heal(input: HealInput): Promise<HealResult> {
 
     if (generated.status === 'provider_error') {
       if (generated.retryable) continue;
+      if (generated.code === 'budget_exceeded') {
+        return { status: 'capped', cap: 'budget', triage, attempts, usage };
+      }
       return { status: 'not_healed', reason: 'provider_error', triage, attempts, usage };
     }
 

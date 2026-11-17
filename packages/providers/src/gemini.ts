@@ -15,7 +15,7 @@ const DEFAULT_MAX_TOKENS = 16_000;
 export class GeminiProvider implements Provider {
   readonly name = 'gemini';
   private readonly client: GoogleGenAI;
-  private readonly model: string;
+  readonly model: string;
 
   constructor(config: GeminiConfig = {}) {
     this.model = config.model ?? DEFAULT_MODEL;

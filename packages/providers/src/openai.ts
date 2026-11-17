@@ -14,7 +14,7 @@ const DEFAULT_MAX_TOKENS = 16_000;
 export class OpenAIProvider implements Provider {
   readonly name: string;
   protected readonly client: OpenAI;
-  protected readonly model: string;
+  readonly model: string;
 
   constructor(config: OpenAIConfig = {}, providerName = 'openai') {
     this.name = providerName;

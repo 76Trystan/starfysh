@@ -34,7 +34,7 @@ const result = await provider.complete(messages, { maxTokens: 4096 });
 
 ## Caching
 
-`CachedProvider` wraps any provider and deduplicates identical requests using a content hash (FNV-1a over the serialised messages and options).
+`CachedProvider` wraps any provider and deduplicates identical requests. The key is SHA-256 over the provider name, the model, the messages, `maxTokens` and `stop`, so a completion from one model is never served for a request to another, even when two providers share a store.
 
 ```ts
 import { CachedProvider, AnthropicProvider } from '@sfysh/providers';
@@ -48,7 +48,39 @@ provider.hits; // 1
 provider.misses; // 1
 ```
 
-The default store is in-memory. Plug in a custom `CacheStore` (with `get`/`set` methods) for disk or Redis backing.
+The default store is in-memory. Plug in a custom `CacheStore` (with `get`/`set` methods) for disk or Redis backing. Each stored `CacheEntry` holds the canonical request alongside the completion, and a hit is only served when that request matches exactly, so an edited, truncated or shared store cannot answer the wrong question. A lookup that finds someone else's entry counts as a miss and shows up in `provider.mismatches`.
+
+The model comes from the inner provider's `model` property, which every vendor provider sets. If the inner provider has none (a test double, say), pass `{ model }` in the config; without either, the constructor throws rather than build a key that ignores the model.
+
+## Usage and budgets
+
+`MeteredProvider` records every completed call in a `UsageLedger` and refuses calls once a budget is spent.
+
+```ts
+import {
+  CachedProvider,
+  MemoryUsageLedger,
+  MeteredProvider,
+  AnthropicProvider,
+} from '@sfysh/providers';
+
+const ledger = new MemoryUsageLedger();
+const provider = new CachedProvider(
+  new MeteredProvider(new AnthropicProvider(), {
+    ledger,
+    prices: { 'claude-sonnet-5-5': { inputPerMTok: 0, outputPerMTok: 0 } }, // your current prices, in USD per million tokens
+    budget: { maxTokens: 200_000, maxUsd: 5 },
+    label: 'wf_orders',
+  }),
+);
+
+ledger.totals(); // { calls, inputTokens, outputTokens, costUsd, unpricedCalls }
+```
+
+- **Recording.** Each entry has the time, provider, the model that answered, token counts, the cost when a price is known, and the label. A failed call records nothing.
+- **Budget.** Before each call the ledger's totals are checked. A spent budget rejects with `ProviderError` code `budget_exceeded` and no request is sent. With a token budget, each call's `maxTokens` is lowered to what is left. The prompt can still take a call past the budget, because input tokens are only known afterwards; the next call is then refused. Share one ledger between providers to share one budget.
+- **Prices.** There is no built-in price table, because vendor prices change and a stale one would make the budget silently wrong. Pass your own. A model is looked up by the name it answered with, then by the configured name. A `maxUsd` budget with no price for the model is refused at construction.
+- **Order.** Put `MeteredProvider` directly around the vendor, inside `CachedProvider`, so a cache hit, which costs nothing, is neither recorded nor refused.
 
 ## Redaction
 
@@ -71,6 +103,7 @@ This is a backstop. Whatever builds the prompt should already redact what goes i
 Every provider implements:
 
 - `name: string`, the provider identifier (e.g. `'anthropic'`, `'openai'`, `'gemini'`, `'ollama'`).
+- `model?: string`, the model the provider asks for, as configured. Every vendor provider sets it, and the wrappers pass on their inner provider's.
 - `complete(messages, options?)`, send a conversation and receive a `Completion`.
 
 `CompleteOptions` supports `maxTokens` and `stop` sequences. Providers apply their own defaults when these are omitted. It also takes `timeoutMs` and `signal`, described next.
@@ -135,10 +168,11 @@ Provider failures throw `ProviderError` with a typed `code` field:
 | `network`         | Connection or DNS failure                | No        |
 | `timeout`         | The call ran longer than `timeoutMs`     | Yes       |
 | `aborted`         | The caller's `signal` aborted the call   | No        |
+| `budget_exceeded` | A `MeteredProvider` budget is spent      | No        |
 | `unknown`         | Unclassified error                       | No        |
 
 The `retryable` flag lets callers decide whether to retry without inspecting the code directly.
 
 ## Status
 
-Private workspace package (0.0.0). All four providers, the cache layer, the redaction wrapper, and 159 tests are implemented.
+Private workspace package (0.0.0). All four providers, the cache layer, the redaction wrapper and the usage ledger are implemented and tested.

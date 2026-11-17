@@ -95,6 +95,13 @@ export interface Completion {
  */
 export interface Provider {
   readonly name: string;
+  /**
+   * The model this provider asks for, as configured. Wrappers pass on
+   * their inner provider's. `CachedProvider` needs it for its cache key
+   * and `MeteredProvider` for pricing. Optional so that a test double can
+   * leave it out; every vendor provider sets it.
+   */
+  readonly model?: string | undefined;
   complete(messages: Message[], options?: CompleteOptions): Promise<Completion>;
 }
 
@@ -123,6 +130,7 @@ export type ProviderErrorCode =
   | 'network'
   | 'timeout'
   | 'aborted'
+  | 'budget_exceeded'
   | 'unknown';
 
 export class ProviderError extends Error {

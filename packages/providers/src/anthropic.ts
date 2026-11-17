@@ -14,7 +14,7 @@ const DEFAULT_MAX_TOKENS = 16_000;
 export class AnthropicProvider implements Provider {
   readonly name = 'anthropic';
   private readonly client: Anthropic;
-  private readonly model: string;
+  readonly model: string;
 
   constructor(config: AnthropicConfig = {}) {
     this.model = config.model ?? DEFAULT_MODEL;

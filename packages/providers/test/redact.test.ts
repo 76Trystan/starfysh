@@ -22,7 +22,7 @@ const completion: Completion = {
 };
 
 function stubProvider(): Provider & { complete: ReturnType<typeof vi.fn> } {
-  return { name: 'stub', complete: vi.fn().mockResolvedValue(completion) };
+  return { name: 'stub', model: 'stub-model', complete: vi.fn().mockResolvedValue(completion) };
 }
 
 const leakyMessages: Message[] = [
@@ -218,6 +218,7 @@ describe('RedactingProvider with CachedProvider', () => {
     // An inner provider that echoes its input, as a worst case for the stored value.
     const echo: Provider = {
       name: 'echo',
+      model: 'echo-model',
       complete: async (messages) => ({
         ...completion,
         content: messages.map((m) => m.content).join('\n'),

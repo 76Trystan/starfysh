@@ -35,11 +35,13 @@ export type RedactFn = (text: string) => string;
  */
 export class RedactingProvider implements Provider {
   readonly name: string;
+  readonly model: string | undefined;
   private readonly inner: Provider;
   private readonly redact: RedactFn;
 
   constructor(inner: Provider, redact: RedactFn) {
     this.name = inner.name;
+    this.model = inner.model;
     this.inner = inner;
     this.redact = redact;
   }

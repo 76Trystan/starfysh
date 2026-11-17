@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Workflow } from '@sfysh/ir';
-import { ProviderError } from '@sfysh/providers';
+import { MemoryUsageLedger, MeteredProvider, ProviderError } from '@sfysh/providers';
 import type { CompleteOptions, Completion, Provider } from '@sfysh/providers';
 import { VaultSecretMissingError } from '@sfysh/runtime';
 import type { Locator, Page } from '@sfysh/runtime';
@@ -366,6 +366,43 @@ describe('heal', () => {
         ['insert_step', 'cannot_heal'],
       ]);
       expect(provider.calls).toHaveLength(1);
+    });
+  });
+
+  describe('shared budget', () => {
+    it('reports a spent MeteredProvider budget as a cap, after one call', async () => {
+      const ledger = new MemoryUsageLedger();
+      const provider = new MeteredProvider(scripted([cannotHeal]), {
+        ledger,
+        budget: { maxTokens: 1000 },
+      });
+      const result = await healOn(newSite, provider);
+
+      expect(result).toMatchObject({ status: 'capped', cap: 'budget' });
+      if (result.status !== 'capped') return;
+      expect(result.attempts.map((a) => a.generated.status)).toEqual([
+        'cannot_heal',
+        'provider_error',
+      ]);
+      expect(ledger.entries).toHaveLength(1);
+    });
+
+    it('refuses the first call when the budget was spent by an earlier heal', async () => {
+      const ledger = new MemoryUsageLedger();
+      ledger.record({
+        at: new Date(),
+        provider: 'fake',
+        model: 'fake-model-2026',
+        inputTokens: 900,
+        outputTokens: 100,
+      });
+      const inner = scripted([selectorAnswer()]);
+      const result = await healOn(
+        newSite,
+        new MeteredProvider(inner, { ledger, budget: { maxTokens: 1000 } }),
+      );
+      expect(result).toMatchObject({ status: 'capped', cap: 'budget' });
+      expect(inner.calls).toHaveLength(0);
     });
   });
 

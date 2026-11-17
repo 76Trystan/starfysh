@@ -25,7 +25,7 @@ switch (result.status) {
   case 'recovered': // triage's retry passed
   case 'routed': // result.route: backoff, reauthenticate, draft_for_approval or escalate. No model.
   case 'no_evidence': // no snapshot, or no failed step named. No model.
-  case 'capped': // result.cap: heals_per_day, attempts or tokens
+  case 'capped': // result.cap: heals_per_day, attempts, tokens or budget (a MeteredProvider budget is spent)
   case 'not_healed': // every patch class was tried and none verified
   case 'decided': // result.decision is 'accepted' or 'awaiting_approval'
 }
