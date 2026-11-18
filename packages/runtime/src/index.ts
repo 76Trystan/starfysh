@@ -39,6 +39,9 @@ export type { ColumnSchema, ColumnSpec, ColumnType, TableRow } from './emit.js';
 export { guard } from './guard.js';
 
 export { step, StepFailure, describeFailure } from './step.js';
+
+export { tryCandidates } from './candidates.js';
+export type { CandidateLookup, DegradedStep } from './candidates.js';
 export type { StepOptions } from './step.js';
 
 export {

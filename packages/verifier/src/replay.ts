@@ -165,6 +165,7 @@ async function runOnce(
   const durationMs = Date.now() - start;
 
   const outputs = ctx.drainOutputs();
+  const degraded = ctx.degraded();
 
   let postconditions: PostconditionResult[] = [];
   if (!error && terminalPost.length > 0) {
@@ -209,6 +210,7 @@ async function runOnce(
     postconditions,
     ...(error ? { error } : {}),
     ...(snapshot ? { snapshot } : {}),
+    ...(degraded.length > 0 ? { degraded } : {}),
   };
 }
 

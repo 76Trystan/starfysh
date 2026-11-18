@@ -91,9 +91,12 @@ export class Templater {
     // interpreter enforces it. Zero means no limit, as in the interpreter.
     const timeoutMs = (step as { timeoutMs?: number }).timeoutMs;
     const options = timeoutMs !== undefined && timeoutMs > 0 ? `, { timeoutMs: ${timeoutMs} }` : '';
+    // A step that falls through candidates takes the attribution record as
+    // an argument, so `tryCandidates` can point it at the candidate in use.
+    const param = context.candidateList ? 'info' : '';
     const assembled =
       `${comment}\n` +
-      `${declaration}await step(ctx, ${jsLiteral(stepInfo(step))}, async () => {\n` +
+      `${declaration}await step(ctx, ${jsLiteral(stepInfo(step))}, async (${param}) => {\n` +
       (inner.length > 0 ? `${indentLines(inner, '  ')}\n` : '') +
       `}${options});`;
     return indentLines(assembled, indent);
@@ -139,6 +142,8 @@ const GENERATED_NAMES = new Set([
   'conditionHolds',
   'forEachItem',
   'whileHolds',
+  'tryCandidates',
+  'info',
 ]);
 
 /** Reserved words, strict-mode reserved words, and globals a `const` must not take. */
@@ -253,10 +258,48 @@ function flowHelpersUsed(steps: readonly Step[]): string[] {
         used.add(s.foreach ? 'forEachItem' : 'whileHolds');
         walk(s.do);
       }
+      if (fallsThrough(s)) used.add('tryCandidates');
     }
   };
   walk(steps);
-  return ['conditionHolds', 'forEachItem', 'whileHolds'].filter((name) => used.has(name));
+  return ['conditionHolds', 'forEachItem', 'whileHolds', 'tryCandidates'].filter((name) =>
+    used.has(name),
+  );
+}
+
+/**
+ * Whether a step acts through `tryCandidates`: a `click` or `fill` with
+ * more than one candidate generated code can use. `visual` candidates are
+ * left out (a visual primary is refused elsewhere). With one usable
+ * candidate the step acts on it directly, so output for single-candidate
+ * workflows is unchanged. `extract` and `foreach` always use the primary:
+ * a read that matches nothing returns empty, so there is nothing to fall
+ * through on. The interpreter applies the same rule.
+ */
+function fallsThrough(step: Step): boolean {
+  if (step.action !== 'click' && step.action !== 'fill') return false;
+  const target = (step as { target?: Target }).target;
+  return (target?.candidates ?? []).filter((c) => c.kind !== 'visual').length > 1;
+}
+
+/**
+ * The candidate list for `tryCandidates`: each usable candidate with its
+ * rank, the selector for attribution, and a function that builds its
+ * locator from `root`.
+ */
+function renderCandidateList(target: Target, root: Root): string {
+  const primary = target.candidates[0];
+  if (!primary) throw new CompilerError('Target has no candidates');
+  // Rendering the primary first refuses a visual primary with the usual error.
+  renderSelector(primary, root);
+  const entries = target.candidates
+    .map((candidate, index) => ({ candidate, index }))
+    .filter(({ candidate }) => candidate.kind !== 'visual')
+    .map(
+      ({ candidate, index }) =>
+        `{ index: ${index}, selector: ${jsLiteral({ kind: candidate.kind, value: candidate.value })}, locate: () => ${renderSelector(candidate, root)} }`,
+    );
+  return `[${entries.join(', ')}]`;
 }
 
 /**
@@ -391,9 +434,9 @@ function registerHelpers(hb: typeof Handlebars): void {
 }
 
 /**
- * Render a Target as a locator lookup from `root` (`page`, or `item` inside
- * a `foreach` body). Generated code uses the first candidate only; falling
- * through to the others is a later change.
+ * Render a Target's primary candidate as a locator lookup from `root`
+ * (`page`, or `item` inside a `foreach` body). Steps that fall through
+ * candidates use `renderCandidateList` instead.
  */
 function renderTarget(target: Target, root: Root): string {
   const primary = target.candidates[0];
@@ -530,6 +573,9 @@ function buildStepContext(step: Step, root: Root): Record<string, unknown> {
     extractMethod: plan?.kind,
     extractColumns: plan?.kind === 'table' ? plan.columns : undefined,
     extractVar: (step as { bind?: string }).bind ?? EXTRACT_LOCAL,
+    candidateList: fallsThrough(step)
+      ? renderCandidateList((step as { target: Target }).target, root)
+      : undefined,
   };
 }
 
@@ -587,10 +633,10 @@ const STEP_TEMPLATES: Record<Step['action'], string> = {
 await page.goto({{{value url}}}{{#if waitUntil}}, { waitUntil: '{{waitUntil}}' }{{/if}});`,
 
   click: `// [{{id}}] {{intent}}
-await {{{target target root}}}.click();`,
+{{#if candidateList}}await tryCandidates(ctx, info, {{{candidateList}}}, (locator) => locator.click());{{else}}await {{{target target root}}}.click();{{/if}}`,
 
   fill: `// [{{id}}] {{intent}}
-await {{{target target root}}}.fill({{{value value}}});`,
+{{#if candidateList}}await tryCandidates(ctx, info, {{{candidateList}}}, (locator) => locator.fill({{{value value}}}));{{else}}await {{{target target root}}}.fill({{{value value}}});{{/if}}`,
 
   extract: `// [{{id}}] {{intent}}
 const {{extractVar}} = await emit.{{extractMethod}}({{{target target root}}}{{#if extractColumns}}, {{{jsonLiteral extractColumns}}}{{/if}});`,

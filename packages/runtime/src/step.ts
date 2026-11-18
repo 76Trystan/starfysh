@@ -16,9 +16,12 @@ export interface StepInfo {
   action: string;
   /**
    * The selector candidate the step is using. Present for steps that act on
-   * an element. Compiled code always uses the first candidate today.
+   * an element. Starts as the primary; `tryCandidates` moves it as it
+   * falls through, so a failure names the candidate that was in use.
    */
   selector?: SelectorCandidate;
+  /** Position of `selector` in the step's ranked list. 0 is the primary. */
+  candidateIndex?: number;
 }
 
 /**
@@ -52,15 +55,19 @@ export interface StepOptions {
  * With `options.timeoutMs` the body, including its pre and post checks and
  * any nested steps, must finish in that time. A timeout is attributed to
  * this step like any other failure.
+ *
+ * The body receives `info`, so a step that falls through selector
+ * candidates (`tryCandidates`) can move the attribution to the candidate
+ * in use. Bodies that do not need it can ignore the argument.
  */
 export async function step<T>(
   _ctx: WorkflowContext,
   info: StepInfo,
-  body: () => Promise<T>,
+  body: (info: StepInfo) => Promise<T>,
   options: StepOptions = {},
 ): Promise<T> {
   try {
-    return await withTimeout(info.id, options.timeoutMs, body);
+    return await withTimeout(info.id, options.timeoutMs, () => body(info));
   } catch (err) {
     if (err instanceof StepFailure) throw err;
     throw new StepFailure(info, err);
@@ -75,6 +82,8 @@ export interface FailureAttribution {
   action?: string;
   /** Selector candidate the step was using, if it had a target. */
   selector?: SelectorCandidate;
+  /** Position of that candidate in the step's ranked list, when known. 0 is the primary. */
+  candidateIndex?: number;
   /** Set when a pre or post condition was violated. */
   phase?: 'pre' | 'post';
   /** The violated condition. Set alongside `phase`. */
@@ -125,6 +134,9 @@ export function describeFailure(ctx: WorkflowContext, err: unknown): DescribedFa
         kind: wrapped.step.selector.kind,
         value: ctx.redact(wrapped.step.selector.value),
       };
+    }
+    if (wrapped.step.candidateIndex !== undefined) {
+      attribution.candidateIndex = wrapped.step.candidateIndex;
     }
   }
 

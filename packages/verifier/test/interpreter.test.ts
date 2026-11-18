@@ -513,11 +513,30 @@ describe('interpreter: ranked candidates', () => {
     failAction: { 'getByRole("button",{"name":"Sign in"})': 'Timeout: no such button' },
   };
 
-  it('uses only the first candidate by default, as generated code does', async () => {
+  it("uses only the first candidate with candidates: 'first'", async () => {
     const { ctx, log } = setup(broken);
-    const thrown = await failure(interpretWorkflow(ctx, wf([click('click_001', candidates)])));
+    const thrown = await failure(
+      createInterpreter({ candidates: 'first' })(ctx, wf([click('click_001', candidates)])),
+    );
     expect(thrown.step.selector).toEqual(candidates[0]);
     expect(log).toEqual(['getByRole("button",{"name":"Sign in"}).click']);
+    expect(ctx.degraded()).toEqual([]);
+  });
+
+  it('falls through by default, as generated code does, and records the step as degraded', async () => {
+    const { ctx, log } = setup(broken);
+    await interpretWorkflow(ctx, wf([click('click_001', candidates)]));
+    expect(log).toEqual([
+      'getByRole("button",{"name":"Sign in"}).click',
+      'getByTestId("login-submit").click',
+    ]);
+    expect(ctx.degraded()).toEqual([
+      {
+        stepId: 'click_001',
+        candidateIndex: 1,
+        selector: { kind: 'testid', value: 'login-submit' },
+      },
+    ]);
   });
 
   it('falls through to the next candidate when asked, and reports which one worked', async () => {
@@ -573,18 +592,41 @@ describe('interpreter: ranked candidates', () => {
     expect(traces[0]).toMatchObject({ status: 'failed', candidateIndex: 0 });
   });
 
-  it('skips visual candidates during fallthrough', async () => {
-    const { ctx, log } = setup();
+  it('skips visual fallbacks during fallthrough', async () => {
+    const { ctx, log } = setup(broken);
     await createInterpreter({ candidates: 'fallthrough' })(
       ctx,
       wf([
         click('click_001', [
+          candidates[0]!,
           { kind: 'visual', value: 'emb_1' },
-          { kind: 'css', value: '#go' },
+          { kind: 'testid', value: 'login-submit' },
         ]),
       ]),
     );
-    expect(log).toEqual(['locator("#go").click']);
+    expect(log).toEqual([
+      'getByRole("button",{"name":"Sign in"}).click',
+      'getByTestId("login-submit").click',
+    ]);
+    // The rank reported is the candidate's place in the full list.
+    expect(ctx.degraded()[0]!.candidateIndex).toBe(2);
+  });
+
+  it('refuses a visual primary, as compiled code does, instead of skipping it', async () => {
+    const { ctx, log } = setup();
+    const thrown = await failure(
+      interpretWorkflow(
+        ctx,
+        wf([
+          click('click_001', [
+            { kind: 'visual', value: 'emb_1' },
+            { kind: 'css', value: '#go' },
+          ]),
+        ]),
+      ),
+    );
+    expect(thrown.cause).toBeInstanceOf(InterpreterError);
+    expect(log).toEqual([]);
   });
 });
 

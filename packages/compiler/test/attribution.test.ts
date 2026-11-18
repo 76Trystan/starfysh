@@ -52,20 +52,53 @@ describe('codegen: step() wrapper', () => {
     );
   });
 
-  it('passes the first selector candidate, which is the one the code uses', async () => {
+  it('starts attribution on the primary and falls through the ranked candidates', async () => {
     const { source } = await compile(
       workflowOf([
         click('click_001', [
           { kind: 'testid', value: 'submit' },
+          { kind: 'visual', value: 'emb_1' },
           { kind: 'css', value: '#submit' },
         ]),
       ]),
     );
     expect(source).toMatch(
-      /step\(\s*ctx,\s*\{\s*id: 'click_001',\s*action: 'click',\s*selector: \{ kind: 'testid', value: 'submit' \},?\s*\}/,
+      /step\(\s*ctx,\s*\{\s*id: 'click_001',\s*action: 'click',\s*selector: \{ kind: 'testid', value: 'submit' \},?\s*\},\s*async \(info\) =>/,
+    );
+    expect(source).toMatch(/await tryCandidates\(\s*ctx,\s*info,/);
+    expect(source).toMatch(/index: 0,\s*selector: \{ kind: 'testid', value: 'submit' \}/);
+    // The visual candidate is left out; the css one keeps its rank of 2.
+    expect(source).toMatch(/index: 2,\s*selector: \{ kind: 'css', value: '#submit' \}/);
+    expect(source).not.toContain('emb_1');
+    expect(source).toMatch(/import \{[^}]*tryCandidates[^}]*\} from '@sfysh\/runtime'/);
+  });
+
+  it('acts on a single candidate directly, with no fallthrough helper', async () => {
+    const { source } = await compile(
+      workflowOf([
+        click('click_001', [
+          { kind: 'testid', value: 'submit' },
+          { kind: 'visual', value: 'emb_1' },
+        ]),
+      ]),
     );
     expect(source).toContain("await page.getByTestId('submit').click();");
-    expect(source).not.toContain('#submit');
+    expect(source).toContain('async () =>');
+    expect(source).not.toContain('tryCandidates');
+  });
+
+  it('refuses a bind named info, which fallthrough steps use', async () => {
+    const wf = workflowOf([
+      {
+        id: 'extract_001',
+        intent: 'Read.',
+        action: 'extract',
+        target: { candidates: [{ kind: 'css', value: 'h1' }] },
+        schema: { type: 'string' },
+        bind: 'info',
+      },
+    ]);
+    await expect(compile(wf)).rejects.toThrow(/info/);
   });
 
   it('runs pre and post condition checks inside the wrapper', async () => {

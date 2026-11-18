@@ -9,6 +9,7 @@
 // Phase 2 adds `http: HttpClient` as a sibling field.
 
 import type { Locator, Page } from './types.js';
+import type { DegradedStep } from './candidates.js';
 import { asSecret, type Secret } from './secret.js';
 import type { VaultResolver } from './vault.js';
 import { EnvVaultResolver, VaultSecretMissingError } from './vault.js';
@@ -62,6 +63,17 @@ export interface WorkflowContext {
    * into a report.
    */
   drainOutputs: () => unknown[];
+  /**
+   * Record that a step passed on a fallback selector candidate. Called by
+   * `tryCandidates`; workflow code has no reason to call it.
+   */
+  recordDegraded: (step: DegradedStep) => void;
+  /**
+   * Every step that passed on a fallback candidate in this run, in the
+   * order they ran, with selector values passed through `redact`. A step
+   * inside a loop appears once per iteration that degraded.
+   */
+  degraded: () => DegradedStep[];
 }
 
 /**
@@ -163,6 +175,7 @@ export interface WorkflowContextInit {
 export function createWorkflowContext(init: WorkflowContextInit): WorkflowContext {
   const resolver = init.vaultResolver ?? new EnvVaultResolver();
   const outputs: unknown[] = [];
+  const degradedSteps: DegradedStep[] = [];
   const secrets = new Map<string, string>();
 
   // Search strings for the scrubber, longest first. Rebuilt lazily after a
@@ -239,6 +252,21 @@ export function createWorkflowContext(init: WorkflowContextInit): WorkflowContex
     return copy;
   };
 
+  const recordDegraded = (entry: DegradedStep): void => {
+    degradedSteps.push({
+      stepId: entry.stepId,
+      candidateIndex: entry.candidateIndex,
+      selector: { kind: entry.selector.kind, value: entry.selector.value },
+    });
+  };
+
+  const degraded = (): DegradedStep[] =>
+    degradedSteps.map((d) => ({
+      stepId: d.stepId,
+      candidateIndex: d.candidateIndex,
+      selector: { kind: d.selector.kind, value: redact(d.selector.value) },
+    }));
+
   return {
     page: init.page,
     vault,
@@ -246,5 +274,7 @@ export function createWorkflowContext(init: WorkflowContextInit): WorkflowContex
     redact,
     flushOutputs,
     drainOutputs,
+    recordDegraded,
+    degraded,
   };
 }

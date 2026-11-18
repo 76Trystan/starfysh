@@ -18,9 +18,13 @@
 // `whileHolds`, `conditionHolds`, `step` with `timeoutMs`), so the two
 // executors share one implementation of each.
 //
+// Element actions (`click`, `fill`) fall through ranked candidates with
+// the runtime's `tryCandidates`, as generated code does. `candidates:
+// 'first'` turns that off, for a caller that must prove the primary
+// selector works on its own (the healer verifying a patch).
+//
 // Where the two differ on purpose:
 //
-// - Candidate fallthrough is available as an option (off by default).
 // - `{ param }` values come from the `params` option; the compiler
 //   cannot compile them yet.
 
@@ -45,7 +49,9 @@ import {
   poll,
   step as runtimeStep,
   StepTimeoutError,
+  tryCandidates,
   whileHolds,
+  type CandidateLookup,
   type ColumnSchema,
   type Locator,
   type Page,
@@ -85,13 +91,17 @@ export interface InterpreterOptions {
   /**
    * How to use a step's ranked selector candidates.
    *
-   * - `'first'` (default): use the first candidate only. This is what
-   *   generated code does, so a workflow that passes here passes when
-   *   compiled.
-   * - `'fallthrough'`: for `click` and `fill`, if the action fails with one
-   *   candidate, try the next. The trace reports which candidate worked. A
-   *   pass under this mode with `candidateIndex > 0` means the primary
-   *   selector is broken and the compiled workflow would fail.
+   * - `'fallthrough'` (default): for `click` and `fill`, if the action
+   *   fails with one candidate, try the next, as generated code does. A
+   *   pass on a candidate after the first is recorded as degraded on the
+   *   context (`ctx.degraded()`), and the trace reports the index.
+   * - `'first'`: use the primary candidate only. For proving that a
+   *   step's first choice works on its own, which is what a healer must
+   *   show for a patch.
+   *
+   * `extract` and `foreach` always use the primary: a read that matches
+   * nothing returns empty rather than failing, so there is nothing to fall
+   * through on.
    */
   candidates?: 'first' | 'fallthrough';
   /** Values for `{ param }` references, keyed by parameter name. */
@@ -329,40 +339,37 @@ class Run {
     root: Root,
     action: (locator: Locator) => Promise<void>,
   ): Promise<void> {
-    if (this.options.candidates !== 'fallthrough') {
+    if (this.options.candidates === 'first') {
       await action(this.locate(primaryOf(target, info.id), root));
       return;
     }
 
-    const usable = target.candidates
+    // The primary is checked as compiled code checks it: a visual primary
+    // is refused outright, not skipped. Visual fallbacks are skipped, as
+    // the compiler leaves them out of the generated list.
+    const primary = primaryOf(target, info.id);
+    if (primary.kind === 'visual') this.locate(primary, root); // throws InterpreterError
+    const lookups: CandidateLookup[] = target.candidates
       .map((candidate, index) => ({ candidate, index }))
-      .filter(({ candidate }) => candidate.kind !== 'visual');
-    if (usable.length === 0) {
-      throw new InterpreterError(
-        `step '${info.id}' has only visual selector candidates, which are not supported`,
-      );
-    }
+      .filter(({ candidate }) => candidate.kind !== 'visual')
+      .map(({ candidate, index }) => ({
+        index,
+        selector: { kind: candidate.kind, value: candidate.value },
+        locate: () => this.locate(candidate, root),
+      }));
 
-    let firstError: unknown;
-    for (const { candidate, index } of usable) {
-      const selector = { kind: candidate.kind, value: candidate.value };
-      info.selector = selector;
-      outcome.selector = selector;
-      outcome.candidateIndex = index;
-      try {
-        await action(this.locate(candidate, root));
-        return;
-      } catch (err) {
-        if (firstError === undefined) firstError = err;
-      }
+    // One usable candidate: act on it directly, as generated code does, so
+    // attribution is identical between the two executors.
+    if (lookups.length === 1) {
+      await action(lookups[0]!.locate());
+      return;
     }
-
-    const first = usable[0]!;
-    const selector = { kind: first.candidate.kind, value: first.candidate.value };
-    info.selector = selector;
-    outcome.selector = selector;
-    outcome.candidateIndex = first.index;
-    throw firstError;
+    try {
+      await tryCandidates(this.ctx, info, lookups, action);
+    } finally {
+      if (info.selector) outcome.selector = info.selector;
+      if (info.candidateIndex !== undefined) outcome.candidateIndex = info.candidateIndex;
+    }
   }
 
   private locate(candidate: SelectorCandidate, root: Root): Locator {

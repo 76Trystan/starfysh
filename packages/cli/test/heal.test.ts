@@ -115,6 +115,27 @@ describe('compile heal, approve and reject', () => {
     expect(c.stdout.text).toContain('Exit codes');
   });
 
+  it('says so when the workflow passes only on a fallback selector', async () => {
+    const withFallback = structuredClone(workflow);
+    withFallback.steps[1]!.target!.candidates.push({
+      kind: 'role',
+      value: "link[name='My orders']",
+    });
+    writeFileSync(file, JSON.stringify(withFallback, null, 2), 'utf8');
+
+    const { code, out } = await healWith(newSite);
+    expect(code).toBe(0);
+    expect(out).toContain('passed, but only on fallback selectors');
+    expect(out).toContain('Step click_002: the primary selector failed; candidate #2');
+    expect(pendingIds()).toEqual([]);
+
+    const json = await healWith(newSite, '--json');
+    expect(JSON.parse(json.out)).toMatchObject({
+      status: 'passed',
+      degraded: [{ stepId: 'click_002', candidateIndex: 1 }],
+    });
+  });
+
   it('saves known-good outputs when the workflow passes and does nothing else', async () => {
     const { code, out } = await healWith(oldSite);
     expect(code).toBe(0);

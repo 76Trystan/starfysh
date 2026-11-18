@@ -51,7 +51,7 @@ import {
 } from '@sfysh/providers';
 import type { Provider, RedactFn } from '@sfysh/providers';
 import { DEFAULT_SECRET_ENV_PREFIX, EnvVaultResolver } from '@sfysh/runtime';
-import type { VaultResolver } from '@sfysh/runtime';
+import type { DegradedStep, VaultResolver } from '@sfysh/runtime';
 import { createInterpreter, replay } from '@sfysh/verifier';
 import type { ReplayOutcome } from '@sfysh/verifier';
 import { loadBackendModule, loadWorkflow } from './verify.js';
@@ -106,6 +106,8 @@ export interface HealCommandResult {
   pending?: string;
   /** Path the known-good outputs were saved to, when the run passed. */
   knownGoodSaved?: string;
+  /** Steps that passed only on a fallback selector, when the run passed that way. */
+  degraded?: DegradedStep[];
 }
 
 /** What `compile heal` keeps for a patch until a person answers. */
@@ -182,13 +184,27 @@ export async function runHealCommand(opts: HealCommandOptions): Promise<HealComm
   const first = await runOnce();
   if (first.status === 'ok') {
     const saved = await saveKnownGood(paths, workflow, first.outputs, now());
+    const degraded = first.degraded ?? [];
+    const extra = degraded.length > 0 ? { degraded } : {};
     return {
       status: 'passed',
       exitCode: 0,
       knownGoodSaved: saved,
-      output: render(opts.format, { status: 'passed', knownGoodSaved: saved }, () =>
+      ...extra,
+      output: render(opts.format, { status: 'passed', knownGoodSaved: saved, ...extra }, () =>
         [
-          `Workflow ${workflow.id} passed. Nothing to heal.`,
+          degraded.length > 0
+            ? `Workflow ${workflow.id} passed, but only on fallback selectors.`
+            : `Workflow ${workflow.id} passed. Nothing to heal.`,
+          ...degraded.map(
+            (d) =>
+              `  Step ${d.stepId}: the primary selector failed; candidate #${d.candidateIndex + 1} (${d.selector.kind} ${JSON.stringify(printable(d.selector.value))}) worked.`,
+          ),
+          ...(degraded.length > 0
+            ? [
+                '  The next change to these elements may break the workflow. Consider promoting the working candidates.',
+              ]
+            : []),
           `Saved its outputs as known-good: ${saved}`,
         ].join('\n'),
       ),

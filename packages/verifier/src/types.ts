@@ -4,6 +4,7 @@
 
 import type { Condition, SelectorCandidate, Workflow } from '@sfysh/ir';
 import type {
+  DegradedStep,
   Page,
   PageSnapshot,
   SnapshotOptions,
@@ -140,6 +141,8 @@ export interface ReplayOutcome {
     action?: string;
     /** Selector candidate the failing step was using, if it had a target. */
     selector?: SelectorCandidate;
+    /** Position of that candidate in the step's ranked list. 0 is the primary. */
+    candidateIndex?: number;
     /** Condition slot that failed, when a pre or post condition was violated. */
     phase?: 'pre' | 'post';
     /** The violated condition. Populated alongside phase. */
@@ -159,6 +162,12 @@ export interface ReplayOutcome {
    * capped in length. Not included in the JSON report.
    */
   snapshot?: PageSnapshot;
+  /**
+   * Steps that passed on a fallback selector candidate, in the order they
+   * ran. Present only when there are some. A replay can be `ok` and
+   * degraded: it worked, but its primary selectors are breaking.
+   */
+  degraded?: DegradedStep[];
 }
 
 /**

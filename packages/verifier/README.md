@@ -86,18 +86,15 @@ This is the quickest way to check a workflow you have just edited: no generated 
 
 `createInterpreter(options)` builds a runner with options:
 
-| Option       | What it does                                                                                                                                                              |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `candidates` | `'first'` (default) uses each step's first selector candidate, as generated code does. `'fallthrough'` retries a failed `click` or `fill` with the next ranked candidate. |
-| `params`     | Values for `{ param }` references, keyed by parameter name.                                                                                                               |
-| `onStep`     | Called as each step finishes with `{ stepId, action, status, durationMs, selector, candidateIndex, iterations }`.                                                         |
+| Option       | What it does                                                                                                                                                                                          |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `candidates` | `'fallthrough'` (default) retries a failed `click` or `fill` with the next ranked candidate, as generated code does. `'first'` uses only each step's primary candidate, to prove it works on its own. |
+| `params`     | Values for `{ param }` references, keyed by parameter name.                                                                                                                                           |
+| `onStep`     | Called as each step finishes with `{ stepId, action, status, durationMs, selector, candidateIndex, iterations }`.                                                                                     |
 
-Under `'fallthrough'`, a run that passes with `candidateIndex` above 0 means the primary selector is broken. The compiled workflow only uses the first candidate and would fail, so treat that result as a prompt to fix the selector order, not as a pass.
+A run that passes on a candidate after the first is **degraded**: it worked, but the primary selector is broken and the next change to that element may take the fallback with it. `ReplayOutcome.degraded` lists each such step (`{ stepId, candidateIndex, selector }`), and the trace reports the index. Treat it as a prompt to promote the working candidate. `extract` steps and `foreach` anchors always use the primary, in both executors: a read that matches nothing returns empty, so there is nothing to fall through on.
 
-The interpreter and generated code are kept in step by a test that runs both against the same scripted page and compares every page call and failure report. Loop caps (`maxIterations`, default 100), step deadlines (`timeoutMs`), flow conditions and `foreach` scoping go through the same `@sfysh/runtime` helpers in both, so they behave the same. `LoopLimitError` and `StepTimeoutError` are defined in the runtime and re-exported here. Two deliberate differences remain. The interpreter:
-
-- accepts `{ param }` values, which the compiler does not support yet;
-- can fall through ranked candidates (`candidates: 'fallthrough'`), which generated code does not do yet.
+The interpreter and generated code are kept in step by a test that runs both against the same scripted page and compares every page call and failure report. Loop caps (`maxIterations`, default 100), step deadlines (`timeoutMs`), flow conditions and `foreach` scoping go through the same `@sfysh/runtime` helpers in both, so they behave the same. `LoopLimitError` and `StepTimeoutError` are defined in the runtime and re-exported here. Selector fallthrough goes through the runtime's `tryCandidates` in both. One deliberate difference remains: the interpreter accepts `{ param }` values, which the compiler does not support yet.
 
 Generated code is still what ships and what runs on a schedule. If a workflow passes under the interpreter, run the compiled version once before relying on it.
 

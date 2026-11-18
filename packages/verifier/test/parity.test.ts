@@ -53,6 +53,7 @@ interface Observed {
   error: unknown;
   snapshot: unknown;
   outputs: unknown[];
+  degraded: unknown;
 }
 
 const SECRET = 'hunter2-secret';
@@ -68,6 +69,7 @@ async function observe(id: string, script: PageScript): Promise<Observed> {
     error: result.error ? JSON.parse(JSON.stringify(result.error)) : undefined,
     snapshot: result.snapshot,
     outputs: ctx.drainOutputs(),
+    degraded: result.degraded,
   };
 }
 
@@ -510,6 +512,49 @@ describe('parity: compiled code and the interpreter drive the page identically',
     expect(compiled.status).toBe('ok');
     expect(interpreted.status).toBe('ok');
     expect(interpreted.log).toEqual(compiled.log);
+  });
+
+  it('falling through to a fallback candidate when the primary fails', async () => {
+    const script: PageScript = {
+      ...healthy,
+      failAction: { 'getByRole("textbox",{"name":"Password"})': 'Timeout: no such textbox' },
+    };
+    const { compiled, interpreted } = await both(everything, script);
+
+    expect(compiled.status).toBe('ok');
+    expect(interpreted.log).toEqual(compiled.log);
+    expect(interpreted.outputs).toEqual(compiled.outputs);
+    expect(compiled.log).toContain(`locator("input[type=password]").fill("${SECRET}")`);
+    expect(compiled.degraded).toEqual([
+      {
+        stepId: 'fill_003',
+        candidateIndex: 1,
+        selector: { kind: 'css', value: 'input[type=password]' },
+      },
+    ]);
+    expect(interpreted.degraded).toEqual(compiled.degraded);
+  });
+
+  it('when every candidate fails: the primary error, attributed to the primary', async () => {
+    const script: PageScript = {
+      ...healthy,
+      failAction: {
+        'getByRole("textbox",{"name":"Password"})': 'Timeout: no such textbox',
+        'locator("input[type=password]")': 'Timeout: no password input',
+      },
+    };
+    const { compiled, interpreted } = await both(everything, script);
+
+    expect(compiled.status).toBe('failed');
+    expect(interpreted.log).toEqual(compiled.log);
+    expect(interpreted.error).toEqual(compiled.error);
+    expect(compiled.error).toMatchObject({
+      stepId: 'fill_003',
+      candidateIndex: 0,
+      selector: { kind: 'role', value: "textbox[name='Password']" },
+      message: expect.stringContaining('no such textbox'),
+    });
+    expect(compiled.degraded).toBeUndefined();
   });
 
   it('on a table whose headers differ in case and use an x-header alias', async () => {

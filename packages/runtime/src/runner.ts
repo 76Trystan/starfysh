@@ -3,6 +3,7 @@ import { getWorkflow } from './workflow.js';
 import type { WorkflowContext } from './context.js';
 import { describeFailure } from './step.js';
 import { capturePageSnapshot, type PageSnapshot, type SnapshotOptions } from './snapshot.js';
+import type { DegradedStep } from './candidates.js';
 
 export interface RunResult {
   workflowId: string;
@@ -47,6 +48,12 @@ export interface RunResult {
    * secrets redacted and the length capped.
    */
   snapshot?: PageSnapshot;
+  /**
+   * Steps that passed on a fallback selector candidate. Present only when
+   * there are some. A run can be `ok` and degraded: it worked, but its
+   * primary selectors are breaking.
+   */
+  degraded?: DegradedStep[];
 }
 
 export interface RunOptions {
@@ -81,7 +88,13 @@ export async function run(
   const start = Date.now();
   try {
     await fn(ctx);
-    return { workflowId: id, status: 'ok', durationMs: Date.now() - start };
+    const degraded = ctx.degraded();
+    return {
+      workflowId: id,
+      status: 'ok',
+      durationMs: Date.now() - start,
+      ...(degraded.length > 0 ? { degraded } : {}),
+    };
   } catch (err) {
     const durationMs = Date.now() - start;
     const failure = describeFailure(ctx, err);
@@ -104,12 +117,14 @@ export async function run(
             typeof options.snapshot === 'object' ? options.snapshot : {},
           );
 
+    const degraded = ctx.degraded();
     return {
       workflowId: id,
       status: 'failed',
       durationMs,
       error,
       ...(snapshot ? { snapshot } : {}),
+      ...(degraded.length > 0 ? { degraded } : {}),
     };
   }
 }

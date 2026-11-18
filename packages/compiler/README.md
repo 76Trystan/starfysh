@@ -64,6 +64,7 @@ const { source } = await compile(check.value);
 - **`foreach` bodies are scoped to the item.** Every target inside the body is looked up within the current item (`item.getByRole(...)`), not the whole page.
 - **`timeoutMs`** on a step is passed to the runtime's `step()`, which fails the step with `StepTimeoutError` when it runs longer.
 - **Conditions** in `guard`, `wait`, `assert` and `loop.while` are evaluated by the runtime's `conditionHolds`, the same evaluator as pre and post checks.
+- **Ranked selectors fall through.** A `click` or `fill` with more than one usable candidate calls the runtime's `tryCandidates`, which tries each in rank order and records a pass on a fallback as degraded (`RunResult.degraded`). A step with one usable candidate acts on it directly. `visual` candidates are left out. `extract` steps and `foreach` anchors use the primary only.
 
 These are the same helpers the verifier's IR interpreter uses, and a parity test holds the two to the same page calls. Generated code needs a `@sfysh/runtime` that exports them.
 
