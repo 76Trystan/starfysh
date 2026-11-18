@@ -26,6 +26,12 @@ importers:
 
   benchmark:
     dependencies:
+      '@sfysh/healer':
+        specifier: workspace:*
+        version: link:../packages/healer
+      '@sfysh/ir':
+        specifier: workspace:*
+        version: link:../packages/ir
       '@sfysh/playwright-adapter':
         specifier: workspace:*
         version: link:../packages/playwright-adapter
@@ -35,6 +41,9 @@ importers:
       '@sfysh/triage':
         specifier: workspace:*
         version: link:../packages/triage
+      '@sfysh/verifier':
+        specifier: workspace:*
+        version: link:../packages/verifier
     devDependencies:
       '@types/node':
         specifier: ^22.0.0

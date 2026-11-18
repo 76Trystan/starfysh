@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Supplier portal</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 0;
+      }
+      nav {
+        display: flex;
+        gap: 1rem;
+        padding: 1rem;
+        background: #eee;
+      }
+      main {
+        padding: 1rem;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      .overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .overlay > div {
+        background: white;
+        padding: 2rem;
+      }
+      .menu {
+        position: relative;
+        display: inline-block;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      Drift fixture: a small supplier portal. Every element a workflow is
+      meant to act on carries data-sfysh-truth naming the IR step it belongs
+      to. The script below records which marked element each click and fill
+      lands on, so a heal can be judged by what it actually did, not only by
+      what it produced. Behaviour is wired by event delegation on
+      data-action, so drift operators can move, wrap and retag elements
+      without breaking it. The healer never sees these attributes: its view
+      of the page is the accessibility tree.
+    -->
+    <nav aria-label="Main">
+      <a href="#dashboard" class="nav-dashboard" data-action="nav" data-target="dashboard"
+        >Dashboard</a
+      >
+      <a
+        href="#orders"
+        class="nav-orders"
+        data-action="nav"
+        data-target="orders"
+        data-sfysh-truth="click_002"
+        >Orders</a
+      >
+      <a href="#settings" class="nav-settings" data-action="nav" data-target="settings">Settings</a>
+    </nav>
+    <main>
+      <section id="dashboard">
+        <h1>Dashboard</h1>
+        <p>Welcome back.</p>
+      </section>
+      <section id="orders" hidden>
+        <h1 class="orders-title">Orders (4)</h1>
+        <form onsubmit="return false;">
+          <label for="search">Search orders</label>
+          <input
+            id="search"
+            data-role="search"
+            data-testid="order-search"
+            data-sfysh-truth="fill_003"
+          />
+          <button
+            type="button"
+            data-action="apply"
+            data-testid="apply-filter"
+            data-sfysh-truth="click_004"
+          >
+            Apply
+          </button>
+        </form>
+        <table class="orders" aria-label="Order list">
+          <thead>
+            <tr>
+              <th>Order</th>
+              <th>Customer</th>
+              <th>Status</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>A-1001</td>
+              <td>ACME Corp</td>
+              <td>Shipped</td>
+              <td>$120.50</td>
+            </tr>
+            <tr>
+              <td>A-1002</td>
+              <td>Globex</td>
+              <td>Pending</td>
+              <td>$75.00</td>
+            </tr>
+            <tr>
+              <td>A-1003</td>
+              <td>ACME Ltd</td>
+              <td>Pending</td>
+              <td>$310.00</td>
+            </tr>
+            <tr>
+              <td>A-1004</td>
+              <td>Initech</td>
+              <td>Shipped</td>
+              <td>$42.10</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section id="settings" hidden>
+        <h1>Settings</h1>
+      </section>
+    </main>
+    <script>
+      window.__sfyshTruth = [];
+      const mark = (kind, target) => {
+        const el = target instanceof Element ? target.closest('[data-sfysh-truth]') : null;
+        window.__sfyshTruth.push(kind + ':' + (el ? el.getAttribute('data-sfysh-truth') : 'none'));
+      };
+      document.addEventListener('click', (e) => mark('click', e.target), true);
+      document.addEventListener('input', (e) => mark('fill', e.target), true);
+
+      const show = (id) => {
+        for (const s of document.querySelectorAll('main > section')) s.hidden = s.id !== id;
+      };
+      const applyFilter = () => {
+        const input = document.querySelector('[data-role="search"]');
+        const needle = (input ? input.value : '').trim().toLowerCase();
+        let shown = 0;
+        for (const row of document.querySelectorAll(
+          'table.orders tbody tr, [data-role="orders-table"] tbody tr',
+        )) {
+          const match = needle === '' || row.textContent.toLowerCase().includes(needle);
+          row.hidden = !match;
+          if (match) shown++;
+        }
+        for (const row of document.querySelectorAll('tbody tr[hidden]')) row.remove();
+        const title = document.querySelector('#orders h1');
+        if (title) title.textContent = 'Orders (' + shown + ')';
+      };
+      document.addEventListener('click', (e) => {
+        const el = e.target instanceof Element ? e.target.closest('[data-action]') : null;
+        if (!el) return;
+        const action = el.getAttribute('data-action');
+        if (action === 'nav') {
+          e.preventDefault();
+          show(el.getAttribute('data-target'));
+        } else if (action === 'apply') {
+          applyFilter();
+        } else if (action === 'dismiss') {
+          const overlay = el.closest('.overlay');
+          if (overlay) overlay.remove();
+        } else if (action === 'toggle-menu') {
+          const menu = el.closest('.menu');
+          const list = menu ? menu.querySelector('[data-role="menu-list"]') : null;
+          if (list) list.hidden = !list.hidden;
+        }
+      });
+    </script>
+  </body>
+</html>

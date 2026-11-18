@@ -1,0 +1,78 @@
+{
+  "irVersion": "1.0.0",
+  "id": "drift_portal_orders",
+  "name": "Read ACME orders from the supplier portal",
+  "steps": [
+    {
+      "id": "nav_001",
+      "intent": "Open the supplier portal.",
+      "action": "navigate",
+      "url": "https://portal.drift.test/"
+    },
+    {
+      "id": "click_002",
+      "intent": "Open the orders page.",
+      "action": "click",
+      "target": {
+        "candidates": [
+          { "kind": "role", "value": "link[name='Orders']" },
+          { "kind": "css", "value": "nav a.nav-orders" }
+        ]
+      }
+    },
+    {
+      "id": "fill_003",
+      "intent": "Search for ACME orders.",
+      "action": "fill",
+      "target": {
+        "candidates": [
+          { "kind": "label", "value": "Search orders" },
+          { "kind": "testid", "value": "order-search" }
+        ]
+      },
+      "value": "ACME"
+    },
+    {
+      "id": "click_004",
+      "intent": "Apply the search.",
+      "action": "click",
+      "target": {
+        "candidates": [
+          { "kind": "role", "value": "button[name='Apply']" },
+          { "kind": "testid", "value": "apply-filter" }
+        ]
+      }
+    },
+    {
+      "id": "extract_005",
+      "intent": "Read the matching orders.",
+      "action": "extract",
+      "target": {
+        "candidates": [
+          { "kind": "role", "value": "table[name='Order list']" },
+          { "kind": "css", "value": "table.orders" }
+        ]
+      },
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "order": { "type": "string" },
+            "customer": { "type": "string" },
+            "total": { "type": "number" }
+          }
+        }
+      },
+      "bind": "orders"
+    },
+    {
+      "id": "extract_006",
+      "intent": "Read the result count in the heading.",
+      "action": "extract",
+      "target": { "candidates": [{ "kind": "css", "value": "#orders h1" }] },
+      "schema": { "type": "string" },
+      "bind": "heading"
+    }
+  ]
+}

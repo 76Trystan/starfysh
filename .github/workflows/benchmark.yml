@@ -32,6 +32,12 @@ jobs:
       # browser build from the one the locked playwright-core launches.
       - run: pnpm --filter @sfysh/benchmark exec playwright-core install --with-deps chromium chromium-headless-shell
 
+      # Synthetic-drift self-tests: every drift case must still break the
+      # fixture workflow the way it claims, and the judge must still tell a
+      # right heal from a decoy, before any healer measurement relies on
+      # them. Runs here because it needs the browser installed above.
+      - run: pnpm --filter @sfysh/benchmark test:drift
+
       - run: pnpm --filter @sfysh/benchmark bench
 
       - uses: actions/upload-artifact@v4
