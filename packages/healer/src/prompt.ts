@@ -21,7 +21,7 @@ import { findStep, hashWorkflow } from '@sfysh/ir';
 import type { Condition, SelectorCandidate, Step, Workflow } from '@sfysh/ir';
 import type { Message, RedactFn } from '@sfysh/providers';
 import type { PageSnapshot } from '@sfysh/runtime';
-import type { PatchClass } from './allowlist.js';
+import type { ModelPatchClass } from './allowlist.js';
 import { eachStep } from './walk.js';
 import type { LooseStep } from './walk.js';
 
@@ -71,7 +71,7 @@ export interface HealPromptInput {
    * The kind of heal to ask for. Default `selector`. It decides the
    * instructions the model is given and the form of its answer.
    */
-  patchClass?: PatchClass;
+  patchClass?: ModelPatchClass;
   /** Cap on the snapshot text. Default 60,000 characters. */
   maxSnapshotChars?: number;
   /**
@@ -85,7 +85,7 @@ export interface HealPrompt {
   /** A constant system message followed by one user message. */
   messages: Message[];
   /** The kind of heal the prompt asks for. */
-  patchClass: PatchClass;
+  patchClass: ModelPatchClass;
   /**
    * The operation the patch will carry: `replace` for a selector heal,
    * `insert_before` for an insert-step heal. Chosen here, never by the model.
@@ -208,7 +208,7 @@ If it does not:
 {"cannotHeal": true, "rationale": "<what is missing>"}`;
 
 /** The system prompt for each kind of heal. */
-export function systemPromptFor(patchClass: PatchClass): string {
+export function systemPromptFor(patchClass: ModelPatchClass): string {
   return patchClass === 'insert_step' ? INSERT_STEP_SYSTEM_PROMPT : SELECTOR_SYSTEM_PROMPT;
 }
 

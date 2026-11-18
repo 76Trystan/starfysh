@@ -440,9 +440,35 @@ const decision = decidePatch({
 
 Never verify against a cassette: it replays what the old site returned, so it says nothing about a patch.
 
-**Decision.** `decidePatch()` runs `checkPatch()` again itself, then returns `rejected`, `awaiting_approval` with every reason, or `accepted`. The default policy, `{ mode: 'human' }`, holds every patch for a person. `{ mode: 'auto', minScore }` (with `minScore` at least 0.8) accepts a verified selector patch without review, but still holds an insert-step patch, one the checks flagged for approval, one scoring below `minScore`, one whose step run was not confirmed, and one that undoes an earlier heal.
+**Decision.** `decidePatch()` runs `checkPatch()` again itself, then returns `rejected`, `awaiting_approval` with every reason, or `accepted`. The default policy, `{ mode: 'human' }`, holds every patch for a person. `{ mode: 'auto', minScore }` (with `minScore` at least 0.8) accepts a verified selector patch without review, but still holds an insert-step patch, one the checks flagged for approval, one scoring below `minScore`, one whose step run was not confirmed, and one that undoes an earlier heal. `{ mode: 'auto_promotion' }` accepts only a verified `promotion` (below) and treats every other class as `human` does; reversions, flagged approvals and unconfirmed step runs still hold a promotion for a person.
 
 **Approval.** `approvePatch()` is the only way a held patch becomes accepted. It records the reviewer and the time, and refuses if the workflow has changed since the patch was verified.
+
+## Promoting a working fallback
+
+A run that passes on a fallback selector candidate is green, but its primary selector is broken (`ReplayOutcome.degraded`). The IR already holds the fix, so no model is needed: `promote()` moves the candidate that worked to the front of its step, verifies the result like any other patch (live runs, primary candidate only, against the known-good outputs), checks it against earlier heals, and decides on it.
+
+```ts
+import { promote, promotionRecord } from '@sfysh/healer';
+
+const result = await promote({
+  workflow,
+  degraded: outcome.degraded ?? [],
+  knownGood: { outputs: outcome.outputs },
+  pageFactory: () => openFreshPage(),
+  history,
+  policy: { mode: 'human' }, // or { mode: 'auto_promotion' }
+});
+// result.status: 'none' | 'not_promoted' | 'decided'
+if (result.status !== 'none')
+  await corpus.write(promotionRecord({ workflow, knownGood, result, redact }));
+```
+
+- The patch class is `promotion`. Its allowlist rule is stricter than a selector patch's: the new candidate list must be a reordering of the old one, with nothing added, removed or edited.
+- One step per promotion. Other degraded steps are returned as `remaining`, for a later run once this one is applied. A step that degraded onto different candidates in one run (a loop over items) is skipped as `inconsistent`.
+- Every promotion carries a fixed score of 0.9 with the single signal `worked_live`; there is no snapshot to ground it in, and the evidence is the live success plus verification.
+- Promotions do not count against the daily heal cap, which bounds model spend. The reversion check does apply, so a site that flips between two designs does not have its candidates swapped back and forth.
+- In the corpus a promotion is a heal record with `trigger: 'degraded'`, no triage, and no tokens.
 
 ## Heals that undo earlier heals
 
@@ -537,6 +563,7 @@ Use one writer per corpus directory. Two processes appending at once can interle
 ## What is still to come
 
 - A first run against a real model.
+- Automatic acceptance of model-written patches, once the benchmark has calibrated the score. Only promotions can be accepted automatically today.
 - Measuring the false-heal rate on the synthetic-drift benchmark, which decides whether automatic acceptance is ever switched on.
 
 To run the healer from the command line, use `compile heal` in `@sfysh/cli`. It keeps the history, the corpus and the known-good outputs on disk.

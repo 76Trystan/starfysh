@@ -23,7 +23,7 @@ import type { SelectorCandidate, Step, StepPatch, Workflow } from '@sfysh/ir';
 import { ProviderError, RedactingProvider } from '@sfysh/providers';
 import type { Provider, ProviderErrorCode, RedactFn, TokenUsage } from '@sfysh/providers';
 import type { PageSnapshot } from '@sfysh/runtime';
-import type { PatchClass } from './allowlist.js';
+import type { ModelPatchClass } from './allowlist.js';
 import { checkPatch } from './check.js';
 import type { PatchViolation } from './check.js';
 import { canonical } from './equal.js';
@@ -201,7 +201,7 @@ export type InsertStepPatchResult = GeneratePatchResult;
 
 async function generate(
   input: GeneratePatchInput,
-  patchClass: PatchClass,
+  patchClass: ModelPatchClass,
 ): Promise<GeneratePatchResult> {
   const { workflow, redact } = input;
 

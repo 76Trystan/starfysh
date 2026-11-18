@@ -271,8 +271,17 @@ function fieldList(drift: DriftField[]): string {
  * `CONFIDENCE_HIGH`. The score weights are not yet calibrated against
  * real heals, so `auto` should stay off until the benchmark shows false
  * heals cluster below the threshold.
+ *
+ * `auto_promotion` accepts a verified `promotion` patch (a fallback
+ * candidate moved to the front, built in code, see `promotionPatch`)
+ * without a person, and treats every other class as `human` does. A
+ * promotion only reorders candidates a person wrote, one of which has
+ * just worked on the live site, so it is the lowest-risk change the
+ * healer makes. Every other hold still applies: reversions, approvals the
+ * checks asked for, and an unconfirmed step run.
  */
-export type AcceptancePolicy = { mode: 'human' } | { mode: 'auto'; minScore: number };
+export type AcceptancePolicy =
+  { mode: 'human' } | { mode: 'auto'; minScore: number } | { mode: 'auto_promotion' };
 
 export const DEFAULT_ACCEPTANCE_POLICY: AcceptancePolicy = { mode: 'human' };
 
@@ -389,6 +398,14 @@ export function decidePatch(input: DecidePatchInput): PatchDecision {
       code: 'policy_requires_review',
       message: 'Every patch is reviewed by a person under the current policy.',
     });
+  } else if (policy.mode === 'auto_promotion') {
+    if (input.patchClass !== 'promotion') {
+      reasons.push({
+        code: 'policy_requires_review',
+        message:
+          'Only promotions of a working fallback selector are accepted without review under the current policy.',
+      });
+    }
   } else if (input.score.score < policy.minScore) {
     reasons.push({
       code: 'score_below_threshold',

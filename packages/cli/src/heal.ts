@@ -6,9 +6,17 @@
 // held to, and nothing else happens. A failing run goes to `heal()` with a
 // history that persists between invocations, so the daily cap and the
 // reversion check work for a command run once per failure. Every heal is
-// written to the corpus. A patch is never applied here: a verified patch
-// is saved as pending, its review is printed, and a person answers with
-// `compile approve <id>` or `compile reject <id>`.
+// written to the corpus. A verified patch is saved as pending, its review
+// is printed, and a person answers with `compile approve <id>` or
+// `compile reject <id>`.
+//
+// A run that passes only on fallback selectors is degraded. The command
+// builds a promotion (move the candidate that worked to the front, no
+// model), verifies it, and holds it for a person like any other patch.
+// With `--auto-promote` a verified promotion is applied without a person;
+// that is the only thing this command ever applies on its own. Every
+// applied patch, approved or automatic, can be undone with
+// `compile revert <id>`.
 //
 // State lives under one directory (default `.compile/`):
 //
@@ -16,9 +24,11 @@
 //   heal-history.jsonl        heal runs and decided patches (`JsonlHealHistory`)
 //   known-good/<id>.json      outputs of the last passing run, per workflow
 //   pending/<heal id>.json    patches waiting for a person
+//   applied/<heal id>.json    the workflow as it was before an applied patch, for revert
 //
-// The policy is always human approval. Automatic acceptance stays off
-// until the benchmark shows the confidence score can be trusted.
+// Model-written patches always wait for a person. Automatic acceptance of
+// those stays off until the benchmark shows the confidence score can be
+// trusted.
 
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -31,17 +41,23 @@ import {
   JsonlCorpus,
   JsonlHealHistory,
   printable,
+  promote,
+  promotionPatch,
+  readCorpus,
+  promotionRecord,
   renderReview,
   reviewRecord,
 } from '@sfysh/healer';
 import type {
+  AcceptancePolicy,
   HealCorpusRecord,
   HealResult,
+  HealVerifyOptions,
   KnownGood,
   PatchClass,
   PatchDecision,
 } from '@sfysh/healer';
-import { hashWorkflow } from '@sfysh/ir';
+import { applyPatch, hashWorkflow, validateWorkflow } from '@sfysh/ir';
 import type { Workflow } from '@sfysh/ir';
 import {
   AnthropicProvider,
@@ -55,6 +71,7 @@ import type { DegradedStep, VaultResolver } from '@sfysh/runtime';
 import { createInterpreter, replay } from '@sfysh/verifier';
 import type { ReplayOutcome } from '@sfysh/verifier';
 import { loadBackendModule, loadWorkflow } from './verify.js';
+import type { LoadedBackend } from './verify.js';
 
 /** Default state directory, relative to the working directory. */
 export const DEFAULT_STATE_DIR = '.compile';
@@ -89,11 +106,27 @@ export interface HealCommandOptions {
   /** Longest one run may take, in milliseconds. */
   runTimeoutMs?: number;
   format?: 'human' | 'json';
+  /**
+   * Apply a verified promotion of a working fallback selector without a
+   * person. Model-written patches still wait. Default false.
+   */
+  autoPromote?: boolean;
   /** Clock. Tests pass a fixed one. */
   now?: () => Date;
 }
 
 export type HealCommandStatus = 'passed' | HealResult['status'];
+
+/** What became of a degraded pass. */
+export type PromotionStatus =
+  /** No degraded step could be promoted. */
+  | 'none'
+  /** The promotion did not verify, or the checks refused it. */
+  | 'not_promoted'
+  /** The promotion verified and waits for a person. */
+  | 'pending'
+  /** The promotion verified and was applied (`--auto-promote`). */
+  | 'applied';
 
 export interface HealCommandResult {
   status: HealCommandStatus;
@@ -108,6 +141,25 @@ export interface HealCommandResult {
   knownGoodSaved?: string;
   /** Steps that passed only on a fallback selector, when the run passed that way. */
   degraded?: DegradedStep[];
+  /** For a degraded pass: what became of the promotion. */
+  promotion?: PromotionStatus;
+  /** Where the patched workflow was written, when a promotion was applied. */
+  appliedTo?: string;
+}
+
+/** What `compile heal` and `compile approve` keep so an applied patch can be undone. */
+export interface AppliedHeal {
+  healId: string;
+  /** Absolute path the patched workflow was written to. */
+  workflowFile: string;
+  workflowId: string;
+  appliedAt: string;
+  /** `policy` for an automatic promotion, otherwise the reviewer who approved. */
+  appliedBy: string;
+  /** The workflow exactly as it was before the patch. */
+  before: Workflow;
+  /** `hashWorkflow` of the patched workflow. Revert refuses if the file no longer has it. */
+  afterHash: string;
 }
 
 /** What `compile heal` keeps for a patch until a person answers. */
@@ -126,6 +178,9 @@ interface StatePaths {
   history: string;
   knownGood: (workflowId: string) => string;
   pending: (healId: string) => string;
+  applied: (healId: string) => string;
+  /** Exists once the `--auto-promote` risk notice has been shown. */
+  autoPromoteAcknowledged: string;
 }
 
 function statePaths(stateDir: string = DEFAULT_STATE_DIR): StatePaths {
@@ -136,8 +191,26 @@ function statePaths(stateDir: string = DEFAULT_STATE_DIR): StatePaths {
     // so they are safe as file names.
     knownGood: (id) => join(stateDir, 'known-good', `${id}.json`),
     pending: (id) => join(stateDir, 'pending', `${id}.json`),
+    applied: (id) => join(stateDir, 'applied', `${id}.json`),
+    autoPromoteAcknowledged: join(stateDir, 'auto-promote-acknowledged'),
   };
 }
+
+/** Shown the first time `--auto-promote` is used with a state directory. */
+export const AUTO_PROMOTE_NOTICE = [
+  'Automatic promotion is on. What it does, and what it risks:',
+  '  - When a step passes only on a fallback selector, that selector is moved to the front of the',
+  '    step and the workflow file is rewritten, without asking you. No model is involved: the',
+  '    selector was already in the workflow and has just worked on the live site.',
+  '  - Before it is applied, the promoted workflow must pass at least three live runs using only',
+  '    its new first selector, and reproduce the outputs of the run that just passed.',
+  '  - Risk: the fallback can be a different element that happens to give the same outputs. Outputs',
+  '    are compared with one known-good run, not a longer history, so a wrong element is not',
+  '    always caught.',
+  '  - A promotion that undoes an earlier heal still waits for you, as does every model-written patch.',
+  '  - Every automatic promotion is recorded in the corpus and can be undone with',
+  "    'compile revert <heal id> --reviewer <name>'.",
+].join('\n');
 
 /**
  * Run a workflow once and heal it if it fails. Throws `HealCommandError`
@@ -150,11 +223,6 @@ export async function runHealCommand(opts: HealCommandOptions): Promise<HealComm
   const paths = statePaths(opts.stateDir);
   const workflow = loadWorkflow(opts.file);
   const backend = await loadBackendModule(opts.backend, { runner: 'optional' });
-  if (opts.provider === undefined && backend.provider === undefined) {
-    throw new HealCommandError(
-      `no model provider. Pass --provider <${PROVIDER_NAMES.join('|')}>, or export 'provider' from the backend module.`,
-    );
-  }
   const suppliedKnownGood =
     opts.knownGood !== undefined ? await readKnownGoodFile(opts.knownGood) : undefined;
 
@@ -181,34 +249,44 @@ export async function runHealCommand(opts: HealCommandOptions): Promise<HealComm
     return report.replays[0]!;
   };
 
+  const verify: HealVerifyOptions = {
+    vaultResolver,
+    ...(opts.runs !== undefined ? { runs: opts.runs } : {}),
+    ...(opts.runTimeoutMs !== undefined ? { runTimeoutMs: opts.runTimeoutMs } : {}),
+    ...(backend.params ? { params: backend.params } : {}),
+    ...(backend.dispose ? { dispose: backend.dispose } : {}),
+    ...(backend.tolerance ? { tolerance: backend.tolerance } : {}),
+  };
+
   const first = await runOnce();
   if (first.status === 'ok') {
     const saved = await saveKnownGood(paths, workflow, first.outputs, now());
     const degraded = first.degraded ?? [];
-    const extra = degraded.length > 0 ? { degraded } : {};
-    return {
-      status: 'passed',
-      exitCode: 0,
+    if (degraded.length === 0) {
+      return {
+        status: 'passed',
+        exitCode: 0,
+        knownGoodSaved: saved,
+        output: render(opts.format, { status: 'passed', knownGoodSaved: saved }, () =>
+          [
+            `Workflow ${workflow.id} passed. Nothing to heal.`,
+            `Saved its outputs as known-good: ${saved}`,
+          ].join('\n'),
+        ),
+      };
+    }
+    return promoteDegraded({
+      opts,
+      paths,
+      workflow,
+      degraded,
+      knownGood: { outputs: first.outputs },
       knownGoodSaved: saved,
-      ...extra,
-      output: render(opts.format, { status: 'passed', knownGoodSaved: saved, ...extra }, () =>
-        [
-          degraded.length > 0
-            ? `Workflow ${workflow.id} passed, but only on fallback selectors.`
-            : `Workflow ${workflow.id} passed. Nothing to heal.`,
-          ...degraded.map(
-            (d) =>
-              `  Step ${d.stepId}: the primary selector failed; candidate #${d.candidateIndex + 1} (${d.selector.kind} ${JSON.stringify(printable(d.selector.value))}) worked.`,
-          ),
-          ...(degraded.length > 0
-            ? [
-                '  The next change to these elements may break the workflow. Consider promoting the working candidates.',
-              ]
-            : []),
-          `Saved its outputs as known-good: ${saved}`,
-        ].join('\n'),
-      ),
-    };
+      backend,
+      verify,
+      redact,
+      now,
+    });
   }
 
   const knownGood = suppliedKnownGood ?? (await loadKnownGood(paths, workflow.id));
@@ -219,6 +297,12 @@ export async function runHealCommand(opts: HealCommandOptions): Promise<HealComm
     );
   }
 
+  // Only a failure needs a model. A passing or degraded run never calls one.
+  if (opts.provider === undefined && backend.provider === undefined) {
+    throw new HealCommandError(
+      `workflow ${workflow.id} failed and there is no model provider to heal it. Pass --provider <${PROVIDER_NAMES.join('|')}>, or export 'provider' from the backend module.`,
+    );
+  }
   const provider =
     opts.provider !== undefined ? vendor(opts.provider, opts.model) : backend.provider!;
   const history = new JsonlHealHistory({ file: paths.history });
@@ -234,14 +318,7 @@ export async function runHealCommand(opts: HealCommandOptions): Promise<HealComm
     history,
     retry: runOnce,
     now,
-    verify: {
-      vaultResolver,
-      ...(opts.runs !== undefined ? { runs: opts.runs } : {}),
-      ...(opts.runTimeoutMs !== undefined ? { runTimeoutMs: opts.runTimeoutMs } : {}),
-      ...(backend.params ? { params: backend.params } : {}),
-      ...(backend.dispose ? { dispose: backend.dispose } : {}),
-      ...(backend.tolerance ? { tolerance: backend.tolerance } : {}),
-    },
+    verify,
   });
 
   const record = healRecord({ workflow, knownGood, result, redact, at: now() });
@@ -311,6 +388,252 @@ export async function runHealCommand(opts: HealCommandOptions): Promise<HealComm
   };
 }
 
+interface PromoteDegradedInput {
+  opts: HealCommandOptions;
+  paths: StatePaths;
+  workflow: Workflow;
+  degraded: DegradedStep[];
+  knownGood: KnownGood;
+  knownGoodSaved: string;
+  backend: LoadedBackend;
+  verify: HealVerifyOptions;
+  redact: RedactFn;
+  now: () => Date;
+}
+
+/**
+ * A run passed on fallback selectors. Build and verify a promotion of the
+ * first degraded step, record it, and then hold it for a person, apply it
+ * (`--auto-promote`), or report why it was not promoted. Never calls a
+ * model.
+ */
+async function promoteDegraded(input: PromoteDegradedInput): Promise<HealCommandResult> {
+  const { opts, paths, workflow, degraded, now } = input;
+  // A person who reverted a change has said it was wrong. Auto mode never
+  // makes that exact change again on its own; it waits for approval.
+  const heldBecause = opts.autoPromote
+    ? await revertedBefore(paths, workflow, degraded)
+    : undefined;
+  const policy: AcceptancePolicy =
+    opts.autoPromote && heldBecause === undefined ? { mode: 'auto_promotion' } : { mode: 'human' };
+  const notice = opts.autoPromote ? await firstAutoPromoteNotice(paths) : undefined;
+
+  const history = new JsonlHealHistory({ file: paths.history });
+  await history.prune(now());
+  const result = await promote({
+    workflow,
+    degraded,
+    knownGood: input.knownGood,
+    pageFactory: input.backend.pageFactory,
+    history,
+    policy,
+    now,
+    verify: input.verify,
+  });
+
+  const header = [
+    ...(notice !== undefined ? [notice, ''] : []),
+    `Workflow ${workflow.id} passed, but only on fallback selectors.`,
+    ...degraded.map(
+      (d) =>
+        `  Step ${d.stepId}: the primary selector failed; candidate #${d.candidateIndex + 1} (${d.selector.kind} ${JSON.stringify(printable(d.selector.value))}) worked.`,
+    ),
+    `Saved its outputs as known-good: ${input.knownGoodSaved}`,
+  ];
+  const base = {
+    status: 'passed' as const,
+    knownGoodSaved: input.knownGoodSaved,
+    degraded,
+  };
+
+  if (result.status === 'none') {
+    const reasons = result.skipped.map((s) => `  - ${s.stepId}: ${s.message}`);
+    return {
+      ...base,
+      exitCode: 0,
+      promotion: 'none',
+      output: render(
+        opts.format,
+        { ...base, promotion: 'none', skipped: result.skipped, ...(notice ? { notice } : {}) },
+        () => [...header, '', 'No promotion could be built:', ...reasons].join('\n'),
+      ),
+    };
+  }
+
+  const record = promotionRecord({
+    workflow,
+    knownGood: input.knownGood,
+    policy,
+    result,
+    redact: input.redact,
+    at: now(),
+  });
+  await new JsonlCorpus({ dir: paths.corpus }).write(record);
+  const json = {
+    ...base,
+    healId: record.id,
+    record,
+    ...(notice ? { notice } : {}),
+    ...(heldBecause ? { heldBecause } : {}),
+  };
+
+  if (result.status === 'not_promoted') {
+    const verification = result.attempt.verification;
+    const why =
+      verification.status === 'failed'
+        ? `it did not verify (${verification.failures.map((f) => f.code).join(', ')})`
+        : verification.status === 'not_applied'
+          ? 'it did not apply to the workflow'
+          : 'the checks refused it';
+    return {
+      ...base,
+      exitCode: 0,
+      promotion: 'not_promoted',
+      record,
+      output: render(opts.format, { ...json, promotion: 'not_promoted' }, () =>
+        [
+          ...header,
+          '',
+          `A promotion of step ${result.attempt.degraded.stepId} was tried, but ${why}. The workflow keeps running on its fallback.`,
+          `Recorded as heal ${record.id}.`,
+        ].join('\n'),
+      ),
+    };
+  }
+
+  const remaining =
+    result.remaining.length > 0
+      ? [
+          `Other degraded steps (${[...new Set(result.remaining.map((d) => d.stepId))].join(', ')}) can be promoted on the next run.`,
+        ]
+      : [];
+
+  if (result.decision.status === 'accepted') {
+    const target = resolvePath(opts.file);
+    await applyPatchedWorkflow(paths, {
+      healId: record.id,
+      workflowFile: target,
+      workflowId: workflow.id,
+      appliedAt: now().toISOString(),
+      appliedBy: 'policy',
+      before: workflow,
+      afterHash: result.decision.hash,
+      after: result.decision.workflow,
+    });
+    return {
+      ...base,
+      exitCode: 0,
+      promotion: 'applied',
+      record,
+      appliedTo: target,
+      output: render(opts.format, { ...json, promotion: 'applied', appliedTo: target }, () =>
+        [
+          ...header,
+          '',
+          renderReview(result.decision, { workflow }),
+          '',
+          `Promoted automatically (--auto-promote) and wrote ${target}.`,
+          `  Undo: compile revert ${record.id} --reviewer <name>`,
+          ...remaining,
+        ].join('\n'),
+      ),
+    };
+  }
+
+  const pendingPath = await savePending(paths, {
+    healId: record.id,
+    workflowFile: resolvePath(opts.file),
+    workflowId: workflow.id,
+    patchClass: 'promotion',
+    createdAt: now().toISOString(),
+    decision: result.decision,
+  });
+  return {
+    ...base,
+    exitCode: 3,
+    promotion: 'pending',
+    record,
+    pending: pendingPath,
+    output: render(opts.format, { ...json, promotion: 'pending', pending: pendingPath }, () =>
+      [
+        ...header,
+        '',
+        renderReview(result.decision, { workflow }),
+        '',
+        ...(heldBecause ? [`Not applied automatically: ${heldBecause}`] : []),
+        `Heal ${record.id} (a promotion, no model) is waiting for approval.`,
+        `  Approve: compile approve ${record.id} --reviewer <name>`,
+        `  Reject:  compile reject ${record.id} --reviewer <name> [--note <text>]`,
+        ...remaining,
+      ].join('\n'),
+    ),
+  };
+}
+
+/**
+ * Why the promotion this run would make must wait for a person, if a
+ * person has already reverted a heal that produced exactly the same
+ * workflow. Undefined when nothing was reverted, or nothing can be built.
+ */
+async function revertedBefore(
+  paths: StatePaths,
+  workflow: Workflow,
+  degraded: readonly DegradedStep[],
+): Promise<string | undefined> {
+  const built = promotionPatch(workflow, degraded);
+  if (built.status !== 'patch') return undefined;
+  const applied = applyPatch(workflow, built.patch);
+  if (!applied.ok) return undefined;
+
+  const { records } = await readCorpus(paths.corpus);
+  const reverted = new Set(
+    records
+      .filter((r) => r.kind === 'review' && r.verdict === 'reverted')
+      .map((r) => (r.kind === 'review' ? r.healId : '')),
+  );
+  const earlier = records.find(
+    (r) =>
+      r.kind === 'heal' &&
+      r.workflowId === workflow.id &&
+      reverted.has(r.id) &&
+      r.outcome.hash === applied.hash,
+  );
+  return earlier === undefined
+    ? undefined
+    : `a person reverted the same change before (heal ${earlier.id}).`;
+}
+
+/** The risk notice, the first time `--auto-promote` is used with this state directory; afterwards undefined. */
+async function firstAutoPromoteNotice(paths: StatePaths): Promise<string | undefined> {
+  if (existsSync(paths.autoPromoteAcknowledged)) return undefined;
+  await mkdir(dirname(paths.autoPromoteAcknowledged), { recursive: true });
+  await writeFile(paths.autoPromoteAcknowledged, `${new Date().toISOString()}\n`, 'utf8');
+  return AUTO_PROMOTE_NOTICE;
+}
+
+async function savePending(paths: StatePaths, pending: PendingHeal): Promise<string> {
+  const pendingPath = paths.pending(pending.healId);
+  await mkdir(dirname(pendingPath), { recursive: true });
+  await writeFile(pendingPath, `${JSON.stringify(pending, null, 2)}\n`, 'utf8');
+  return pendingPath;
+}
+
+/**
+ * Keep the workflow as it was, then write the patched one. The backup is
+ * written first, so a crash in between leaves an undo record and the old
+ * file, never a changed file with no way back.
+ */
+async function applyPatchedWorkflow(
+  paths: StatePaths,
+  applied: AppliedHeal & { after: Workflow },
+): Promise<void> {
+  const { after, ...backup } = applied;
+  const backupPath = paths.applied(applied.healId);
+  await mkdir(dirname(backupPath), { recursive: true });
+  await writeFile(backupPath, `${JSON.stringify(backup, null, 2)}\n`, 'utf8');
+  await writeFile(applied.workflowFile, `${JSON.stringify(after, null, 2)}\n`, 'utf8');
+}
+
 export interface ReviewCommandOptions {
   /** Id of the heal, as `compile heal` printed it. */
   healId: string;
@@ -363,8 +686,19 @@ export async function runApproveCommand(opts: ApproveCommandOptions): Promise<Re
     );
   }
 
-  const target = opts.out ?? pending.workflowFile;
-  await writeFile(target, `${JSON.stringify(approved.decision.workflow, null, 2)}\n`, 'utf8');
+  const target = resolvePath(opts.out ?? pending.workflowFile);
+  await applyPatchedWorkflow(paths, {
+    healId: pending.healId,
+    workflowFile: target,
+    workflowId: pending.workflowId,
+    appliedAt: now().toISOString(),
+    appliedBy: opts.reviewer.trim(),
+    // The workflow as it stood before the patch: the original file,
+    // whichever file the patched one is written to.
+    before: current,
+    afterHash: approved.decision.hash,
+    after: approved.decision.workflow,
+  });
   await new JsonlCorpus({ dir: paths.corpus }).write(
     reviewRecord({
       heal: { id: pending.healId, workflowId: pending.workflowId },
@@ -380,8 +714,85 @@ export async function runApproveCommand(opts: ApproveCommandOptions): Promise<Re
     output: [
       `Approved heal ${opts.healId} for workflow ${pending.workflowId}.`,
       `Wrote the patched workflow to ${target}.`,
+      `  Undo: compile revert ${opts.healId} --reviewer <name>`,
     ].join('\n'),
   };
+}
+
+export type RevertCommandOptions = ReviewCommandOptions & { note?: string };
+
+/**
+ * Undo an applied patch: write back the workflow as it was before. Refused
+ * if the file has changed since the patch was applied (a later heal or a
+ * hand edit), because restoring the old file would silently drop that
+ * change. Records a `reverted` review in the corpus.
+ */
+export async function runRevertCommand(opts: RevertCommandOptions): Promise<ReviewCommandResult> {
+  const now = opts.now ?? (() => new Date());
+  const paths = statePaths(opts.stateDir);
+  if (!HEAL_ID.test(opts.healId)) throw new HealCommandError(`'${opts.healId}' is not a heal id.`);
+  if (opts.reviewer.trim() === '') throw new HealCommandError('a revert must name the reviewer.');
+
+  let applied: AppliedHeal;
+  try {
+    applied = JSON.parse(await readFile(paths.applied(opts.healId), 'utf8')) as AppliedHeal;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new HealCommandError(
+        `no applied heal ${opts.healId} to revert. It may never have been applied, or was already reverted.`,
+      );
+    }
+    throw new HealCommandError(`applied heal ${opts.healId} could not be read.`);
+  }
+  if (
+    applied === null ||
+    typeof applied !== 'object' ||
+    applied.healId !== opts.healId ||
+    typeof applied.workflowFile !== 'string' ||
+    typeof applied.afterHash !== 'string' ||
+    typeof applied.before !== 'object'
+  ) {
+    throw new HealCommandError(`applied heal ${opts.healId} is malformed.`);
+  }
+
+  const current = loadWorkflow(applied.workflowFile);
+  if (hashWorkflow(current) !== applied.afterHash) {
+    throw new HealCommandError(
+      `heal ${opts.healId} cannot be reverted: ${applied.workflowFile} has changed since the patch was applied. Undo the later changes first, or edit the file by hand.`,
+    );
+  }
+  // The backup sits on disk; restore it only if it is still a valid workflow.
+  const before = validatedWorkflow(applied.before);
+  if (before === undefined) {
+    throw new HealCommandError(
+      `the saved workflow for heal ${opts.healId} is not a valid workflow.`,
+    );
+  }
+
+  await writeFile(applied.workflowFile, `${JSON.stringify(before, null, 2)}\n`, 'utf8');
+  await new JsonlCorpus({ dir: paths.corpus }).write(
+    reviewRecord({
+      heal: { id: opts.healId, workflowId: applied.workflowId },
+      verdict: 'reverted',
+      reviewer: opts.reviewer,
+      at: now(),
+      ...(opts.note !== undefined ? { note: opts.note } : {}),
+    }),
+  );
+  await rm(paths.applied(opts.healId), { force: true });
+
+  return {
+    wroteTo: applied.workflowFile,
+    output: [
+      `Reverted heal ${opts.healId} for workflow ${applied.workflowId}.`,
+      `Restored ${applied.workflowFile} to the workflow as it was before the patch.`,
+    ].join('\n'),
+  };
+}
+
+function validatedWorkflow(value: unknown): Workflow | undefined {
+  const result = validateWorkflow(value);
+  return result.valid && result.value ? result.value : undefined;
 }
 
 export interface RejectCommandOptions extends ReviewCommandOptions {
@@ -513,7 +924,7 @@ async function loadPending(paths: StatePaths, healId: string): Promise<PendingHe
     value.healId !== healId ||
     typeof value.workflowFile !== 'string' ||
     typeof value.workflowId !== 'string' ||
-    (value.patchClass !== 'selector' && value.patchClass !== 'insert_step') ||
+    !['selector', 'insert_step', 'promotion'].includes(value.patchClass) ||
     value.decision?.status !== 'awaiting_approval' ||
     typeof value.decision.patch !== 'object'
   ) {

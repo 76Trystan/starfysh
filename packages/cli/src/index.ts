@@ -16,12 +16,14 @@ export type {
 } from './verify.js';
 
 export {
+  AUTO_PROMOTE_NOTICE,
   DEFAULT_STATE_DIR,
   HealCommandError,
   PROVIDER_NAMES,
   runApproveCommand,
   runHealCommand,
   runRejectCommand,
+  runRevertCommand,
 } from './heal.js';
 export type {
   ApproveCommandOptions,
@@ -31,6 +33,9 @@ export type {
   PendingHeal,
   ProviderName,
   RejectCommandOptions,
+  RevertCommandOptions,
+  AppliedHeal,
+  PromotionStatus,
   ReviewCommandOptions,
   ReviewCommandResult,
 } from './heal.js';

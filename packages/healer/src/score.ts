@@ -52,7 +52,9 @@ export type ScoreSignalCode =
   /** The score was held to the ceiling for insert-step patches. */
   | 'insert_step_cap'
   /** The model reported less confidence than the evidence gave. */
-  | 'model_less_confident';
+  | 'model_less_confident'
+  /** A promotion: the candidate worked on the live site, and no model wrote the patch. */
+  | 'worked_live';
 
 export interface ScoreSignal {
   code: ScoreSignalCode;

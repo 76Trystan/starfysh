@@ -4,7 +4,7 @@ The Starfysh command-line front end. Exposes a single binary, `compile`, that dr
 
 ## Status
 
-In progress. The commands wired up today are `compile parse`, `compile verify`, `compile heal`, `compile approve` and `compile reject`. `emit` and `bench` are still to come. The healer behind `compile heal` has not yet been run against a real model.
+In progress. The commands wired up today are `compile parse`, `compile verify`, `compile heal`, `compile approve`, `compile reject` and `compile revert`. `emit` and `bench` are still to come. The healer behind `compile heal` has not yet been run against a real model.
 
 The package is private (`"private": true`) until the surface stabilises.
 
@@ -81,7 +81,8 @@ Exit codes:
 Runs a workflow once against a live backend with the IR interpreter.
 
 - **If it passes**, its outputs are saved as the workflow's known-good outputs, and nothing else happens. Run it once while the site works, so a later heal has something to hold a patch to.
-- **If it fails**, `@sfysh/healer` takes over: triage decides whether the failure is a site change at all, a model proposes a patch to the failed step, and the patched workflow is replayed live at least three times and must reproduce the known-good outputs. A patch that verifies is saved as pending and its review is printed. **Nothing is applied** until a person runs `compile approve`.
+- **If it fails**, `@sfysh/healer` takes over: triage decides whether the failure is a site change at all, a model proposes a patch to the failed step, and the patched workflow is replayed live at least three times and must reproduce the known-good outputs. A patch that verifies is saved as pending and its review is printed. **Nothing a model wrote is applied** until a person runs `compile approve`.
+- **If it passes only on a fallback selector** (the step's first selector failed and a lower-ranked one worked), the run is degraded. The working selector is moved to the front of its step: a promotion, built in code with no model. It is verified the same way and held for approval like any other patch, unless `--auto-promote` is set.
 
 ```sh
 compile heal orders.workflow.json --backend ./backend.mjs --provider anthropic
@@ -112,34 +113,47 @@ Options:
 - `-n`, `--runs <count>` live runs to verify a patch with (default and minimum 3).
 - `--timeout <ms>` fail a run that takes longer than this.
 - `--json` emit JSON (status, heal id, pending path and the corpus record) instead of the review.
+- `--auto-promote` apply a verified promotion without asking. See below.
 
 Exit codes:
 
-- `0` the workflow passed, or passed on triage's single retry. Nothing to heal.
+- `0` the workflow passed, or passed on triage's single retry. Also a degraded pass whose promotion was applied (`--auto-promote`) or could not be made.
 - `1` usage, IO or validation error, or no known-good outputs yet.
 - `2` the failure was not healed: triage sent it elsewhere (re-authenticate, back off, a person), a limit stopped it, or no patch verified.
 - `3` a verified patch is waiting for approval.
 
-The approval policy is always human. There is no flag for automatic acceptance: the confidence score that would drive it has not yet been measured against real heals.
+#### Automatic promotion (`--auto-promote`)
 
-### `compile approve <id>` and `compile reject <id>`
+With `--auto-promote`, a verified promotion is applied without asking, and the command prints what changed and how to undo it. This is the only change `compile heal` ever makes on its own. The first time it is used with a state directory it prints what it does and what it risks:
 
-Answer a pending heal. Both require `--reviewer <name>`, which is recorded in the corpus.
+- No model is involved. The selector was already in the workflow, written by a person, and has just worked on the live site.
+- Before it is applied, the promoted workflow must pass at least three live runs using only its new first selector, and reproduce the outputs of the run that just passed.
+- The risk: the fallback can be a different element that happens to give the same outputs. Outputs are compared with one known-good run, not a longer history yet, so a wrong element is not always caught.
+
+Even with the flag, a promotion waits for a person when it undoes an earlier heal, or when a person has reverted the same change before. Model-written patches always wait for a person: automatic acceptance of those is planned, but only once the benchmark has shown the confidence score can be trusted.
+
+### `compile approve <id>`, `compile reject <id>` and `compile revert <id>`
+
+Answer a pending heal, or undo an applied one. All three require `--reviewer <name>`, which is recorded in the corpus.
 
 `approve` checks the patch again before writing anything, because the pending file sits on disk and is not trusted on its own. It is refused if the workflow file changed since the heal (run the heal again), if the patched workflow on the pending file does not match the patch applied to the current file, or if the patch breaks any of the healer's rules. `--out <path>` writes the patched workflow elsewhere instead of over the original. Approval does not re-run verification, so approve soon after the heal.
 
 `reject` leaves the workflow alone and takes an optional `--note`.
 
+`revert` undoes an applied patch, whether a person approved it or `--auto-promote` applied it: it writes back the workflow exactly as it was before. It is refused if the workflow file has changed since the patch was applied (a later heal or a hand edit), rather than silently dropping that change. It takes an optional `--note`. Once reverted, the same change is never applied automatically again.
+
 ### State
 
 Everything `compile heal` remembers lives under `.compile/` (or `--dir`):
 
-| Path                     | What                                                                                                                                                       |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `corpus/heals.jsonl`     | Every heal and every review. Page content is stored as hashes. See the `@sfysh/healer` README.                                                             |
-| `heal-history.jsonl`     | When heals ran, for the cap of three heals per workflow per day, and what each held or accepted patch changed, to catch a heal that undoes an earlier one. |
-| `known-good/<id>.json`   | Outputs of the workflow's last passing run. This is extracted page data; treat it like the outputs themselves.                                             |
-| `pending/<heal id>.json` | A verified patch waiting for a person. Removed on approve or reject.                                                                                       |
+| Path                        | What                                                                                                                                                       |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `corpus/heals.jsonl`        | Every heal and every review. Page content is stored as hashes. See the `@sfysh/healer` README.                                                             |
+| `heal-history.jsonl`        | When heals ran, for the cap of three heals per workflow per day, and what each held or accepted patch changed, to catch a heal that undoes an earlier one. |
+| `known-good/<id>.json`      | Outputs of the workflow's last passing run. This is extracted page data; treat it like the outputs themselves.                                             |
+| `pending/<heal id>.json`    | A verified patch waiting for a person. Removed on approve or reject.                                                                                       |
+| `applied/<heal id>.json`    | The workflow as it was before an applied patch, for `compile revert`. Removed on revert.                                                                   |
+| `auto-promote-acknowledged` | Marks that the `--auto-promote` risk notice has been shown. Delete it to see the notice again.                                                             |
 
 Keep `.compile/` out of version control. Run one `compile heal` at a time per state directory.
 

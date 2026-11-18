@@ -31,7 +31,7 @@ import type {
   PatchVerification,
   VerifyPatchInput,
 } from './accept.js';
-import type { PatchClass } from './allowlist.js';
+import type { ModelPatchClass } from './allowlist.js';
 import {
   DEFAULT_HEAL_MAX_TOKENS,
   generateInsertStepPatch,
@@ -93,7 +93,7 @@ export interface HealInput {
 
 /** One trip through a generator, and what became of its patch. */
 export interface HealAttempt {
-  patchClass: PatchClass;
+  patchClass: ModelPatchClass;
   generated: GeneratePatchResult;
   /** Present when the generator returned a patch. */
   verification?: PatchVerification;
@@ -144,7 +144,7 @@ export type HealResult =
       /** A patch verified. It is accepted, or waiting for a person. */
       status: 'decided';
       decision: Extract<PatchDecision, { status: 'accepted' | 'awaiting_approval' }>;
-      patchClass: PatchClass;
+      patchClass: ModelPatchClass;
       triage: TriageDecision;
       attempts: HealAttempt[];
       usage: TokenUsage;
@@ -167,7 +167,7 @@ export type HealResult =
 const COVERED = /intercepts pointer events|covered by another element/i;
 
 /** The order the patch classes are tried in for this failure. */
-export function patchClassOrder(failure: Pick<HealFailure, 'message'>): PatchClass[] {
+export function patchClassOrder(failure: Pick<HealFailure, 'message'>): ModelPatchClass[] {
   return COVERED.test(failure.message) ? ['insert_step', 'selector'] : ['selector', 'insert_step'];
 }
 

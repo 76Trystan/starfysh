@@ -40,6 +40,7 @@ import type {
 import type { PatchClass } from './allowlist.js';
 import { canonical } from './equal.js';
 import type { HealAttempt, HealCap, HealResult } from './heal.js';
+import type { PromoteResult } from './promote.js';
 import { PROMPT_ERROR_MAX_CHARS } from './prompt.js';
 import type { ReachApproval } from './reach.js';
 import type { ReversionCode } from './revert.js';
@@ -168,8 +169,17 @@ export interface HealCorpusRecord {
   /** `hashWorkflow` of the workflow that failed. */
   workflowHash: string;
   irVersion: string;
+  /**
+   * What started the heal. `failure` (or absent, in records written before
+   * promotions existed): a failed run, through triage. `degraded`: a run
+   * that passed on a fallback candidate, promoted without a model.
+   */
+  trigger?: 'failure' | 'degraded';
+  /** For a `degraded` trigger: the step and the candidate that worked. */
+  degraded?: { stepId: string; candidateIndex: number; selector: SelectorCandidate };
   failure?: CorpusFailure;
-  triage: CorpusTriage;
+  /** How triage classified the failure. Absent for a promotion, which has no failure. */
+  triage?: CorpusTriage;
   /** `sha256:` of the page snapshot the heal worked from. The snapshot itself is never written. */
   snapshotHash?: string;
   /** Whether that snapshot was cut to fit the capture cap. */
@@ -195,7 +205,11 @@ export interface ReviewCorpusRecord {
   /** The heal record this answers. */
   healId: string;
   workflowId: string;
-  verdict: 'approved' | 'rejected';
+  /**
+   * `approved` and `rejected` answer a held heal. `reverted` undoes a heal
+   * that was applied, by a person or by policy.
+   */
+  verdict: 'approved' | 'rejected' | 'reverted';
   reviewer: string;
   /** Free text from the reviewer, redacted and cut. */
   note?: string;
@@ -242,6 +256,7 @@ export function healRecord(input: HealRecordInput): HealCorpusRecord {
     workflowId: workflow.id,
     workflowHash: hashWorkflow(workflow),
     irVersion: workflow.irVersion,
+    trigger: 'failure',
     triage: corpusTriage(result),
     knownGoodHash: canonical(input.knownGood.outputs),
     policy: input.policy ?? { mode: 'human' },
@@ -267,10 +282,83 @@ export function healRecord(input: HealRecordInput): HealCorpusRecord {
   return redactDeep(record, input.redact);
 }
 
+export interface PromotionRecordInput {
+  /** The workflow passed to `promote()`. */
+  workflow: Workflow;
+  /** The known-good outputs passed to `promote()`. */
+  knownGood: KnownGood;
+  /** The policy passed to `promote()`. Default `{ mode: 'human' }`. */
+  policy?: AcceptancePolicy;
+  /** What `promote()` returned, other than `none`, which has nothing to record. */
+  result: Exclude<PromoteResult, { status: 'none' }>;
+  redact: RedactFn;
+  includeOutputs?: boolean;
+  at?: Date;
+  id?: string;
+}
+
+/**
+ * Build the corpus record for one promotion. Same record kind as a heal,
+ * with `trigger: 'degraded'`, no triage or failure, one attempt of class
+ * `promotion`, and no tokens.
+ */
+export function promotionRecord(input: PromotionRecordInput): HealCorpusRecord {
+  const { workflow, result } = input;
+  const { attempt } = result;
+
+  const corpusAttemptOut: CorpusAttempt = {
+    patchClass: 'promotion',
+    status: 'patch',
+    patch: structuredClone(attempt.patch),
+    score: structuredClone(attempt.score),
+    verification: corpusVerification(attempt.verification),
+  };
+  if (attempt.decision !== undefined) corpusAttemptOut.decision = corpusDecision(attempt.decision);
+  if (attempt.reversions !== undefined) {
+    corpusAttemptOut.reversions = attempt.reversions.map((r) => ({
+      code: r.code,
+      at: r.at.toISOString(),
+    }));
+  }
+
+  const record: HealCorpusRecord = {
+    corpusVersion: CORPUS_VERSION,
+    kind: 'heal',
+    id: input.id ?? randomUUID(),
+    at: (input.at ?? new Date()).toISOString(),
+    workflowId: workflow.id,
+    workflowHash: hashWorkflow(workflow),
+    irVersion: workflow.irVersion,
+    trigger: 'degraded',
+    degraded: {
+      stepId: attempt.degraded.stepId,
+      candidateIndex: attempt.degraded.candidateIndex,
+      selector: { ...attempt.degraded.selector },
+    },
+    knownGoodHash: canonical(input.knownGood.outputs),
+    policy: input.policy ?? { mode: 'human' },
+    attempts: [corpusAttemptOut],
+    outcome:
+      result.status === 'decided'
+        ? {
+            status: 'decided',
+            patchClass: 'promotion',
+            decision: result.decision.status,
+            hash: result.decision.hash,
+          }
+        : { status: 'not_healed', reason: 'exhausted' },
+    usage: { inputTokens: 0, outputTokens: 0 },
+  };
+  if (input.includeOutputs === true) {
+    record.knownGoodOutputs = structuredClone(input.knownGood.outputs);
+  }
+  return redactDeep(record, input.redact);
+}
+
 export interface ReviewRecordInput {
   /** The heal record being answered. */
   heal: Pick<HealCorpusRecord, 'id' | 'workflowId'>;
-  verdict: 'approved' | 'rejected';
+  verdict: 'approved' | 'rejected' | 'reverted';
   /** Who answered. Must not be blank. */
   reviewer: string;
   note?: string;

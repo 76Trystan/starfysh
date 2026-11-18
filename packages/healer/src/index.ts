@@ -33,6 +33,7 @@ export { checkPatchScope, STEP_FIELDS } from './scope.js';
 export type { ScopeResult, ScopeViolation, ScopeViolationCode } from './scope.js';
 
 export { checkPatchClass, INSERTABLE_ACTIONS, INSERTED_STEP_MAX_TIMEOUT_MS } from './allowlist.js';
+export type { ModelPatchClass } from './allowlist.js';
 export type {
   AllowlistResult,
   AllowlistViolation,
@@ -156,6 +157,7 @@ export {
   JsonlCorpus,
   MemoryCorpus,
   parseCorpus,
+  promotionRecord,
   readCorpus,
   reviewRecord,
 } from './corpus.js';
@@ -172,6 +174,7 @@ export type {
   HealCorpusRecord,
   HealRecordInput,
   JsonlCorpusOptions,
+  PromotionRecordInput,
   ReadCorpusResult,
   ReviewCorpusRecord,
   ReviewRecordInput,
@@ -179,3 +182,13 @@ export type {
 
 export { DEFAULT_HEAL_HISTORY_FILE, JsonlHealHistory } from './history.js';
 export type { JsonlHealHistoryOptions } from './history.js';
+
+export { promote, promotionPatch, PROMOTION_SCORE } from './promote.js';
+export type {
+  PromoteInput,
+  PromoteResult,
+  PromotionAttempt,
+  PromotionPatchResult,
+  PromotionSkip,
+  PromotionSkipReason,
+} from './promote.js';

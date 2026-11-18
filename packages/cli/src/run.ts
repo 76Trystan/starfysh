@@ -18,6 +18,7 @@ import {
   runApproveCommand,
   runHealCommand,
   runRejectCommand,
+  runRevertCommand,
   type HealCommandOptions,
   type ProviderName,
   type ReviewCommandResult,
@@ -51,6 +52,8 @@ export function run(argv: string[], ctx: RunContext): number | Promise<number> {
       return reviewCommand('approve', rest, ctx);
     case 'reject':
       return reviewCommand('reject', rest, ctx);
+    case 'revert':
+      return reviewCommand('revert', rest, ctx);
     default:
       ctx.stderr.write(`compile: unknown command '${command}'\n\n`);
       ctx.stderr.write(topLevelHelp());
@@ -336,6 +339,7 @@ async function healCommand(args: string[], ctx: RunContext): Promise<number> {
       runs: { type: 'string', short: 'n' },
       timeout: { type: 'string' },
       json: { type: 'boolean' },
+      'auto-promote': { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
     },
     allowPositionals: true,
@@ -403,6 +407,7 @@ async function healCommand(args: string[], ctx: RunContext): Promise<number> {
     file: parsed.positionals[0]!,
     backend,
     format: parsed.values.json ? 'json' : 'human',
+    ...(parsed.values['auto-promote'] ? { autoPromote: true } : {}),
     ...(provider !== undefined ? { provider: provider as ProviderName } : {}),
     ...(typeof model === 'string' ? { model } : {}),
     ...(typeof knownGood === 'string' ? { knownGood } : {}),
@@ -426,11 +431,11 @@ async function healCommand(args: string[], ctx: RunContext): Promise<number> {
 }
 
 async function reviewCommand(
-  command: 'approve' | 'reject',
+  command: 'approve' | 'reject' | 'revert',
   args: string[],
   ctx: RunContext,
 ): Promise<number> {
-  const help = command === 'approve' ? approveHelp : rejectHelp;
+  const help = command === 'approve' ? approveHelp : command === 'reject' ? rejectHelp : revertHelp;
   const config: ParseArgsConfig = {
     args,
     options: {
@@ -485,7 +490,9 @@ async function reviewCommand(
       result = await runApproveCommand({ ...common, ...(typeof out === 'string' ? { out } : {}) });
     } else {
       const note = parsed.values.note;
-      result = await runRejectCommand({ ...common, ...(typeof note === 'string' ? { note } : {}) });
+      const withNote = { ...common, ...(typeof note === 'string' ? { note } : {}) };
+      result =
+        command === 'reject' ? await runRejectCommand(withNote) : await runRevertCommand(withNote);
     }
   } catch (err) {
     if (err instanceof HealCommandError || err instanceof VerifyLoadError) {
@@ -506,8 +513,14 @@ interpreter. If it passes, its outputs are saved as the known-good outputs
 every later patch is held to. If it fails, triage decides whether the
 healer may act; if so, a model proposes a patch to the failed step, the
 patched workflow is replayed live and must reproduce the known-good
-outputs, and the patch is saved for a person to approve. Nothing is
-applied without 'compile approve'. Every heal is recorded in the corpus.
+outputs, and the patch is saved for a person to approve. Nothing a model
+wrote is applied without 'compile approve'. Every heal is recorded in
+the corpus.
+
+A run that passes only on a fallback selector is degraded. The working
+selector is moved to the front of its step (a promotion, no model),
+verified the same way, and held for approval; with --auto-promote it is
+applied without asking. Undo any applied patch with 'compile revert'.
 
 The backend module must export 'pageFactory'. It may also export
 'provider' (used when --provider is not given), 'params', 'dispose',
@@ -526,10 +539,14 @@ Options:
                             minimum 3).
       --timeout <ms>        Fail a run that takes longer than this.
       --json                Emit JSON instead of a human-readable review.
+      --auto-promote        Apply a verified promotion of a working fallback
+                            selector without asking. Model-written patches
+                            still wait. Shows a risk notice the first time.
   -h, --help                Show this message.
 
 Exit codes:
-  0   the workflow passed (or passed on a retry); nothing to heal
+  0   the workflow passed (or passed on a retry), including a degraded pass
+      whose promotion was applied or could not be made
   1   usage, IO or validation error, or no known-good outputs yet
   2   the failure was not healed (routed elsewhere, capped, or no patch
       verified)
@@ -567,6 +584,21 @@ Options:
 `;
 }
 
+function revertHelp(): string {
+  return `compile revert <heal-id> --reviewer <name> [options]
+
+Undo a patch that was applied by 'compile approve' or by --auto-promote:
+write back the workflow exactly as it was before. Refused if the workflow
+file has changed since the patch was applied. Recorded in the corpus.
+
+Options:
+  -r, --reviewer <name>   Who is reverting (required).
+      --note <text>       Why, for the record.
+      --dir <path>        State directory (default .compile).
+  -h, --help              Show this message.
+`;
+}
+
 function topLevelHelp(): string {
   return `compile <command> [options]
 
@@ -576,6 +608,7 @@ Commands:
   heal <file>      Run a workflow; if it fails, propose a patch for review.
   approve <id>     Approve a pending heal and write the patched workflow.
   reject <id>      Reject a pending heal.
+  revert <id>      Undo an applied heal.
 
 Options:
   -h, --help       Show this message.

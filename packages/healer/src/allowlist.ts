@@ -11,7 +11,7 @@
 
 import { findStep } from '@sfysh/ir';
 import type { StepPatch, Workflow } from '@sfysh/ir';
-import { pointer, same } from './equal.js';
+import { canonical, pointer, same } from './equal.js';
 
 /**
  * The kind of heal a patch was requested as.
@@ -21,8 +21,15 @@ import { pointer, same } from './equal.js';
  * - `insert_step`: something new stands in the way (a banner, a slow
  *   panel). The patch inserts one `click` or `wait` next to the failed
  *   step.
+ * - `promotion`: a step passed on a fallback candidate. The patch moves
+ *   that candidate to the front. It reorders `target.candidates` and
+ *   changes nothing else, not even which candidates there are. No model
+ *   writes it (`promotionPatch`).
  */
-export type PatchClass = 'selector' | 'insert_step';
+export type PatchClass = 'selector' | 'insert_step' | 'promotion';
+
+/** The classes a model is asked for. A promotion is built in code. */
+export type ModelPatchClass = Exclude<PatchClass, 'promotion'>;
 
 export type AllowlistViolationCode =
   /** The patch operation does not belong to the class. */
@@ -35,6 +42,8 @@ export type AllowlistViolationCode =
   | 'field_not_allowed'
   /** A selector patch left the candidates as they were. */
   | 'no_change'
+  /** A promotion added, removed or edited a candidate instead of only reordering them. */
+  | 'not_a_reorder'
   /** An inserted step has an action the class does not allow. */
   | 'action_not_allowed'
   /** An inserted wait pauses for a fixed time instead of waiting for a condition. */
@@ -90,9 +99,10 @@ export function checkPatchClass(
     violations.push({ code, path, message });
   const after = patch.after as unknown as Loose;
 
-  if (patchClass === 'selector') {
+  if (patchClass === 'selector' || patchClass === 'promotion') {
+    const kind = patchClass === 'selector' ? 'A selector patch' : 'A promotion';
     if (patch.op !== 'replace') {
-      add('wrong_op', '/op', 'A selector patch must replace the failed step.');
+      add('wrong_op', '/op', `${kind} must replace the step.`);
       return { ok: false, violations };
     }
     const current = findStep(workflow, patch.stepId)?.step as unknown as Loose | undefined;
@@ -111,12 +121,30 @@ export function checkPatchClass(
         add(
           'field_not_allowed',
           `/after/${pointer(key)}`,
-          'A selector patch may change the target candidates and nothing else.',
+          `${kind} may change the target candidates and nothing else.`,
         );
       }
     }
     if (same(current.target, after.target)) {
       add('no_change', '/after/target', 'The patch leaves the target candidates as they were.');
+    } else if (patchClass === 'promotion') {
+      const before = current.target as Loose;
+      const next = after.target as Loose | undefined;
+      const others = (t: Loose | undefined) => {
+        const { candidates: _candidates, ...rest } = t ?? {};
+        return rest;
+      };
+      if (
+        next === undefined ||
+        !same(others(before), others(next)) ||
+        !sameMultiset(before.candidates, next.candidates)
+      ) {
+        add(
+          'not_a_reorder',
+          '/after/target',
+          'A promotion may only reorder the existing candidates, not add, remove or edit any.',
+        );
+      }
     }
   } else {
     if (patch.op === 'replace') {
@@ -146,4 +174,13 @@ export function checkPatchClass(
   }
 
   return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+
+/** Whether two arrays hold the same JSON values the same number of times, in any order. */
+function sameMultiset(a: unknown, b: unknown): boolean {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  const key = (v: unknown) => canonical(v);
+  const left = a.map(key).sort();
+  const right = b.map(key).sort();
+  return left.every((k, i) => k === right[i]);
 }

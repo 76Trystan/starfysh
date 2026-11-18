@@ -115,25 +115,123 @@ describe('compile heal, approve and reject', () => {
     expect(c.stdout.text).toContain('Exit codes');
   });
 
-  it('says so when the workflow passes only on a fallback selector', async () => {
-    const withFallback = structuredClone(workflow);
-    withFallback.steps[1]!.target!.candidates.push({
-      kind: 'role',
-      value: "link[name='My orders']",
-    });
-    writeFileSync(file, JSON.stringify(withFallback, null, 2), 'utf8');
+  describe('a run that passes only on a fallback selector', () => {
+    const withFallback = () => {
+      const wf = structuredClone(workflow);
+      wf.steps[1]!.target!.candidates.push({ kind: 'role', value: "link[name='My orders']" });
+      return wf;
+    };
+    const firstCandidate = () =>
+      JSON.parse(readFileSync(file, 'utf8')).steps[1].target.candidates[0].value;
+    const appliedIds = () => {
+      const applied = join(state, 'applied');
+      return existsSync(applied) ? readdirSync(applied).map((f) => f.replace(/\.json$/, '')) : [];
+    };
 
-    const { code, out } = await healWith(newSite);
-    expect(code).toBe(0);
-    expect(out).toContain('passed, but only on fallback selectors');
-    expect(out).toContain('Step click_002: the primary selector failed; candidate #2');
-    expect(pendingIds()).toEqual([]);
-
-    const json = await healWith(newSite, '--json');
-    expect(JSON.parse(json.out)).toMatchObject({
-      status: 'passed',
-      degraded: [{ stepId: 'click_002', candidateIndex: 1 }],
+    beforeEach(() => {
+      writeFileSync(file, JSON.stringify(withFallback(), null, 2), 'utf8');
     });
+
+    it('holds a model-free promotion for approval, and approve then revert round-trips', async () => {
+      const { code, out } = await healWith(newSite);
+      expect(code).toBe(3);
+      expect(out).toContain('passed, but only on fallback selectors');
+      expect(out).toContain('Step click_002: the primary selector failed; candidate #2');
+      expect(out).toContain('a promotion, no model');
+      expect(out).toContain('reordered');
+      const [id] = pendingIds();
+
+      const record = (await readCorpus(join(state, 'corpus'))).records[0] as HealCorpusRecord;
+      expect(record).toMatchObject({
+        id,
+        trigger: 'degraded',
+        outcome: { patchClass: 'promotion', decision: 'awaiting_approval' },
+        usage: { inputTokens: 0, outputTokens: 0 },
+      });
+
+      expect((await review('approve', id!, '--reviewer', 'dana')).code).toBe(0);
+      expect(firstCandidate()).toBe("link[name='My orders']");
+      expect(appliedIds()).toEqual([id]);
+      // The promoted workflow now passes cleanly.
+      expect((await healWith(newSite)).out).toContain('Nothing to heal');
+
+      const reverted = await review('revert', id!, '--reviewer', 'dana', '--note', 'Wrong link.');
+      expect(reverted.code).toBe(0);
+      expect(firstCandidate()).toBe("link[name='Orders']");
+      expect(appliedIds()).toEqual([]);
+      const { records } = await readCorpus(join(state, 'corpus'));
+      expect(records.map((r) => (r.kind === 'review' ? r.verdict : r.kind))).toEqual([
+        'heal',
+        'approved',
+        'reverted',
+      ]);
+    });
+
+    it('needs no model provider', async () => {
+      const { code } = await healWith(newSiteNoProvider);
+      expect(code).toBe(3);
+    });
+
+    it('applies the promotion with --auto-promote, shows the risk notice once, and can be undone', async () => {
+      const first = await healWith(newSite, '--auto-promote');
+      expect(first.code).toBe(0);
+      expect(first.out).toContain('Automatic promotion is on. What it does, and what it risks');
+      expect(first.out).toContain('Promoted automatically');
+      expect(firstCandidate()).toBe("link[name='My orders']");
+      expect(pendingIds()).toEqual([]);
+      const [id] = appliedIds();
+      const record = (await readCorpus(join(state, 'corpus'))).records[0] as HealCorpusRecord;
+      expect(record.attempts[0]!.decision).toMatchObject({
+        status: 'accepted',
+        acceptedBy: { kind: 'policy' },
+      });
+      expect(record.policy).toEqual({ mode: 'auto_promotion' });
+
+      expect((await review('revert', id!, '--reviewer', 'dana')).code).toBe(0);
+      expect(firstCandidate()).toBe("link[name='Orders']");
+
+      // Degraded again. A person reverted exactly this change, so it is
+      // not applied automatically a second time: it waits for approval,
+      // and the notice is not shown again.
+      const again = await healWith(newSite, '--auto-promote', '--json');
+      expect(again.code).toBe(3);
+      const parsed = JSON.parse(again.out);
+      expect(parsed.notice).toBeUndefined();
+      expect(parsed.promotion).toBe('pending');
+      expect(parsed.heldBecause).toContain('reverted');
+      expect(firstCandidate()).toBe("link[name='Orders']");
+    });
+
+    it('refuses to revert when the workflow file changed after the patch was applied', async () => {
+      await healWith(newSite, '--auto-promote');
+      const [id] = appliedIds();
+      const edited = { ...JSON.parse(readFileSync(file, 'utf8')), name: 'Edited by hand' };
+      writeFileSync(file, JSON.stringify(edited, null, 2), 'utf8');
+
+      const reverted = await review('revert', id!, '--reviewer', 'dana');
+      expect(reverted.code).toBe(1);
+      expect(reverted.err).toContain('has changed since the patch was applied');
+      expect(JSON.parse(readFileSync(file, 'utf8')).name).toBe('Edited by hand');
+      expect(appliedIds()).toEqual([id]);
+    });
+  });
+
+  it('can revert an approved model-written heal too', async () => {
+    const id = await heldHeal();
+    expect((await review('approve', id, '--reviewer', 'dana')).code).toBe(0);
+    expect((await review('revert', id, '--reviewer', 'dana')).code).toBe(0);
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual(workflow);
+  });
+
+  it('refuses a revert for a heal that was never applied', async () => {
+    const result = await review(
+      'revert',
+      '00000000-0000-4000-8000-000000000000',
+      '--reviewer',
+      'x',
+    );
+    expect(result.code).toBe(1);
+    expect(result.err).toContain('no applied heal');
   });
 
   it('saves known-good outputs when the workflow passes and does nothing else', async () => {
