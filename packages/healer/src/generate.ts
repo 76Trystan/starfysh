@@ -26,6 +26,7 @@ import type { PageSnapshot } from '@sfysh/runtime';
 import type { PatchClass } from './allowlist.js';
 import { checkPatch } from './check.js';
 import type { PatchViolation } from './check.js';
+import { canonical } from './equal.js';
 import { buildHealPrompt, HealInputError } from './prompt.js';
 import type { HealFailure, HealTriage } from './prompt.js';
 import { parseHealResponse } from './response.js';
@@ -83,6 +84,12 @@ export interface HealCall {
   /** The exact model that answered. */
   model: string;
   usage: TokenUsage;
+  /**
+   * `sha256:` over the messages sent, which are already redacted. It ties a
+   * corpus record to a provider's own log without storing the page. Every
+   * prompt carries a fresh delimiter id, so no two calls share a hash.
+   */
+  promptHash: string;
 }
 
 export type GeneratePatchRejection =
@@ -243,7 +250,11 @@ async function generate(
     }
     throw error;
   }
-  const call: HealCall = { model: completion.model, usage: completion.usage };
+  const call: HealCall = {
+    model: completion.model,
+    usage: completion.usage,
+    promptHash: canonical(prompt.messages),
+  };
 
   const response = parseHealResponse(completion, prompt);
   if (response.status === 'cannot_heal') {

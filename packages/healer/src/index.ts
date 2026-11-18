@@ -146,3 +146,33 @@ export type { PatchRecord, Reversion, ReversionCode } from './revert.js';
 
 export { heal, patchClassOrder } from './heal.js';
 export type { HealAttempt, HealCap, HealInput, HealResult, HealVerifyOptions } from './heal.js';
+
+export {
+  CORPUS_FILE,
+  CORPUS_TEXT_MAX_CHARS,
+  CORPUS_VERSION,
+  DEFAULT_CORPUS_DIR,
+  healRecord,
+  JsonlCorpus,
+  MemoryCorpus,
+  parseCorpus,
+  readCorpus,
+  reviewRecord,
+} from './corpus.js';
+export type {
+  CorpusAttempt,
+  CorpusDecision,
+  CorpusFailure,
+  CorpusOutcome,
+  CorpusProblem,
+  CorpusRecord,
+  CorpusTriage,
+  CorpusVerification,
+  CorpusWriter,
+  HealCorpusRecord,
+  HealRecordInput,
+  JsonlCorpusOptions,
+  ReadCorpusResult,
+  ReviewCorpusRecord,
+  ReviewRecordInput,
+} from './corpus.js';

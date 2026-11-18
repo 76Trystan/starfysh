@@ -32,7 +32,7 @@ Four more packages are in the repo but not yet published:
 
 **What this means in practice.** You can hand-author a workflow IR following the schema in `@sfysh/ir`, compile it with `@sfysh/compiler`, and execute the result via `@sfysh/runtime` plus Playwright. Or start from an existing Playwright script, lift it into IR with `@sfysh/parser`, and feed it into the same pipeline. That is a working, deterministic path from JSON (or TypeScript) to a running browser automation.
 
-**What is not here yet.** The last pieces of the healer loop (a readable diff for the reviewer, the `compile heal` command, and a first run against a real model), and the MCP server that lets coding agents drive the stack. Those are the remaining components that take Starfysh from "a well-typed Playwright toolkit" to "an automation you can actually leave running". See the [roadmap](#roadmap).
+**What is not here yet.** The last pieces of the healer loop (the `compile heal` command and a first run against a real model), and the MCP server that lets coding agents drive the stack. Those are the remaining components that take Starfysh from "a well-typed Playwright toolkit" to "an automation you can actually leave running". See the [roadmap](#roadmap).
 
 ## Try it in 5 minutes
 
@@ -178,10 +178,10 @@ Done so far:
 - `@sfysh/verifier` is published and replays workflows N times with postcondition evaluation, output-stability checks, an IR interpreter, and cassette replay.
 - `@sfysh/triage` classifies failures deterministically without a model: postcondition results first, then typed runtime errors, with HTTP status rules reserved for Phase 2.
 - `@sfysh/providers` wraps Anthropic, OpenAI, Gemini, and Ollama behind one interface, with redaction applied before anything leaves the process.
-- `@sfysh/healer` turns a failure into a candidate patch (a new set of ranked selectors, or one inserted `click` or `wait`), rejects anything outside a narrow allowlist, scores what remains against the page snapshot, and verifies it live against the last known-good outputs before holding it for a person to approve.
+- `@sfysh/healer` turns a failure into a candidate patch (a new set of ranked selectors, or one inserted `click` or `wait`), rejects anything outside a narrow allowlist, scores what remains against the page snapshot, and verifies it live against the last known-good outputs before holding it for a person to approve with a semantic diff of what changed. Every heal is written to a local audit corpus, with hashes in place of page content.
 - `@sfysh/cli` drives parse and verify from the command line.
 
-Remaining: a readable semantic diff for healer approvals and the `compile heal` command, the MCP server so coding agents can drive the stack, a 20-task benchmark with a synthetic-drift suite to measure the false-heal rate, and a private beta followed by the public launch.
+Remaining: the `compile heal` command, the MCP server so coding agents can drive the stack, a 20-task benchmark with a synthetic-drift suite to measure the false-heal rate, and a private beta followed by the public launch.
 
 ### Phase 2: API healing
 

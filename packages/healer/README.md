@@ -2,7 +2,7 @@
 
 Healer for Starfysh. When a workflow step fails and triage classifies the failure as a site change, the healer asks a model to re-derive that one step, validates the patch, verifies the patched workflow against the live site, and hands a reviewable diff to a person.
 
-**Status: in progress.** The package is private and unpublished, and no real model has answered its prompts yet. `heal()` runs the whole path: triage, the patch generators, the patch checks, live verification against known-good outputs, and an acceptance decision that waits for a person by default, all inside caps on attempts, tokens and heals per day. Nothing here writes a patched workflow anywhere; storing an accepted one is the caller's job.
+**Status: in progress.** The package is private and unpublished, and no real model has answered its prompts yet. `heal()` runs the whole path: triage, the patch generators, the patch checks, live verification against known-good outputs, and an acceptance decision that waits for a person by default, all inside caps on attempts, tokens and heals per day. Nothing here writes a patched workflow anywhere; storing an accepted one is the caller's job. Each heal can be written to a local audit corpus (see [Recording every heal](#recording-every-heal)).
 
 ## Healing a failure
 
@@ -502,9 +502,41 @@ Every candidate change names the selector compiled code will now try first, and 
 
 **Untrusted text.** Selector values, intents and the rationale were written by a model that read a web page. Every value is printed on one line with control characters, escape sequences and Unicode line separators replaced by a space, and cut to 200 characters (2,000 for the rationale), so nothing in a patch can recolour the terminal, clear it, or forge a line such as "Approved: yes".
 
+## Recording every heal
+
+Every heal should be written down, whatever its outcome. `healRecord()` turns a heal's input and result into one plain JSON record, and `JsonlCorpus` appends it to `.compile/corpus/heals.jsonl`.
+
+```ts
+import { heal, healRecord, JsonlCorpus, reviewRecord } from '@sfysh/healer';
+
+const corpus = new JsonlCorpus(); // or new JsonlCorpus({ dir })
+const result = await heal(input);
+const record = healRecord({
+  workflow: input.workflow,
+  knownGood: input.knownGood,
+  policy: input.policy,
+  result,
+  redact: input.redact,
+});
+await corpus.write(record);
+
+// Later, when a person answers a held heal:
+await corpus.write(reviewRecord({ heal: record, verdict: 'approved', reviewer: 'dana' }));
+```
+
+A heal record holds the workflow hash, the failure, the triage decision, the policy, and for each model call: the model that answered, a hash of the prompt, token usage, the patch, its confidence score with every signal, the verification result (runs, timings, a hash of each run's outputs, failure codes and the paths that drifted) and the decision. That is enough to audit a heal, and to compare scores against outcomes before any score threshold is trusted.
+
+**What is never written.** The page snapshot and the workflow's outputs are page content, so the record keeps their SHA-256 instead. Equal hashes still show that two heals saw the same page, or that a patched run produced the known-good data. Drift values are left out for the same reason; only the field paths are kept. Pass `includeOutputs: true` to keep the known-good outputs as well. Every string value in a record goes through `redact` before it is returned, as a backstop for anything that slipped past the IR rules.
+
+**Reviews are separate records.** A person may answer hours after the heal ran and the file is only ever appended to, so `reviewRecord()` writes a second record that points at the heal by id. A review must name the reviewer.
+
+**Reading it back.** `readCorpus(dir)` returns every record in the order written. A line that is not valid JSON, or is a record of another version or kind, is skipped and listed in `problems` instead of thrown, so a line cut off by a crash does not hide the rest. A missing corpus reads as empty. `MemoryCorpus` keeps records in memory for tests and benchmark runs.
+
+Use one writer per corpus directory. Two processes appending at once can interleave long lines.
+
 ## What is still to come
 
-- A local corpus of heal attempts, and the `compile heal` command.
+- The `compile heal` command, with a heal history and known-good outputs that persist between runs.
 
 ## How it fits with the other packages
 

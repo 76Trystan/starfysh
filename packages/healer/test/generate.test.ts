@@ -172,7 +172,11 @@ describe('generateSelectorPatch(): a good answer', () => {
   it('reports the model and token usage', async () => {
     const result = await generateSelectorPatch(input(fakeProvider(answer(healed()))));
     expect(result).toMatchObject({
-      call: { model: 'fake-model-2026', usage: { inputTokens: 1200, outputTokens: 90 } },
+      call: {
+        model: 'fake-model-2026',
+        usage: { inputTokens: 1200, outputTokens: 90 },
+        promptHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+      },
     });
   });
 
@@ -328,7 +332,11 @@ describe('generateSelectorPatch(): answers that are not a usable patch', () => {
     expect(await generateSelectorPatch(input(provider))).toEqual({
       status: 'cannot_heal',
       rationale: 'There is no submit button in the snapshot.',
-      call: { model: 'fake-model-2026', usage: { inputTokens: 1200, outputTokens: 90 } },
+      call: {
+        model: 'fake-model-2026',
+        usage: { inputTokens: 1200, outputTokens: 90 },
+        promptHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+      },
     });
   });
 
