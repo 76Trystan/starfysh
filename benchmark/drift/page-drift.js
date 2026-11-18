@@ -25,7 +25,7 @@ function __sfyshApplyDrifts(drifts) {
       try {
         __sfyshApplyOne(drift);
       } catch (error) {
-        window.__sfyshDriftErrors.push(String((error && error.message) || error));
+        window.__sfyshDriftErrors.push(String(error?.message || error));
       }
     }
     window.__sfyshDriftsApplied = true;
@@ -44,137 +44,139 @@ function __sfyshOne(selector) {
 }
 
 function __sfyshApplyOne(drift) {
-  switch (drift.op) {
-    case 'rename_text': {
-      // Visible text, and so the accessible name of a link, button,
-      // heading or label.
-      __sfyshOne(drift.selector).textContent = drift.text;
-      return;
-    }
-    case 'set_attribute': {
-      __sfyshOne(drift.selector).setAttribute(drift.name, drift.value);
-      return;
-    }
-    case 'remove_attribute': {
-      __sfyshOne(drift.selector).removeAttribute(drift.name);
-      return;
-    }
-    case 'retag': {
-      // A link becomes a button, a button a div, and so on. Attributes and
-      // children move over; the role changes with the tag.
-      const old = __sfyshOne(drift.selector);
-      const next = document.createElement(drift.tag);
-      for (const attr of Array.from(old.attributes)) next.setAttribute(attr.name, attr.value);
-      while (old.firstChild) next.appendChild(old.firstChild);
-      old.replaceWith(next);
-      return;
-    }
-    case 'reorder_columns': {
-      // Every row of the table, header included, gets its cells in the
-      // given order of old positions.
-      const table = __sfyshOne(drift.table);
-      for (const row of Array.from(table.querySelectorAll('tr'))) {
-        const cells = Array.from(row.children);
-        for (const index of drift.order) {
-          if (cells[index]) row.appendChild(cells[index]);
-        }
-      }
-      return;
-    }
-    case 'wrap_in_menu': {
-      // The element moves into a dropdown that is closed until its button
-      // is pressed: the flow now needs one more click.
-      const el = __sfyshOne(drift.selector);
-      const menu = document.createElement('div');
-      menu.className = 'menu';
-      const toggle = document.createElement('button');
-      toggle.type = 'button';
-      toggle.textContent = drift.menuLabel;
-      toggle.setAttribute('data-action', 'toggle-menu');
-      toggle.setAttribute('data-sfysh-truth', 'drift:menu');
-      const list = document.createElement('div');
-      list.setAttribute('data-role', 'menu-list');
-      list.hidden = true;
-      el.replaceWith(menu);
-      list.appendChild(el);
-      menu.appendChild(toggle);
-      menu.appendChild(list);
-      return;
-    }
-    case 'add_overlay': {
-      // A full-page banner that covers everything until dismissed.
-      const overlay = document.createElement('div');
-      overlay.className = 'overlay';
-      overlay.setAttribute('role', 'dialog');
-      overlay.setAttribute('aria-label', drift.text);
-      const box = document.createElement('div');
-      const text = document.createElement('p');
-      text.textContent = drift.text;
-      const dismiss = document.createElement('button');
-      dismiss.type = 'button';
-      dismiss.textContent = drift.dismissLabel;
-      dismiss.setAttribute('data-action', 'dismiss');
-      dismiss.setAttribute('data-sfysh-truth', 'drift:dismiss');
-      box.appendChild(text);
-      box.appendChild(dismiss);
-      overlay.appendChild(box);
-      document.body.appendChild(overlay);
-      return;
-    }
-    case 'add_decoy': {
-      // A copy of an element with new text that behaves the same way. A
-      // heal that picks it produces the same outputs while acting on the
-      // wrong element: the false heal that output checks cannot see.
-      const el = __sfyshOne(drift.selector);
-      const decoy = el.cloneNode(true);
-      decoy.textContent = drift.text;
-      decoy.setAttribute('data-sfysh-truth', 'decoy');
-      decoy.removeAttribute('id');
-      if (drift.position === 'before') el.before(decoy);
-      else el.after(decoy);
-      return;
-    }
-    case 'remove': {
-      __sfyshOne(drift.selector).remove();
-      return;
-    }
-    case 'on_loads': {
-      // Apply the nested drifts only on some page loads, counted from 1
-      // per page factory: an A/B test, or a banner that shows sometimes.
-      if (drift.loads.indexOf(window.__sfyshLoad || 1) === -1) return;
-      for (const inner of drift.drifts) __sfyshApplyOne(inner);
-      return;
-    }
-    case 'shadow': {
-      // Move the element into an open shadow root. Events are retargeted
-      // to the host, so the fixtures read event.composedPath()[0].
-      const el = __sfyshOne(drift.selector);
-      const host = document.createElement('span');
-      host.setAttribute('data-sfysh-shadow-host', '');
-      el.replaceWith(host);
-      host.attachShadow({ mode: 'open' }).appendChild(el);
-      return;
-    }
-    case 'iframe': {
-      // Move the element into an iframe. The page's own script does not
-      // run inside it, so the element stops working as well as moving.
-      const el = __sfyshOne(drift.selector);
-      const frame = document.createElement('iframe');
-      frame.setAttribute('title', drift.title);
-      frame.srcdoc = '<!doctype html><body>' + el.outerHTML + '</body>';
-      el.replaceWith(frame);
-      return;
-    }
-    case 'delay': {
-      // Take the element out of the page and put it back after a delay:
-      // content that renders late.
-      const el = __sfyshOne(drift.selector);
-      const placeholder = document.createComment('sfysh-delayed');
-      el.replaceWith(placeholder);
-      setTimeout(() => placeholder.replaceWith(el), drift.ms);
-      return;
-    }
-    default:
-      throw new Error('unknown drift op: ' + drift.op);
-  }
+  const operator = __SFYSH_OPERATORS[drift.op];
+  if (!operator) throw new Error('unknown drift op: ' + drift.op);
+  operator(drift);
 }
+
+// One function per operator, keyed by `op`. Adding an operator is adding an
+// entry here and a member of the `Drift` type in drift.ts.
+const __SFYSH_OPERATORS = {
+  // Visible text, and so the accessible name of a link, button, heading or label.
+  rename_text(drift) {
+    __sfyshOne(drift.selector).textContent = drift.text;
+  },
+
+  set_attribute(drift) {
+    __sfyshOne(drift.selector).setAttribute(drift.name, drift.value);
+  },
+
+  remove_attribute(drift) {
+    __sfyshOne(drift.selector).removeAttribute(drift.name);
+  },
+
+  // A link becomes a button, a button a div, and so on. Attributes and
+  // children move over; the role changes with the tag.
+  retag(drift) {
+    const old = __sfyshOne(drift.selector);
+    const next = document.createElement(drift.tag);
+    for (const attr of Array.from(old.attributes)) next.setAttribute(attr.name, attr.value);
+    while (old.firstChild) next.appendChild(old.firstChild);
+    old.replaceWith(next);
+  },
+
+  // Every row of the table, header included, gets its cells in the given
+  // order of old positions.
+  reorder_columns(drift) {
+    const table = __sfyshOne(drift.table);
+    for (const row of Array.from(table.querySelectorAll('tr'))) {
+      const cells = Array.from(row.children);
+      for (const index of drift.order) {
+        if (cells[index]) row.appendChild(cells[index]);
+      }
+    }
+  },
+
+  // The element moves into a dropdown that is closed until its button is
+  // pressed: the flow now needs one more click.
+  wrap_in_menu(drift) {
+    const el = __sfyshOne(drift.selector);
+    const menu = document.createElement('div');
+    menu.className = 'menu';
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.textContent = drift.menuLabel;
+    toggle.dataset.action = 'toggle-menu';
+    toggle.dataset.sfyshTruth = 'drift:menu';
+    const list = document.createElement('div');
+    list.dataset.role = 'menu-list';
+    list.hidden = true;
+    el.replaceWith(menu);
+    list.appendChild(el);
+    menu.appendChild(toggle);
+    menu.appendChild(list);
+  },
+
+  // A full-page banner that covers everything until dismissed.
+  add_overlay(drift) {
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-label', drift.text);
+    const box = document.createElement('div');
+    const text = document.createElement('p');
+    text.textContent = drift.text;
+    const dismiss = document.createElement('button');
+    dismiss.type = 'button';
+    dismiss.textContent = drift.dismissLabel;
+    dismiss.dataset.action = 'dismiss';
+    dismiss.dataset.sfyshTruth = 'drift:dismiss';
+    box.appendChild(text);
+    box.appendChild(dismiss);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+  },
+
+  // A copy of an element with new text that behaves the same way. A heal
+  // that picks it produces the same outputs while acting on the wrong
+  // element: the false heal that output checks cannot see.
+  add_decoy(drift) {
+    const el = __sfyshOne(drift.selector);
+    const decoy = el.cloneNode(true);
+    decoy.textContent = drift.text;
+    decoy.dataset.sfyshTruth = 'decoy';
+    decoy.removeAttribute('id');
+    if (drift.position === 'before') el.before(decoy);
+    else el.after(decoy);
+  },
+
+  remove(drift) {
+    __sfyshOne(drift.selector).remove();
+  },
+
+  // Apply the nested drifts only on some page loads, counted from 1 per
+  // page factory: an A/B test, or a banner that shows sometimes.
+  on_loads(drift) {
+    if (!drift.loads.includes(window.__sfyshLoad || 1)) return;
+    for (const inner of drift.drifts) __sfyshApplyOne(inner);
+  },
+
+  // Move the element into an open shadow root. Events are retargeted to
+  // the host, so the fixtures read event.composedPath()[0].
+  shadow(drift) {
+    const el = __sfyshOne(drift.selector);
+    const host = document.createElement('span');
+    host.dataset.sfyshShadowHost = '';
+    el.replaceWith(host);
+    host.attachShadow({ mode: 'open' }).appendChild(el);
+  },
+
+  // Move the element into an iframe. The page's own script does not run
+  // inside it, so the element stops working as well as moving.
+  iframe(drift) {
+    const el = __sfyshOne(drift.selector);
+    const frame = document.createElement('iframe');
+    frame.setAttribute('title', drift.title);
+    frame.srcdoc = '<!doctype html><body>' + el.outerHTML + '</body>';
+    el.replaceWith(frame);
+  },
+
+  // Take the element out of the page and put it back after a delay:
+  // content that renders late.
+  delay(drift) {
+    const el = __sfyshOne(drift.selector);
+    const placeholder = document.createComment('sfysh-delayed');
+    el.replaceWith(placeholder);
+    setTimeout(() => placeholder.replaceWith(el), drift.ms);
+  },
+};
