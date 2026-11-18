@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -244,6 +252,34 @@ describe('compile heal, approve and reject', () => {
       outputs: [{ extract_003: 'Order 1042' }],
     });
     expect((await readCorpus(join(state, 'corpus'))).records).toEqual([]);
+  });
+
+  it('keeps the last ten passing runs as known-good history', async () => {
+    for (let i = 0; i < 12; i++) expect((await healWith(oldSite)).code).toBe(0);
+    const saved = JSON.parse(readFileSync(join(state, 'known-good', 'wf_orders.json'), 'utf8'));
+    expect(saved.history).toHaveLength(10);
+    expect(saved.history.at(-1).outputs).toEqual(saved.outputs);
+  });
+
+  it('reads a known-good file written before the history existed', async () => {
+    const goodDir = join(state, 'known-good');
+    mkdirSync(goodDir, { recursive: true });
+    writeFileSync(
+      join(goodDir, 'wf_orders.json'),
+      JSON.stringify({
+        workflowId: 'wf_orders',
+        workflowHash: 'sha256:old',
+        savedAt: '2026-11-01T00:00:00.000Z',
+        outputs: [{ extract_003: 'Order 1042' }],
+      }),
+      'utf8',
+    );
+    // A heal still runs against it (the history check is skipped, too little history)...
+    expect((await healWith(newSite)).code).toBe(3);
+    // ...and the next passing run starts the history from it.
+    expect((await healWith(oldSite)).code).toBe(0);
+    const saved = JSON.parse(readFileSync(join(goodDir, 'wf_orders.json'), 'utf8'));
+    expect(saved.history).toHaveLength(2);
   });
 
   it('refuses to heal without known-good outputs', async () => {

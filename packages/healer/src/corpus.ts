@@ -100,6 +100,15 @@ export interface CorpusVerification {
   stepRan?: 'confirmed' | 'unchecked';
   /** For `not_applied`: the validation errors' messages. */
   errors?: string[];
+  /**
+   * The known-good history check (ADR 0004): status, history size, and for
+   * `outside` the fields and checks that deviated. Never values.
+   */
+  envelope?: {
+    status: 'within' | 'outside' | 'insufficient_history';
+    runs: number;
+    deviations?: { path: string; check: string }[];
+  };
 }
 
 /** What `decidePatch` made of a verified patch. */
@@ -654,6 +663,15 @@ function corpusVerification(verification: PatchVerification): CorpusVerification
   } else {
     out.hash = verification.hash;
     out.stepRan = verification.stepRan;
+    if (verification.envelope !== undefined) {
+      out.envelope = { status: verification.envelope.status, runs: verification.envelope.runs };
+      if (verification.envelope.status === 'outside') {
+        out.envelope.deviations = verification.envelope.deviations.map((d) => ({
+          path: d.path,
+          check: d.check,
+        }));
+      }
+    }
   }
   return out;
 }

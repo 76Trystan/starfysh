@@ -22,9 +22,17 @@ import { applyPatch, hashWorkflow } from '@sfysh/ir';
 import type { StepPatch, ValidationError, Workflow } from '@sfysh/ir';
 import { DEFAULT_SECRET_ENV_PREFIX, EnvVaultResolver } from '@sfysh/runtime';
 import type { SnapshotOptions, VaultResolver } from '@sfysh/runtime';
-import { compareOutputs, createInterpreter, replay } from '@sfysh/verifier';
+import {
+  checkEnvelope,
+  compareOutputs,
+  createInterpreter,
+  ENVELOPE_HISTORY_RUNS,
+  replay,
+} from '@sfysh/verifier';
 import type {
   DriftField,
+  EnvelopeDeviation,
+  EnvelopeResult,
   PageDisposer,
   PageFactory,
   RunnerFn,
@@ -50,6 +58,15 @@ export const MIN_ACCEPT_RUNS = 3;
 export interface KnownGood {
   /** The run's outputs, as `ReplayOutcome.outputs` or `ctx.drainOutputs()` gave them. */
   outputs: unknown[];
+  /**
+   * Outputs of the last passing runs, oldest first, the latest usually
+   * equal to `outputs` (at most `ENVELOPE_HISTORY_RUNS` are used). Every
+   * verification run is checked against what they had in common
+   * (`checkEnvelope`); a patch whose runs fall outside it is held for a
+   * person as a possible false heal. Exact match against `outputs` stays
+   * the acceptance rule. Absent: the envelope check is skipped.
+   */
+  history?: unknown[][];
 }
 
 export interface VerifyPatchInput {
@@ -142,6 +159,12 @@ export type PatchVerification =
        * `unchecked` when a custom runner was used.
        */
       stepRan: 'confirmed' | 'unchecked';
+      /**
+       * How the runs' outputs compare with the known-good history
+       * (ADR 0004). `outside` holds the patch for a person as a possible
+       * false heal. Absent when no history was given.
+       */
+      envelope?: EnvelopeResult;
     };
 
 /**
@@ -245,6 +268,10 @@ export async function verifyPatch(input: VerifyPatchInput): Promise<PatchVerific
   }
 
   if (failures.length > 0) return { status: 'failed', patch: input.patch, failures, report };
+  const envelope =
+    input.knownGood.history !== undefined
+      ? envelopeOf(input.knownGood.history, report, input.tolerance)
+      : undefined;
   return {
     status: 'verified',
     patch: input.patch,
@@ -252,7 +279,33 @@ export async function verifyPatch(input: VerifyPatchInput): Promise<PatchVerific
     hash: applied.hash,
     report,
     stepRan: input.runner === undefined ? 'confirmed' : 'unchecked',
+    ...(envelope !== undefined ? { envelope } : {}),
   };
+}
+
+/**
+ * Check every run's outputs against the known-good history and merge the
+ * results: one deviation per field and check, whichever run showed it.
+ */
+function envelopeOf(
+  history: unknown[][],
+  report: VerifyReport,
+  tolerance: ToleranceMap | undefined,
+): EnvelopeResult {
+  const recent = history.slice(-ENVELOPE_HISTORY_RUNS);
+  const results = report.replays.map((r) => checkEnvelope(recent, r.outputs, tolerance));
+  const first = results[0];
+  if (first === undefined || first.status === 'insufficient_history') {
+    return { status: 'insufficient_history', runs: recent.length };
+  }
+  const deviations = new Map<string, EnvelopeDeviation>();
+  for (const result of results) {
+    if (result.status !== 'outside') continue;
+    for (const d of result.deviations) deviations.set(`${d.path}\u0000${d.check}`, d);
+  }
+  return deviations.size === 0
+    ? { status: 'within', runs: recent.length }
+    : { status: 'outside', runs: recent.length, deviations: [...deviations.values()] };
 }
 
 function fieldList(drift: DriftField[]): string {
@@ -297,7 +350,13 @@ export type ApprovalReasonCode =
   /** The patch undoes an earlier heal: the site may be switching between versions. */
   | 'reverts_earlier_heal'
   /** Verification used a custom runner, so it did not confirm the patched step ran. */
-  | 'step_not_confirmed';
+  | 'step_not_confirmed'
+  /**
+   * The patched runs matched the known-good outputs, but fall outside what
+   * the last passing runs had in common (ADR 0004): it may be reading the
+   * wrong element.
+   */
+  | 'possibly_false_heal';
 
 export interface ApprovalReason {
   code: ApprovalReasonCode;
@@ -435,6 +494,13 @@ export function decidePatch(input: DecidePatchInput): PatchDecision {
     reasons.push({
       code: 'step_not_confirmed',
       message: 'Verification did not confirm that the patched step ran.',
+    });
+  }
+  if (verification.envelope?.status === 'outside') {
+    const fields = [...new Set(verification.envelope.deviations.map((d) => d.path))];
+    reasons.push({
+      code: 'possibly_false_heal',
+      message: `Possible false heal: the patched workflow's outputs differ in kind from the last ${verification.envelope.runs} passing runs (${fields.join(', ')}). It may be reading the wrong element.`,
     });
   }
 

@@ -72,7 +72,8 @@ function walk(
   if (!deepEqual(a, b)) recordDrift(drift, path, a, b);
 }
 
-function resolveRule(path: string, tolerance: ToleranceMap): ToleranceRule | undefined {
+/** The tolerance rule that applies to a concrete output path (indices as numbers), if any. */
+export function resolveRule(path: string, tolerance: ToleranceMap): ToleranceRule | undefined {
   if (tolerance[path]) return tolerance[path];
   for (const [pattern, rule] of Object.entries(tolerance)) {
     if (pattern.includes('*') && matchesPattern(path, pattern)) return rule;

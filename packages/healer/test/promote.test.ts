@@ -374,3 +374,65 @@ describe('promotionRecord', () => {
     expect(JSON.stringify(record)).not.toContain('Order 1042');
   });
 });
+
+describe('the known-good history check (possibly_false_heal)', () => {
+  // The heading is tolerated, so the exact comparison passes whatever it
+  // reads. The history says it always reads like "Order 1042".
+  const tolerance = { '*.extract_003': 'ignore' as const };
+  const history = ['Order 1040', 'Order 1041', 'Order 1042'].map((h) => [{ extract_003: h }]);
+  const promoteOn = (heading: string, withHistory = history) =>
+    promote({
+      workflow,
+      degraded: [myOrders],
+      knownGood: { outputs: [{ extract_003: 'Order 1042' }], history: withHistory },
+      pageFactory: () => sitePage(['My orders'], heading),
+      history: new MemoryHealHistory(),
+      policy: { mode: 'auto_promotion' },
+      verify: { tolerance },
+    });
+
+  it('accepts a promotion whose outputs look like the history', async () => {
+    const result = await promoteOn('Order 1043');
+    if (result.status !== 'decided') throw new Error('expected a decision');
+    expect(result.decision.status).toBe('accepted');
+    expect(result.attempt.verification).toMatchObject({ envelope: { status: 'within', runs: 3 } });
+  });
+
+  it('holds one that reads a different kind of value, even under auto_promotion', async () => {
+    const result = await promoteOn('Widget');
+    if (result.status !== 'decided') throw new Error('expected a decision');
+    expect(result.decision.status).toBe('awaiting_approval');
+    if (result.decision.status !== 'awaiting_approval') return;
+    expect(result.decision.reasons.map((r) => r.code)).toEqual(['possibly_false_heal']);
+    expect(result.decision.reasons[0]!.message).toContain('*.extract_003');
+    expect(result.decision.reasons[0]!.message).not.toContain('Widget');
+
+    const record = promotionRecord({
+      workflow,
+      knownGood: { outputs: [] },
+      result,
+      redact: (t) => t,
+    });
+    expect(record.attempts[0]!.verification?.envelope).toEqual({
+      status: 'outside',
+      runs: 3,
+      deviations: [{ path: '*.extract_003', check: 'shape' }],
+    });
+  });
+
+  it('skips the check with too little history, and says so', async () => {
+    const result = await promoteOn('Widget', history.slice(0, 2));
+    if (result.status !== 'decided') throw new Error('expected a decision');
+    expect(result.decision.status).toBe('accepted');
+    expect(result.attempt.verification).toMatchObject({
+      envelope: { status: 'insufficient_history', runs: 2 },
+    });
+  });
+
+  it('uses only the last ten runs of a longer history', async () => {
+    const old = Array.from({ length: 15 }, () => [{ extract_003: 'Widget' }]);
+    const result = await promoteOn('Widget', [...old, ...history]);
+    if (result.status !== 'decided') throw new Error('expected a decision');
+    expect(result.attempt.verification).toMatchObject({ envelope: { runs: 10 } });
+  });
+});

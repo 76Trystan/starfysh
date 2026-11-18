@@ -55,3 +55,17 @@ export type {
   StabilityReport,
   VerifyReport,
 } from './types.js';
+
+export {
+  checkEnvelope,
+  ENVELOPE_HISTORY_RUNS,
+  learnEnvelope,
+  MIN_ENVELOPE_RUNS,
+  shapeOf,
+} from './envelope.js';
+export type {
+  EnvelopeCheck,
+  EnvelopeDeviation,
+  EnvelopeResult,
+  OutputEnvelope,
+} from './envelope.js';

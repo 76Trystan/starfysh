@@ -128,7 +128,8 @@ With `--auto-promote`, a verified promotion is applied without asking, and the c
 
 - No model is involved. The selector was already in the workflow, written by a person, and has just worked on the live site.
 - Before it is applied, the promoted workflow must pass at least three live runs using only its new first selector, and reproduce the outputs of the run that just passed.
-- The risk: the fallback can be a different element that happens to give the same outputs. Outputs are compared with one known-good run, not a longer history yet, so a wrong element is not always caught.
+- Its outputs are also checked against what the last ten passing runs had in common: types, lengths, numeric ranges and the form of each value. A promotion whose outputs look different is held for you as a possible false heal.
+- The risk: the fallback can be a different element that gives outputs of the same kind and the same values. Neither check catches that.
 
 Even with the flag, a promotion waits for a person when it undoes an earlier heal, or when a person has reverted the same change before. Model-written patches always wait for a person: automatic acceptance of those is planned, but only once the benchmark has shown the confidence score can be trusted.
 
@@ -146,14 +147,14 @@ Answer a pending heal, or undo an applied one. All three require `--reviewer <na
 
 Everything `compile heal` remembers lives under `.compile/` (or `--dir`):
 
-| Path                        | What                                                                                                                                                       |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `corpus/heals.jsonl`        | Every heal and every review. Page content is stored as hashes. See the `@sfysh/healer` README.                                                             |
-| `heal-history.jsonl`        | When heals ran, for the cap of three heals per workflow per day, and what each held or accepted patch changed, to catch a heal that undoes an earlier one. |
-| `known-good/<id>.json`      | Outputs of the workflow's last passing run. This is extracted page data; treat it like the outputs themselves.                                             |
-| `pending/<heal id>.json`    | A verified patch waiting for a person. Removed on approve or reject.                                                                                       |
-| `applied/<heal id>.json`    | The workflow as it was before an applied patch, for `compile revert`. Removed on revert.                                                                   |
-| `auto-promote-acknowledged` | Marks that the `--auto-promote` risk notice has been shown. Delete it to see the notice again.                                                             |
+| Path                        | What                                                                                                                                                                                    |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `corpus/heals.jsonl`        | Every heal and every review. Page content is stored as hashes. See the `@sfysh/healer` README.                                                                                          |
+| `heal-history.jsonl`        | When heals ran, for the cap of three heals per workflow per day, and what each held or accepted patch changed, to catch a heal that undoes an earlier one.                              |
+| `known-good/<id>.json`      | Outputs of the workflow's last passing run, and of the last ten (the history a patch's outputs are checked against). This is extracted page data; treat it like the outputs themselves. |
+| `pending/<heal id>.json`    | A verified patch waiting for a person. Removed on approve or reject.                                                                                                                    |
+| `applied/<heal id>.json`    | The workflow as it was before an applied patch, for `compile revert`. Removed on revert.                                                                                                |
+| `auto-promote-acknowledged` | Marks that the `--auto-promote` risk notice has been shown. Delete it to see the notice again.                                                                                          |
 
 Keep `.compile/` out of version control. Run one `compile heal` at a time per state directory.
 

@@ -440,7 +440,17 @@ const decision = decidePatch({
 
 Never verify against a cassette: it replays what the old site returned, so it says nothing about a patch.
 
-**Decision.** `decidePatch()` runs `checkPatch()` again itself, then returns `rejected`, `awaiting_approval` with every reason, or `accepted`. The default policy, `{ mode: 'human' }`, holds every patch for a person. `{ mode: 'auto', minScore }` (with `minScore` at least 0.8) accepts a verified selector patch without review, but still holds an insert-step patch, one the checks flagged for approval, one scoring below `minScore`, one whose step run was not confirmed, and one that undoes an earlier heal. `{ mode: 'auto_promotion' }` accepts only a verified `promotion` (below) and treats every other class as `human` does; reversions, flagged approvals and unconfirmed step runs still hold a promotion for a person.
+**Possible false heals.** Matching the last run exactly has a hole: a field the tolerance map exempts can change completely and still match, so a patch that starts reading the wrong column passes if that column is tolerated. Pass `knownGood.history`, the outputs of the last passing runs (oldest first, at most ten are used), and every verification run is also checked against what those runs had in common, with `checkEnvelope` from `@sfysh/verifier`. Per field, with array positions folded together so every table row counts, it checks:
+
+- the JSON types seen;
+- whether the field is always present;
+- a band of array lengths;
+- a numeric range;
+- the form of each string (letters, digits and punctuation, so an order number does not turn into a product name).
+
+Tolerance exempts a field from the range check only. A tolerated field may move, but it may not turn into a different kind of thing. A patch outside the envelope still verifies, and is recorded as `envelope: { status: 'outside', deviations }` on the verification. `decidePatch` then holds it for a person with the reason `possibly_false_heal`, under every policy. Messages name fields, never values. With fewer than three history runs the check is skipped and reported as `insufficient_history`. It cannot catch a wrong element that produces values of the same kind as the right one.
+
+**Decision.** `decidePatch()` runs `checkPatch()` again itself, then returns `rejected`, `awaiting_approval` with every reason, or `accepted`. The default policy, `{ mode: 'human' }`, holds every patch for a person. `{ mode: 'auto', minScore }` (with `minScore` at least 0.8) accepts a verified selector patch without review, but still holds an insert-step patch, one the checks flagged for approval, one scoring below `minScore`, one whose step run was not confirmed, one flagged as a possible false heal, and one that undoes an earlier heal. `{ mode: 'auto_promotion' }` accepts only a verified `promotion` (below) and treats every other class as `human` does; reversions, flagged approvals and unconfirmed step runs still hold a promotion for a person.
 
 **Approval.** `approvePatch()` is the only way a held patch becomes accepted. It records the reviewer and the time, and refuses if the workflow has changed since the patch was verified.
 

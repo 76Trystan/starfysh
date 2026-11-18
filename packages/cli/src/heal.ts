@@ -68,7 +68,7 @@ import {
 import type { Provider, RedactFn } from '@sfysh/providers';
 import { DEFAULT_SECRET_ENV_PREFIX, EnvVaultResolver } from '@sfysh/runtime';
 import type { DegradedStep, VaultResolver } from '@sfysh/runtime';
-import { createInterpreter, replay } from '@sfysh/verifier';
+import { createInterpreter, ENVELOPE_HISTORY_RUNS, replay } from '@sfysh/verifier';
 import type { ReplayOutcome } from '@sfysh/verifier';
 import { loadBackendModule, loadWorkflow } from './verify.js';
 import type { LoadedBackend } from './verify.js';
@@ -204,9 +204,11 @@ export const AUTO_PROMOTE_NOTICE = [
   '    selector was already in the workflow and has just worked on the live site.',
   '  - Before it is applied, the promoted workflow must pass at least three live runs using only',
   '    its new first selector, and reproduce the outputs of the run that just passed.',
-  '  - Risk: the fallback can be a different element that happens to give the same outputs. Outputs',
-  '    are compared with one known-good run, not a longer history, so a wrong element is not',
-  '    always caught.',
+  '  - Its outputs are also checked against what the last ten passing runs had in common (types,',
+  '    lengths, ranges, the form of each value). A promotion whose outputs look different waits for',
+  '    you as a possible false heal.',
+  '  - Risk: the fallback can be a different element that gives outputs of the same kind and the',
+  '    same values. Neither check catches that.',
   '  - A promotion that undoes an earlier heal still waits for you, as does every model-written patch.',
   '  - Every automatic promotion is recorded in the corpus and can be undone with',
   "    'compile revert <heal id> --reviewer <name>'.",
@@ -280,7 +282,8 @@ export async function runHealCommand(opts: HealCommandOptions): Promise<HealComm
       paths,
       workflow,
       degraded,
-      knownGood: { outputs: first.outputs },
+      // The run just saved, with the history it was added to.
+      knownGood: (await loadKnownGood(paths, workflow.id)) ?? { outputs: first.outputs },
       knownGoodSaved: saved,
       backend,
       verify,
@@ -843,7 +846,14 @@ interface KnownGoodFile {
   workflowId: string;
   workflowHash: string;
   savedAt: string;
+  /** The latest passing run's outputs: what a patch must reproduce. */
   outputs: unknown[];
+  /**
+   * The last `ENVELOPE_HISTORY_RUNS` passing runs, oldest first, the latest
+   * included. What a patch's outputs must look like (ADR 0004). Absent in
+   * files written before the history existed.
+   */
+  history?: { savedAt: string; outputs: unknown[] }[];
 }
 
 async function saveKnownGood(
@@ -853,15 +863,40 @@ async function saveKnownGood(
   at: Date,
 ): Promise<string> {
   const file = paths.knownGood(workflow.id);
+  const previous = existsSync(file) ? await previousHistory(file, workflow.id) : [];
   const body: KnownGoodFile = {
     workflowId: workflow.id,
     workflowHash: hashWorkflow(workflow),
     savedAt: at.toISOString(),
     outputs,
+    history: [...previous, { savedAt: at.toISOString(), outputs }].slice(-ENVELOPE_HISTORY_RUNS),
   };
   await mkdir(dirname(file), { recursive: true });
   await writeFile(file, `${JSON.stringify(body, null, 2)}\n`, 'utf8');
   return file;
+}
+
+/**
+ * The history already on disk for this workflow. An unreadable file, or
+ * one for another workflow, starts the history afresh rather than failing
+ * a run that passed.
+ */
+async function previousHistory(
+  file: string,
+  workflowId: string,
+): Promise<NonNullable<KnownGoodFile['history']>> {
+  try {
+    const body = JSON.parse(await readFile(file, 'utf8')) as Partial<KnownGoodFile>;
+    if (body.workflowId !== workflowId) return [];
+    if (Array.isArray(body.history)) {
+      return body.history.filter((h) => typeof h?.savedAt === 'string' && Array.isArray(h.outputs));
+    }
+    return Array.isArray(body.outputs) && typeof body.savedAt === 'string'
+      ? [{ savedAt: body.savedAt, outputs: body.outputs }]
+      : [];
+  } catch {
+    return [];
+  }
 }
 
 async function loadKnownGood(
@@ -899,7 +934,16 @@ function parseKnownGood(text: string, file: string): KnownGood {
       `known-good file '${file}' must hold an array of outputs, or an object with an 'outputs' array.`,
     );
   }
-  return { outputs };
+  // A saved file carries its history; a hand-written one may too. Entries
+  // that are not { outputs: [...] } are dropped rather than trusted.
+  const rawHistory = Array.isArray(value)
+    ? undefined
+    : (value as { history?: unknown } | null)?.history;
+  if (!Array.isArray(rawHistory)) return { outputs };
+  const history = rawHistory
+    .map((h) => (h as { outputs?: unknown } | null)?.outputs)
+    .filter((o): o is unknown[] => Array.isArray(o));
+  return { outputs, history };
 }
 
 // Heal ids are UUIDs. Checking the form keeps a crafted id from naming a
