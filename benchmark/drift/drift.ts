@@ -46,7 +46,20 @@ export type Drift =
   | { op: 'add_overlay'; text: string; dismissLabel: string }
   /** Add a working copy of an element with new text, marked as a decoy. */
   | { op: 'add_decoy'; selector: string; text: string; position: 'before' | 'after' }
-  | { op: 'remove'; selector: string };
+  | { op: 'remove'; selector: string }
+  /**
+   * Apply `drifts` only on these page loads, counted from 1 per page
+   * factory: an A/B test (odd loads one design, even loads another) or a
+   * banner that only shows sometimes. The healer's verification runs are
+   * separate loads, so it sees the variation as a user would.
+   */
+  | { op: 'on_loads'; loads: number[]; drifts: Drift[] }
+  /** Move an element into an open shadow root. */
+  | { op: 'shadow'; selector: string }
+  /** Move an element into an iframe, where the page's script no longer reaches it. */
+  | { op: 'iframe'; selector: string; title: string }
+  /** Take an element out of the page and put it back after `ms`: late rendering. */
+  | { op: 'delay'; selector: string; ms: number };
 
 export interface DriftFixture {
   name: string;
@@ -58,6 +71,7 @@ export interface DriftFixture {
 
 const FIXTURES: Record<string, { origin: string }> = {
   portal: { origin: 'https://portal.drift.test' },
+  shop: { origin: 'https://shop.drift.test' },
 };
 
 /** Load a fixture and its workflow from `drift/fixtures/`. */
@@ -82,6 +96,8 @@ export interface DriftedPagesOptions {
    * Playwright's default 30 seconds on every case.
    */
   actionTimeoutMs?: number;
+  /** Number the first page load gets, for `on_loads` drifts. Default 1. */
+  firstLoad?: number;
 }
 
 /** Pages showing a fixture with drifts applied, for `replay` and the healer. */
@@ -106,6 +122,7 @@ export function driftedPages(
   options: DriftedPagesOptions = {},
 ): DriftedPages {
   let last: PlaywrightPage | undefined;
+  let load = (options.firstLoad ?? 1) - 1;
   const pageFactory: PageFactory = async () => {
     const page = await browser.newPage();
     page.setDefaultTimeout(options.actionTimeoutMs ?? 2_000);
@@ -119,7 +136,7 @@ export function driftedPages(
       }
     });
     await page.addInitScript({
-      content: `${PAGE_SCRIPT}\n__sfyshApplyDrifts(${JSON.stringify(drifts)});`,
+      content: `window.__sfyshLoad = ${++load};\n${PAGE_SCRIPT}\n__sfyshApplyDrifts(${JSON.stringify(drifts)});`,
     });
     last = page;
     return asPage(page);

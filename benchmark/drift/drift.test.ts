@@ -10,8 +10,9 @@ import { chromium } from 'playwright-core';
 import type { Browser } from 'playwright-core';
 import type { Workflow } from '@sfysh/ir';
 import { patchClassOrder } from '@sfysh/healer';
-import { PORTAL_CASES } from './cases.js';
+import { ALL_CASES, PORTAL_CASES } from './cases.js';
 import { judgeHeal, loadFixture, observe } from './drift.js';
+import { applyOracle } from './oracle.js';
 import type { Observation } from './drift.js';
 
 let browser: Browser;
@@ -71,10 +72,61 @@ describe('the portal fixture', () => {
   });
 });
 
+describe('the shop fixture', () => {
+  it('runs clean, records the elements it acted on, and produces the garden products and delivery', async () => {
+    const shop = loadFixture('shop');
+    const baseline = await observe(browser, shop, []);
+    expect(baseline.status).toBe('ok');
+    expect(baseline.truth).toEqual([
+      'click:click_002',
+      'click:click_003',
+      'fill:fill_005',
+      'click:click_006',
+    ]);
+    expect(baseline.outputs).toEqual([
+      { products: ['Rake', 'Hose', 'Trowel'] },
+      { delivery: 'Delivery to 2000 in 2 days' },
+    ]);
+  });
+});
+
+describe('the suite', () => {
+  it('has at least 50 cases, unique ids, and every effect and heal represented', () => {
+    expect(ALL_CASES.length).toBeGreaterThanOrEqual(50);
+    expect(new Set(ALL_CASES.map((c) => c.id)).size).toBe(ALL_CASES.length);
+    const effects = new Set(ALL_CASES.map((c) => c.expect.effect));
+    const heals = new Set(ALL_CASES.map((c) => c.expect.heal));
+    expect([...effects].sort()).toEqual(['degrades', 'fails', 'none', 'silent']);
+    expect([...heals].sort()).toEqual([
+      'insert_step',
+      'none',
+      'not_healable',
+      'promotion',
+      'selector',
+    ]);
+    expect(ALL_CASES.filter((c) => c.expect.trap).length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('has an oracle on every healable case, none on the rest, and gaps only where nothing can be healed', () => {
+    for (const c of ALL_CASES) {
+      const healable = ['promotion', 'selector', 'insert_step'].includes(c.expect.heal);
+      expect({ id: c.id, oracle: c.oracle !== undefined }).toEqual({ id: c.id, oracle: healable });
+      if (c.expect.gap !== undefined) expect(c.expect.heal).toBe('not_healable');
+    }
+  });
+});
+
 describe('each drift case does what it claims', () => {
-  it.each(PORTAL_CASES.map((c) => [c.id, c] as const))('%s', async (_id, driftCase) => {
-    const run = await observe(browser, fixture, driftCase.drifts);
-    const firstOnly = await observe(browser, fixture, driftCase.drifts, fixture.workflow, {
+  const baselines = new Map<string, Promise<Observation>>();
+  const baselineOf = (name: string) => {
+    if (!baselines.has(name)) baselines.set(name, observe(browser, loadFixture(name), []));
+    return baselines.get(name)!;
+  };
+
+  it.concurrent.each(ALL_CASES.map((c) => [c.id, c] as const))('%s', async (_id, driftCase) => {
+    const fx = loadFixture(driftCase.fixture);
+    const run = await observe(browser, fx, driftCase.drifts);
+    const firstOnly = await observe(browser, fx, driftCase.drifts, fx.workflow, {
       candidates: 'first',
     });
     const { effect, step } = driftCase.expect;
@@ -83,9 +135,15 @@ describe('each drift case does what it claims', () => {
       expect(run.status).toBe('ok');
       expect(run.degraded).toBeUndefined();
       expect(firstOnly.status).toBe('ok');
+      expect(run.outputs).toEqual((await baselineOf(driftCase.fixture)).outputs);
+    } else if (effect === 'silent') {
+      // Passes, with no fallback, but reads something else: the healer is never told.
+      expect(run.status).toBe('ok');
+      expect(run.degraded).toBeUndefined();
+      expect(run.outputs).not.toEqual((await baselineOf(driftCase.fixture)).outputs);
     } else if (effect === 'degrades') {
       expect(run.status).toBe('ok');
-      expect(run.degraded?.map((d) => d.stepId)).toEqual([step]);
+      expect(run.degraded?.map((d) => d.stepId)).toEqual(driftCase.expect.steps ?? [step]);
       expect(firstOnly.status).toBe('failed');
       expect(firstOnly.error?.stepId).toBe(step);
     } else {
@@ -114,6 +172,27 @@ describe('each drift case does what it claims', () => {
     await expect(
       observe(browser, fixture, [{ op: 'rename_text', selector: '#no-such-thing', text: 'x' }]),
     ).rejects.toThrow(/drift selector matches nothing/);
+  });
+});
+
+describe("every healable case is solvable within the healer's rules", () => {
+  const baselines = new Map<string, Promise<Observation>>();
+  const baselineOf = (name: string) => {
+    if (!baselines.has(name)) baselines.set(name, observe(browser, loadFixture(name), []));
+    return baselines.get(name)!;
+  };
+  const healable = ALL_CASES.filter((c) => c.oracle !== undefined);
+
+  it.concurrent.each(healable.map((c) => [c.id, c] as const))('%s', async (_id, driftCase) => {
+    const fx = loadFixture(driftCase.fixture);
+    // Throws if any oracle patch breaks the healer's own rules for its class.
+    const { workflow, patches } = applyOracle(fx.workflow, driftCase.oracle!);
+    expect(patches[0]!.patchClass).toBe(driftCase.expect.heal);
+
+    // Verified the way the healer verifies: first candidates only.
+    const run = await observe(browser, fx, driftCase.drifts, workflow, { candidates: 'first' });
+    const judgement = judgeHeal(await baselineOf(driftCase.fixture), run);
+    expect(judgement).toEqual({ verdict: 'correct', reasons: [] });
   });
 });
 

@@ -1,0 +1,74 @@
+{
+  "irVersion": "1.0.0",
+  "id": "drift_shop_garden",
+  "name": "Read garden products and the delivery estimate",
+  "steps": [
+    {
+      "id": "nav_001",
+      "intent": "Open the shop.",
+      "action": "navigate",
+      "url": "https://shop.drift.test/"
+    },
+    {
+      "id": "click_002",
+      "intent": "Open the catalogue.",
+      "action": "click",
+      "target": {
+        "candidates": [
+          { "kind": "role", "value": "link[name='Catalogue']" },
+          { "kind": "testid", "value": "nav-catalogue" }
+        ]
+      }
+    },
+    {
+      "id": "click_003",
+      "intent": "Show only garden products.",
+      "action": "click",
+      "target": {
+        "candidates": [
+          { "kind": "role", "value": "button[name='Garden']" },
+          { "kind": "testid", "value": "cat-garden" }
+        ]
+      }
+    },
+    {
+      "id": "extract_004",
+      "intent": "Read the product names.",
+      "action": "extract",
+      "target": { "candidates": [{ "kind": "css", "value": ".products .card h2" }] },
+      "schema": { "type": "array", "items": { "type": "string" } },
+      "bind": "products"
+    },
+    {
+      "id": "fill_005",
+      "intent": "Enter the delivery postcode.",
+      "action": "fill",
+      "target": {
+        "candidates": [
+          { "kind": "label", "value": "Postcode" },
+          { "kind": "css", "value": "#postcode" }
+        ]
+      },
+      "value": "2000"
+    },
+    {
+      "id": "click_006",
+      "intent": "Check the delivery estimate.",
+      "action": "click",
+      "target": {
+        "candidates": [
+          { "kind": "role", "value": "button[name='Check delivery']" },
+          { "kind": "testid", "value": "check-delivery" }
+        ]
+      }
+    },
+    {
+      "id": "extract_007",
+      "intent": "Read the delivery estimate.",
+      "action": "extract",
+      "target": { "candidates": [{ "kind": "css", "value": "#delivery-result" }] },
+      "schema": { "type": "string" },
+      "bind": "delivery"
+    }
+  ]
+}

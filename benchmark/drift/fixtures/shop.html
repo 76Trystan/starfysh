@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Hardware shop</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 0;
+      }
+      nav {
+        display: flex;
+        gap: 1rem;
+        padding: 1rem;
+        background: #eef;
+      }
+      main {
+        padding: 1rem;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      .overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .overlay > div {
+        background: white;
+        padding: 2rem;
+      }
+      .menu {
+        position: relative;
+        display: inline-block;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      Drift fixture: a hardware shop. Same conventions as portal.html:
+      data-sfysh-truth marks the elements the workflow is meant to act on,
+      the script records which marked element each click and fill lands on,
+      and behaviour is wired by event delegation on data-action.
+    -->
+    <nav aria-label="Shop">
+      <a href="#home" data-action="nav" data-target="home">Home</a>
+      <a
+        href="#catalogue"
+        class="nav-catalogue"
+        data-action="nav"
+        data-target="catalogue"
+        data-testid="nav-catalogue"
+        data-sfysh-truth="click_002"
+        >Catalogue</a
+      >
+      <a href="#basket" data-action="nav" data-target="basket">Basket</a>
+    </nav>
+    <main>
+      <section id="home">
+        <h1>Hardware shop</h1>
+      </section>
+      <section id="catalogue" hidden>
+        <h1>Catalogue</h1>
+        <div role="group" aria-label="Category">
+          <button
+            type="button"
+            data-action="category"
+            data-category="tools"
+            data-testid="cat-tools"
+          >
+            Tools
+          </button>
+          <button
+            type="button"
+            data-action="category"
+            data-category="garden"
+            data-testid="cat-garden"
+            data-sfysh-truth="click_003"
+          >
+            Garden
+          </button>
+        </div>
+        <ul class="products" aria-label="Products">
+          <li class="card" data-category="tools">
+            <h2>Hammer</h2>
+            <span class="price">$24.00</span>
+          </li>
+          <li class="card" data-category="tools">
+            <h2>Wrench</h2>
+            <span class="price">$18.50</span>
+          </li>
+          <li class="card" data-category="garden">
+            <h2>Rake</h2>
+            <span class="price">$31.00</span>
+          </li>
+          <li class="card" data-category="garden">
+            <h2>Hose</h2>
+            <span class="price">$45.90</span>
+          </li>
+          <li class="card" data-category="garden">
+            <h2>Trowel</h2>
+            <span class="price">$9.95</span>
+          </li>
+        </ul>
+        <form onsubmit="return false;">
+          <label for="postcode">Postcode</label>
+          <input
+            id="postcode"
+            data-role="postcode"
+            data-testid="postcode"
+            data-sfysh-truth="fill_005"
+          />
+          <button
+            type="button"
+            data-action="delivery"
+            data-testid="check-delivery"
+            data-sfysh-truth="click_006"
+          >
+            Check delivery
+          </button>
+        </form>
+        <p id="delivery-result" aria-live="polite"></p>
+      </section>
+      <section id="basket" hidden>
+        <h1>Basket</h1>
+      </section>
+    </main>
+    <script>
+      window.__sfyshTruth = [];
+      const mark = (kind, target) => {
+        const el = target instanceof Element ? target.closest('[data-sfysh-truth]') : null;
+        window.__sfyshTruth.push(kind + ':' + (el ? el.getAttribute('data-sfysh-truth') : 'none'));
+      };
+      document.addEventListener('click', (e) => mark('click', e.composedPath()[0]), true);
+      document.addEventListener('input', (e) => mark('fill', e.composedPath()[0]), true);
+
+      const show = (id) => {
+        for (const s of document.querySelectorAll('main > section')) s.hidden = s.id !== id;
+      };
+      document.addEventListener('click', (e) => {
+        const origin = e.composedPath()[0];
+        const el = origin instanceof Element ? origin.closest('[data-action]') : null;
+        if (!el) return;
+        const action = el.getAttribute('data-action');
+        if (action === 'nav') {
+          e.preventDefault();
+          show(el.getAttribute('data-target'));
+        } else if (action === 'category') {
+          const category = el.getAttribute('data-category');
+          for (const card of document.querySelectorAll('li.card, [data-category]')) {
+            if (card.tagName === 'LI' && card.getAttribute('data-category') !== category)
+              card.remove();
+          }
+        } else if (action === 'delivery') {
+          const input = document.querySelector('[data-role="postcode"]');
+          const code = input ? input.value.trim() : '';
+          const result = document.querySelector('[aria-live="polite"]');
+          if (result) {
+            result.textContent =
+              code === '2000' ? 'Delivery to 2000 in 2 days' : 'Delivery in 5 days';
+          }
+        } else if (action === 'dismiss') {
+          const overlay = el.closest('.overlay');
+          if (overlay) overlay.remove();
+        } else if (action === 'toggle-menu') {
+          const menu = el.closest('.menu');
+          const list = menu ? menu.querySelector('[data-role="menu-list"]') : null;
+          if (list) list.hidden = !list.hidden;
+        }
+      });
+    </script>
+  </body>
+</html>

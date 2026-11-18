@@ -13,10 +13,13 @@
 // A selector that matches nothing is a broken case, not a drift: it is
 // recorded in window.__sfyshDriftErrors and the harness refuses the case.
 
-/* eslint-disable */
 window.__sfyshDriftErrors = [];
 
 function __sfyshApplyDrifts(drifts) {
+  // Init scripts run in every frame. Drift the top document only: an
+  // `iframe` drift would otherwise find its own element again inside the
+  // new frame and nest frames until the page never finishes loading.
+  if (window !== window.top) return;
   const apply = () => {
     for (const drift of drifts) {
       try {
@@ -133,6 +136,42 @@ function __sfyshApplyOne(drift) {
     }
     case 'remove': {
       __sfyshOne(drift.selector).remove();
+      return;
+    }
+    case 'on_loads': {
+      // Apply the nested drifts only on some page loads, counted from 1
+      // per page factory: an A/B test, or a banner that shows sometimes.
+      if (drift.loads.indexOf(window.__sfyshLoad || 1) === -1) return;
+      for (const inner of drift.drifts) __sfyshApplyOne(inner);
+      return;
+    }
+    case 'shadow': {
+      // Move the element into an open shadow root. Events are retargeted
+      // to the host, so the fixtures read event.composedPath()[0].
+      const el = __sfyshOne(drift.selector);
+      const host = document.createElement('span');
+      host.setAttribute('data-sfysh-shadow-host', '');
+      el.replaceWith(host);
+      host.attachShadow({ mode: 'open' }).appendChild(el);
+      return;
+    }
+    case 'iframe': {
+      // Move the element into an iframe. The page's own script does not
+      // run inside it, so the element stops working as well as moving.
+      const el = __sfyshOne(drift.selector);
+      const frame = document.createElement('iframe');
+      frame.setAttribute('title', drift.title);
+      frame.srcdoc = '<!doctype html><body>' + el.outerHTML + '</body>';
+      el.replaceWith(frame);
+      return;
+    }
+    case 'delay': {
+      // Take the element out of the page and put it back after a delay:
+      // content that renders late.
+      const el = __sfyshOne(drift.selector);
+      const placeholder = document.createComment('sfysh-delayed');
+      el.replaceWith(placeholder);
+      setTimeout(() => placeholder.replaceWith(el), drift.ms);
       return;
     }
     default:

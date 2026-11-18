@@ -87,7 +87,7 @@
             Apply
           </button>
         </form>
-        <table class="orders" aria-label="Order list">
+        <table class="orders" aria-label="Order list" data-role="orders-table">
           <thead>
             <tr>
               <th>Order</th>
@@ -134,8 +134,8 @@
         const el = target instanceof Element ? target.closest('[data-sfysh-truth]') : null;
         window.__sfyshTruth.push(kind + ':' + (el ? el.getAttribute('data-sfysh-truth') : 'none'));
       };
-      document.addEventListener('click', (e) => mark('click', e.target), true);
-      document.addEventListener('input', (e) => mark('fill', e.target), true);
+      document.addEventListener('click', (e) => mark('click', e.composedPath()[0]), true);
+      document.addEventListener('input', (e) => mark('fill', e.composedPath()[0]), true);
 
       const show = (id) => {
         for (const s of document.querySelectorAll('main > section')) s.hidden = s.id !== id;
@@ -144,9 +144,7 @@
         const input = document.querySelector('[data-role="search"]');
         const needle = (input ? input.value : '').trim().toLowerCase();
         let shown = 0;
-        for (const row of document.querySelectorAll(
-          'table.orders tbody tr, [data-role="orders-table"] tbody tr',
-        )) {
+        for (const row of document.querySelectorAll('[data-role="orders-table"] tbody tr')) {
           const match = needle === '' || row.textContent.toLowerCase().includes(needle);
           row.hidden = !match;
           if (match) shown++;
@@ -156,7 +154,8 @@
         if (title) title.textContent = 'Orders (' + shown + ')';
       };
       document.addEventListener('click', (e) => {
-        const el = e.target instanceof Element ? e.target.closest('[data-action]') : null;
+        const origin = e.composedPath()[0];
+        const el = origin instanceof Element ? origin.closest('[data-action]') : null;
         if (!el) return;
         const action = el.getAttribute('data-action');
         if (action === 'nav') {
