@@ -28,11 +28,11 @@ Four more packages are in the repo but not yet published:
 | `@sfysh/triage`    | Deterministic failure classifier. Maps a failed run to a `FailureKind` (flake, auth, site, task, unknown) so the healer can route failures without invoking a model.                                                                                                                                    |
 | `@sfysh/providers` | A small `Provider` interface over Anthropic, OpenAI, Gemini, and Ollama (or any OpenAI-compatible local server), with timeouts, a content-hash cache, and an outbound redaction hook so secrets never reach a model.                                                                                    |
 | `@sfysh/healer`    | In progress. Asks a model for a selector patch or an inserted step for the failed step, checks it against scope, allowlist, origin, secret, and regex rules, verifies it live against the last known-good outputs, and holds it for human approval, within caps on attempts, tokens, and heals per day. |
-| `@sfysh/cli`       | Command-line front end for the toolchain (`compile parse`, `compile verify`; `compile heal` once the healer lands).                                                                                                                                                                                     |
+| `@sfysh/cli`       | Command-line front end for the toolchain (`compile parse`, `compile verify`, and `compile heal` with `compile approve` / `compile reject` for the reviewer).                                                                                                                                            |
 
 **What this means in practice.** You can hand-author a workflow IR following the schema in `@sfysh/ir`, compile it with `@sfysh/compiler`, and execute the result via `@sfysh/runtime` plus Playwright. Or start from an existing Playwright script, lift it into IR with `@sfysh/parser`, and feed it into the same pipeline. That is a working, deterministic path from JSON (or TypeScript) to a running browser automation.
 
-**What is not here yet.** The last pieces of the healer loop (the `compile heal` command and a first run against a real model), and the MCP server that lets coding agents drive the stack. Those are the remaining components that take Starfysh from "a well-typed Playwright toolkit" to "an automation you can actually leave running". See the [roadmap](#roadmap).
+**What is not here yet.** The last piece of the healer loop (a first run against a real model), and the MCP server that lets coding agents drive the stack. Those are the remaining components that take Starfysh from "a well-typed Playwright toolkit" to "an automation you can actually leave running". See the [roadmap](#roadmap).
 
 ## Try it in 5 minutes
 
@@ -181,7 +181,7 @@ Done so far:
 - `@sfysh/healer` turns a failure into a candidate patch (a new set of ranked selectors, or one inserted `click` or `wait`), rejects anything outside a narrow allowlist, scores what remains against the page snapshot, and verifies it live against the last known-good outputs before holding it for a person to approve with a semantic diff of what changed. Every heal is written to a local audit corpus, with hashes in place of page content.
 - `@sfysh/cli` drives parse and verify from the command line.
 
-Remaining: the `compile heal` command, the MCP server so coding agents can drive the stack, a 20-task benchmark with a synthetic-drift suite to measure the false-heal rate, and a private beta followed by the public launch.
+Remaining: a first healer run against a real model, the MCP server so coding agents can drive the stack, a 20-task benchmark with a synthetic-drift suite to measure the false-heal rate, and a private beta followed by the public launch.
 
 ### Phase 2: API healing
 

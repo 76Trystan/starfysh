@@ -176,3 +176,6 @@ export type {
   ReviewCorpusRecord,
   ReviewRecordInput,
 } from './corpus.js';
+
+export { DEFAULT_HEAL_HISTORY_FILE, JsonlHealHistory } from './history.js';
+export type { JsonlHealHistoryOptions } from './history.js';

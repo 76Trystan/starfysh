@@ -23,6 +23,7 @@ import { pathToFileURL } from 'node:url';
 import { resolve as resolvePath } from 'node:path';
 import { validateWorkflow } from '@sfysh/ir';
 import type { Workflow } from '@sfysh/ir';
+import type { Provider } from '@sfysh/providers';
 import type { VaultResolver } from '@sfysh/runtime';
 import {
   parseCassette,
@@ -170,7 +171,8 @@ export function reportIsGreen(report: VerifyReport): boolean {
   return report.failed === 0 && report.stability.stable;
 }
 
-function loadWorkflow(file: string): Workflow {
+/** Read and validate a workflow file. Throws `VerifyLoadError` for anything the user can fix. */
+export function loadWorkflow(file: string): Workflow {
   let raw: string;
   try {
     raw = readFileSync(file, 'utf8');
@@ -222,6 +224,31 @@ function loadCassette(cassettePath: string): Cassette {
 }
 
 async function loadBackend(backendPath: string): Promise<BackendModule> {
+  const loaded = await loadBackendModule(backendPath, { runner: 'required' });
+  return loaded as BackendModule;
+}
+
+/** Every export a backend module may have. Which ones a command needs is up to the command. */
+export interface LoadedBackend {
+  pageFactory: PageFactory;
+  runner?: RunnerFn;
+  dispose?: PageDisposer;
+  tolerance?: ToleranceMap;
+  vaultResolver?: VaultResolver;
+  /** A model provider, for `compile heal`. */
+  provider?: Provider;
+  /** Values for the workflow's `{ param }` references, for commands that run the IR interpreter. */
+  params?: Record<string, string>;
+}
+
+/**
+ * Import a backend module and check the shape of its exports. Throws
+ * `VerifyLoadError` naming the export that is wrong.
+ */
+export async function loadBackendModule(
+  backendPath: string,
+  options: { runner: 'required' | 'optional' },
+): Promise<LoadedBackend> {
   const absolute = resolvePath(backendPath);
   let mod: Record<string, unknown>;
   try {
@@ -236,8 +263,34 @@ async function loadBackend(backendPath: string): Promise<BackendModule> {
       `backend module '${backendPath}' must export a 'pageFactory' function`,
     );
   }
-  if (typeof mod.runner !== 'function') {
+  if (options.runner === 'required' && typeof mod.runner !== 'function') {
     throw new VerifyLoadError(`backend module '${backendPath}' must export a 'runner' function`);
+  }
+  if (mod.runner !== undefined && typeof mod.runner !== 'function') {
+    throw new VerifyLoadError(
+      `backend module '${backendPath}' exported a 'runner' that is not a function`,
+    );
+  }
+  if (
+    mod.provider !== undefined &&
+    (typeof mod.provider !== 'object' ||
+      mod.provider === null ||
+      typeof (mod.provider as { complete?: unknown }).complete !== 'function')
+  ) {
+    throw new VerifyLoadError(
+      `backend module '${backendPath}' exported a 'provider' that does not implement { complete(messages, options) }`,
+    );
+  }
+  if (
+    mod.params !== undefined &&
+    (typeof mod.params !== 'object' ||
+      mod.params === null ||
+      Array.isArray(mod.params) ||
+      Object.values(mod.params).some((v) => typeof v !== 'string'))
+  ) {
+    throw new VerifyLoadError(
+      `backend module '${backendPath}' exported a 'params' that is not an object of strings`,
+    );
   }
   if (mod.dispose !== undefined && typeof mod.dispose !== 'function') {
     throw new VerifyLoadError(
@@ -265,7 +318,9 @@ async function loadBackend(backendPath: string): Promise<BackendModule> {
 
   return {
     pageFactory: mod.pageFactory as PageFactory,
-    runner: mod.runner as RunnerFn,
+    ...(mod.runner ? { runner: mod.runner as RunnerFn } : {}),
+    ...(mod.provider ? { provider: mod.provider as Provider } : {}),
+    ...(mod.params ? { params: mod.params as Record<string, string> } : {}),
     ...(mod.dispose ? { dispose: mod.dispose as PageDisposer } : {}),
     ...(mod.tolerance ? { tolerance: mod.tolerance as ToleranceMap } : {}),
     ...(mod.vaultResolver ? { vaultResolver: mod.vaultResolver as VaultResolver } : {}),

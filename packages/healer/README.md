@@ -51,7 +51,7 @@ Every attempt, with its generator result, verification and decision, is on `resu
 | `maxTokensPerHeal`          | 20,000  | Input plus output tokens in one `heal()`.                                    |
 | `maxHealsPerWorkflowPerDay` | 3       | `heal()` runs that reached the patch stage for one workflow in 24 hours.     |
 
-Both per-heal caps are checked before every model call, and each call's output cap is lowered to what is left of the token budget. Input tokens are only known after a call, so one call can take a heal past its budget by the size of its prompt; no call starts once the budget is spent. The day is a rolling 24 hours, not a calendar day. `HealHistory` is a small interface (`count`, `record`, `patches`, `recordPatch`) so the daily count and the patch records below can live wherever run history already does.
+Both per-heal caps are checked before every model call, and each call's output cap is lowered to what is left of the token budget. Input tokens are only known after a call, so one call can take a heal past its budget by the size of its prompt; no call starts once the budget is spent. The day is a rolling 24 hours, not a calendar day. `HealHistory` is a small interface (`count`, `record`, `patches`, `recordPatch`) so the daily count and the patch records below can live wherever run history already does. Two come with the package: `MemoryHealHistory` for one process, and `JsonlHealHistory` for a file (default `.compile/heal-history.jsonl`) that survives between processes, which is what `compile heal` uses. Its `prune()` drops run times older than 24 hours and keeps every patch record, since an oscillation can span weeks. It reads the file on every call and is meant for one process at a time.
 
 ## Triage before any model
 
@@ -536,7 +536,10 @@ Use one writer per corpus directory. Two processes appending at once can interle
 
 ## What is still to come
 
-- The `compile heal` command, with a heal history and known-good outputs that persist between runs.
+- A first run against a real model.
+- Measuring the false-heal rate on the synthetic-drift benchmark, which decides whether automatic acceptance is ever switched on.
+
+To run the healer from the command line, use `compile heal` in `@sfysh/cli`. It keeps the history, the corpus and the known-good outputs on disk.
 
 ## How it fits with the other packages
 
