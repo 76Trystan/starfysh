@@ -156,6 +156,7 @@ export {
   healRecord,
   JsonlCorpus,
   MemoryCorpus,
+  labelRecord,
   parseCorpus,
   promotionRecord,
   readCorpus,
@@ -174,6 +175,10 @@ export type {
   HealCorpusRecord,
   HealRecordInput,
   JsonlCorpusOptions,
+  LabelCorpusRecord,
+  LabelRecordInput,
+  LabelSource,
+  LabelVerdict,
   PromotionRecordInput,
   ReadCorpusResult,
   ReviewCorpusRecord,
@@ -195,3 +200,13 @@ export type {
 
 export { SHADOW_AUTO_POLICY, shadowDecision } from './shadow.js';
 export type { ShadowDecision } from './shadow.js';
+
+export { corpusReport, renderReport, SCORE_BANDS } from './report.js';
+export type {
+  CorpusReport,
+  FalseHealSummary,
+  ReportSummary,
+  ScoreBand,
+  ScoreBandSummary,
+  ShadowSummary,
+} from './report.js';

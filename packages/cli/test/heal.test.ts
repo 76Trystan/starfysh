@@ -224,6 +224,78 @@ describe('compile heal, approve and reject', () => {
     });
   });
 
+  describe('compile label and compile report', () => {
+    async function cli(...args: string[]) {
+      const c = ctx();
+      const code = await run([...args, '--dir', state], c);
+      return { code, out: c.stdout.text, err: c.stderr.text };
+    }
+
+    it('reports nothing measured on an empty corpus', async () => {
+      const { code, out } = await cli('report');
+      expect(code).toBe(0);
+      expect(out).toContain('Heals: 0');
+      expect(out).toContain('False-heal rate: not measured');
+    });
+
+    it('turns an approved heal later labelled wrong into a false-heal rate and a shadow disagreement', async () => {
+      const id = await heldHeal();
+      expect((await review('approve', id, '--reviewer', 'dana')).code).toBe(0);
+
+      const labelled = await cli(
+        'label',
+        id,
+        '--verdict',
+        'false_heal',
+        '--reviewer',
+        'dana',
+        '--note',
+        'Opens archived orders.',
+      );
+      expect(labelled.code).toBe(0);
+      expect(labelled.out).toContain('as false heal');
+
+      const { out } = await cli('report', '--json');
+      const report = JSON.parse(out);
+      expect(report.overall.falseHeal).toMatchObject({
+        falseHeals: 1,
+        correct: 0,
+        appliedFalseHeals: 1,
+        rate: 1,
+      });
+      // The shadow rule would have accepted this patch on its own.
+      expect(report.overall.shadow).toMatchObject({ acceptedButRejected: 1, agreement: 0 });
+      expect(report.problems).toBe(0);
+
+      const text = await cli('report', '--workflow', 'wf_orders');
+      expect(text.out).toContain('False-heal rate: 100.0% (1 of 1 labelled verified heals');
+    });
+
+    it('refuses a label for a heal that is not in the corpus, or with a bad verdict', async () => {
+      const missing = await cli(
+        'label',
+        '00000000-0000-4000-8000-000000000000',
+        '--verdict',
+        'correct',
+        '--reviewer',
+        'dana',
+      );
+      expect(missing.code).toBe(1);
+      expect(missing.err).toContain('no heal');
+
+      const bad = await cli(
+        'label',
+        '00000000-0000-4000-8000-000000000000',
+        '--verdict',
+        'maybe',
+        '--reviewer',
+        'dana',
+      );
+      expect(bad.code).toBe(1);
+      expect(bad.err).toContain('--verdict must be one of correct, false_heal, unknown');
+    });
+  });
+
   it('can revert an approved model-written heal too', async () => {
     const id = await heldHeal();
     expect((await review('approve', id, '--reviewer', 'dana')).code).toBe(0);

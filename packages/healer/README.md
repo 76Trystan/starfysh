@@ -572,6 +572,18 @@ A heal record holds the workflow hash, the failure, the triage decision, the pol
 
 Use one writer per corpus directory. Two processes appending at once can interleave long lines.
 
+## Labels and the report
+
+A review says whether a person accepted a patch. Whether the patch was right is a separate fact, often learnt later, recorded with `labelRecord()`: verdict `correct`, `false_heal` or `unknown`, from `benchmark` (the synthetic-drift harness's known answer), `reviewer` (a person, who must be named) or `post_accept_watch`. The latest label for a heal wins.
+
+`corpusReport(records)` turns a corpus into numbers, overall, by patch class and by workflow, and `renderReport()` prints them. The definitions are fixed in one place (`report.ts`):
+
+- **False-heal rate** = heals labelled `false_heal` / verified heals labelled `correct` or `false_heal`. Unlabelled heals are counted, never assumed correct, and the rate is `null` when nothing is labelled. `appliedFalseHeals` counts the ones that reached the workflow.
+- **Shadow agreement** = for verified model-written heals with a shadow verdict and a human answer, the share where they agreed. A rejection, a revert or a `false_heal` label is a no; an approval with none of those after it is a yes. `acceptedButRejected` is the cell that decides whether automatic acceptance of model patches is ever safe.
+- **Score bands** (below 0.5, 0.5 to 0.8, 0.8 and above) with each band's approvals, rejections, reverts and labels, for calibrating the confidence score.
+
+Reviews and labels whose heal is not in the corpus are counted as `orphans`.
+
 ## What is still to come
 
 - A first run against a real model.

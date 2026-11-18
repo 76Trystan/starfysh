@@ -23,6 +23,8 @@ import {
   type ProviderName,
   type ReviewCommandResult,
 } from './heal.js';
+import { LABEL_VERDICTS, runLabelCommand, runReportCommand } from './report.js';
+import type { LabelVerdict } from '@sfysh/healer';
 
 export interface WritableStream {
   write(chunk: string): boolean;
@@ -54,6 +56,10 @@ export function run(argv: string[], ctx: RunContext): number | Promise<number> {
       return reviewCommand('reject', rest, ctx);
     case 'revert':
       return reviewCommand('revert', rest, ctx);
+    case 'label':
+      return labelCommand(rest, ctx);
+    case 'report':
+      return reportCommand(rest, ctx);
     default:
       ctx.stderr.write(`compile: unknown command '${command}'\n\n`);
       ctx.stderr.write(topLevelHelp());
@@ -584,6 +590,136 @@ Options:
 `;
 }
 
+async function labelCommand(args: string[], ctx: RunContext): Promise<number> {
+  const config: ParseArgsConfig = {
+    args,
+    options: {
+      verdict: { type: 'string' },
+      reviewer: { type: 'string', short: 'r' },
+      note: { type: 'string' },
+      dir: { type: 'string' },
+      help: { type: 'boolean', short: 'h' },
+    },
+    allowPositionals: true,
+    strict: true,
+  };
+  let parsed;
+  try {
+    parsed = parseArgs(config);
+  } catch (err) {
+    ctx.stderr.write(`compile label: ${(err as Error).message}\n\n`);
+    ctx.stderr.write(labelHelp());
+    return 1;
+  }
+  if (parsed.values.help) {
+    ctx.stdout.write(labelHelp());
+    return 0;
+  }
+  const usage = (message: string): number => {
+    ctx.stderr.write(`compile label: ${message}\n\n`);
+    ctx.stderr.write(labelHelp());
+    return 1;
+  };
+  if (parsed.positionals.length !== 1) return usage('expected one <heal-id> argument');
+  const verdict = parsed.values.verdict;
+  if (typeof verdict !== 'string' || !(LABEL_VERDICTS as readonly string[]).includes(verdict)) {
+    return usage(`--verdict must be one of ${LABEL_VERDICTS.join(', ')}`);
+  }
+  const reviewer = parsed.values.reviewer;
+  if (typeof reviewer !== 'string' || reviewer.trim() === '') {
+    return usage('missing --reviewer <name>');
+  }
+  const note = parsed.values.note;
+  const dir = parsed.values.dir;
+  try {
+    const result = await runLabelCommand({
+      healId: parsed.positionals[0]!,
+      verdict: verdict as LabelVerdict,
+      reviewer,
+      ...(typeof note === 'string' ? { note } : {}),
+      ...(typeof dir === 'string' ? { stateDir: dir } : {}),
+    });
+    ctx.stdout.write(result.output + '\n');
+    return 0;
+  } catch (err) {
+    if (err instanceof HealCommandError) {
+      ctx.stderr.write(`compile label: ${err.message}\n`);
+      return 1;
+    }
+    throw err;
+  }
+}
+
+async function reportCommand(args: string[], ctx: RunContext): Promise<number> {
+  const config: ParseArgsConfig = {
+    args,
+    options: {
+      workflow: { type: 'string', short: 'w' },
+      json: { type: 'boolean' },
+      dir: { type: 'string' },
+      help: { type: 'boolean', short: 'h' },
+    },
+    allowPositionals: false,
+    strict: true,
+  };
+  let parsed;
+  try {
+    parsed = parseArgs(config);
+  } catch (err) {
+    ctx.stderr.write(`compile report: ${(err as Error).message}\n\n`);
+    ctx.stderr.write(reportHelp());
+    return 1;
+  }
+  if (parsed.values.help) {
+    ctx.stdout.write(reportHelp());
+    return 0;
+  }
+  const workflow = parsed.values.workflow;
+  const dir = parsed.values.dir;
+  const result = await runReportCommand({
+    format: parsed.values.json ? 'json' : 'human',
+    ...(typeof workflow === 'string' ? { workflow } : {}),
+    ...(typeof dir === 'string' ? { stateDir: dir } : {}),
+  });
+  ctx.stdout.write(result.output + '\n');
+  return 0;
+}
+
+function labelHelp(): string {
+  return `compile label <heal-id> --verdict <verdict> --reviewer <name> [options]
+
+Record whether a heal's change was right. A review says whether a person
+accepted a patch; a label says whether it was correct, which is what the
+false-heal rate counts. Use it when you find out later, for example when
+the data a healed workflow produced turns out to be wrong. The latest label
+for a heal wins.
+
+Options:
+      --verdict <verdict>   correct, false_heal or unknown (required).
+  -r, --reviewer <name>     Who is labelling (required).
+      --note <text>         What was wrong, or how you know it was right.
+      --dir <path>          State directory (default .compile).
+  -h, --help                Show this message.
+`;
+}
+
+function reportHelp(): string {
+  return `compile report [options]
+
+Summarise every heal in the corpus: outcomes, what was applied and how,
+heals held as possible false heals, the false-heal rate over labelled
+heals, how often the shadow auto-accept rule agreed with reviewers, and
+outcomes by confidence score. Grouped overall, by patch class and by
+workflow.
+
+Options:
+  -w, --workflow <id>   Only this workflow.
+      --json            Emit JSON instead of text.
+      --dir <path>      State directory (default .compile).
+  -h, --help            Show this message.
+`;
+}
+
 function revertHelp(): string {
   return `compile revert <heal-id> --reviewer <name> [options]
 
@@ -609,6 +745,8 @@ Commands:
   approve <id>     Approve a pending heal and write the patched workflow.
   reject <id>      Reject a pending heal.
   revert <id>      Undo an applied heal.
+  label <id>       Record whether a heal's change was right.
+  report           Summarise the corpus: false-heal rate, shadow agreement.
 
 Options:
   -h, --help       Show this message.

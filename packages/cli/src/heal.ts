@@ -950,6 +950,11 @@ function parseKnownGood(text: string, file: string): KnownGood {
 // file outside the pending directory.
 const HEAL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** Whether a string has the form of a heal id, so it is safe to build a file name from. */
+export function isHealId(value: string): boolean {
+  return HEAL_ID.test(value);
+}
+
 async function loadPending(paths: StatePaths, healId: string): Promise<PendingHeal> {
   if (!HEAL_ID.test(healId)) throw new HealCommandError(`'${healId}' is not a heal id.`);
   let text: string;

@@ -232,7 +232,38 @@ export interface ReviewCorpusRecord {
   note?: string;
 }
 
-export type CorpusRecord = HealCorpusRecord | ReviewCorpusRecord;
+/**
+ * Ground truth about a heal: was the change it made right? A review says
+ * whether a person accepted a patch; a label says whether it was correct,
+ * which is what the false-heal rate counts (ADR 0004). The latest label
+ * for a heal wins.
+ */
+export interface LabelCorpusRecord {
+  corpusVersion: typeof CORPUS_VERSION;
+  kind: 'label';
+  id: string;
+  at: string;
+  /** The heal record this labels. */
+  healId: string;
+  workflowId: string;
+  /** `false_heal`: the change was wrong, whether or not it verified or was approved. */
+  verdict: LabelVerdict;
+  /**
+   * Who knows: `benchmark` (the synthetic-drift harness, from its known
+   * answer), `reviewer` (a person, after the fact), `post_accept_watch`
+   * (outputs drifted after the heal was applied).
+   */
+  source: LabelSource;
+  /** Who labelled it, for `reviewer`. */
+  reviewer?: string;
+  /** Free text, redacted and cut. */
+  note?: string;
+}
+
+export type LabelVerdict = 'correct' | 'false_heal' | 'unknown';
+export type LabelSource = 'benchmark' | 'reviewer' | 'post_accept_watch';
+
+export type CorpusRecord = HealCorpusRecord | ReviewCorpusRecord | LabelCorpusRecord;
 
 export interface HealRecordInput {
   /** The workflow passed to `heal()`. */
@@ -370,6 +401,45 @@ export function promotionRecord(input: PromotionRecordInput): HealCorpusRecord {
     record.knownGoodOutputs = structuredClone(input.knownGood.outputs);
   }
   return redactDeep(record, input.redact);
+}
+
+export interface LabelRecordInput {
+  /** The heal record being labelled. */
+  heal: Pick<HealCorpusRecord, 'id' | 'workflowId'>;
+  verdict: LabelVerdict;
+  source: LabelSource;
+  /** Required for `source: 'reviewer'`. */
+  reviewer?: string;
+  note?: string;
+  /** Applied to the reviewer and the note. Default: none. */
+  redact?: RedactFn;
+  at?: Date;
+  id?: string;
+}
+
+/**
+ * Build a ground-truth label for a heal. Throws `TypeError` for a
+ * `reviewer` label with no reviewer named: an anonymous verdict on
+ * whether a heal was right is no evidence.
+ */
+export function labelRecord(input: LabelRecordInput): LabelCorpusRecord {
+  const reviewer = input.reviewer?.trim();
+  if (input.source === 'reviewer' && (reviewer === undefined || reviewer === '')) {
+    throw new TypeError('A reviewer label must name the reviewer.');
+  }
+  const record: LabelCorpusRecord = {
+    corpusVersion: CORPUS_VERSION,
+    kind: 'label',
+    id: input.id ?? randomUUID(),
+    at: (input.at ?? new Date()).toISOString(),
+    healId: input.heal.id,
+    workflowId: input.heal.workflowId,
+    verdict: input.verdict,
+    source: input.source,
+  };
+  if (reviewer !== undefined && reviewer !== '') record.reviewer = reviewer;
+  if (input.note !== undefined) record.note = cut(input.note, CORPUS_TEXT_MAX_CHARS);
+  return input.redact === undefined ? record : redactDeep(record, input.redact);
 }
 
 export interface ReviewRecordInput {
@@ -521,14 +591,23 @@ function recordProblem(value: unknown): string | undefined {
   if (record['corpusVersion'] !== CORPUS_VERSION) {
     return `Unsupported corpus version ${JSON.stringify(record['corpusVersion'])}.`;
   }
-  if (record['kind'] !== 'heal' && record['kind'] !== 'review') {
+  if (record['kind'] !== 'heal' && record['kind'] !== 'review' && record['kind'] !== 'label') {
     return `Unknown record kind ${JSON.stringify(record['kind'])}.`;
   }
   for (const field of ['id', 'at', 'workflowId']) {
     if (typeof record[field] !== 'string') return `Missing ${field}.`;
   }
-  if (record['kind'] === 'review' && typeof record['healId'] !== 'string') {
+  if (
+    (record['kind'] === 'review' || record['kind'] === 'label') &&
+    typeof record['healId'] !== 'string'
+  ) {
     return 'Missing healId.';
+  }
+  if (
+    record['kind'] === 'label' &&
+    !['correct', 'false_heal', 'unknown'].includes(record['verdict'] as string)
+  ) {
+    return `Unknown label verdict ${JSON.stringify(record['verdict'])}.`;
   }
   return undefined;
 }

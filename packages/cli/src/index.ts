@@ -39,3 +39,7 @@ export type {
   ReviewCommandOptions,
   ReviewCommandResult,
 } from './heal.js';
+
+export { isHealId } from './heal.js';
+export { LABEL_VERDICTS, runLabelCommand, runReportCommand } from './report.js';
+export type { LabelCommandOptions, ReportCommandOptions, ReportCommandResult } from './report.js';

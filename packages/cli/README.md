@@ -4,7 +4,7 @@ The Starfysh command-line front end. Exposes a single binary, `compile`, that dr
 
 ## Status
 
-In progress. The commands wired up today are `compile parse`, `compile verify`, `compile heal`, `compile approve`, `compile reject` and `compile revert`. `emit` and `bench` are still to come. The healer behind `compile heal` has not yet been run against a real model.
+In progress. The commands wired up today are `compile parse`, `compile verify`, `compile heal`, `compile approve`, `compile reject`, `compile revert`, `compile label` and `compile report`. `emit` and `bench` are still to come. The healer behind `compile heal` has not yet been run against a real model.
 
 The package is private (`"private": true`) until the surface stabilises.
 
@@ -142,6 +142,23 @@ Answer a pending heal, or undo an applied one. All three require `--reviewer <na
 `reject` leaves the workflow alone and takes an optional `--note`.
 
 `revert` undoes an applied patch, whether a person approved it or `--auto-promote` applied it: it writes back the workflow exactly as it was before. It is refused if the workflow file has changed since the patch was applied (a later heal or a hand edit), rather than silently dropping that change. It takes an optional `--note`. Once reverted, the same change is never applied automatically again.
+
+### `compile label <id>`
+
+Records whether a heal's change was right: `--verdict correct`, `false_heal` or `unknown`, with `--reviewer <name>` and an optional `--note`. A review says whether a person accepted a patch; a label says whether it was correct, which is what the false-heal rate counts. Use it when you find out later, for example when a healed workflow's data turns out to be wrong. The latest label for a heal wins. The heal must be in the corpus.
+
+```sh
+compile label 6f1c... --verdict false_heal --reviewer dana --note "Reads the shipped column, not the ordered one."
+```
+
+### `compile report`
+
+Summarises every heal in the corpus, overall, by patch class (promotions apart from model heals) and by workflow (`--workflow <id>` for one). `--json` for machine output.
+
+- Outcomes, what was applied (by a person or by policy), what is waiting, rejected or reverted, and how many heals were held as possible false heals.
+- **False-heal rate:** heals labelled `false_heal` out of verified heals labelled `correct` or `false_heal`. Unlabelled heals are counted and shown, never assumed correct, and the report says "not measured" rather than 0% when nothing is labelled. False heals that reached the workflow are counted separately.
+- **Shadow agreement:** for model-written heals, how often the automatic rule's verdict matched the reviewer. A rejection, a revert, or a `false_heal` label counts as the reviewer saying no. The number to watch is "would accept, rejected".
+- **Score bands:** outcomes by confidence score, to see whether rejections and false heals cluster at low scores.
 
 ### State
 
