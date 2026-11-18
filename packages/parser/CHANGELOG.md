@@ -1,5 +1,12 @@
 # @sfysh/parser
 
+## 0.5.2
+
+### Patch Changes
+
+- Updated dependencies [61402b1]
+  - @sfysh/ir@0.4.0
+
 ## 0.5.1
 
 ### Patch Changes

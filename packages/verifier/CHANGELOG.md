@@ -1,5 +1,26 @@
 # @sfysh/verifier
 
+## 0.5.0
+
+### Minor Changes
+
+- 719b118: The IR interpreter now falls through ranked candidates by default, matching compiled code, which now does the same.
+
+  - `candidates` defaults to `'fallthrough'` (was `'first'`). Pass `candidates: 'first'` to prove a step's primary selector works on its own, as the healer does when it verifies a patch.
+  - Fallthrough goes through the runtime's `tryCandidates`, so both executors share one implementation, and the parity test now covers a fallback pass and an all-candidates failure.
+  - A visual primary candidate is refused, as compiled code refuses it, instead of being skipped. Visual fallbacks are still skipped.
+  - A step with one usable candidate acts on it directly, as compiled code does.
+  - `ReplayOutcome.degraded` lists steps that passed on a fallback candidate, and `ReplayOutcome.error` carries `candidateIndex`.
+
+### Patch Changes
+
+- 61402b1: Extract steps whose table columns carry `x-header` aliases now compile to `emit.table` with a column spec, and the IR interpreter reads them the same way. Output for workflows without aliases is byte-identical.
+- Updated dependencies [61402b1]
+- Updated dependencies [719b118]
+- Updated dependencies [61402b1]
+  - @sfysh/ir@0.4.0
+  - @sfysh/runtime@0.8.0
+
 ## 0.4.0
 
 ### Minor Changes
