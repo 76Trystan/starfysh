@@ -1,5 +1,32 @@
 # @sfysh/runtime
 
+## 0.8.0
+
+### Minor Changes
+
+- 719b118: Ranked selector candidates now work at run time, and a run says when it only passed on a fallback.
+
+  - New `tryCandidates(ctx, info, candidates, action)` runs an element action against each candidate in rank order until one succeeds. Generated code and the verifier's IR interpreter both use it. If every candidate fails, the primary's error is thrown and attributed to the primary.
+  - A step that passes on a candidate after the first is recorded as degraded: `RunResult.degraded` lists `{ stepId, candidateIndex, selector }` for each one. A run can be `ok` and degraded; it means the primary selectors are breaking. The field is absent when nothing degraded.
+  - `StepInfo` and `FailureAttribution` gain `candidateIndex`, so a failure says which ranked candidate was in use.
+  - `step()` now passes its `info` to the body (`async (info) => ...`). Bodies that ignore the argument are unaffected.
+  - `WorkflowContext` gains `recordDegraded` and `degraded()`. Contexts built with `createWorkflowContext` have them; a hand-built `WorkflowContext` object must add them.
+  - New exports: `tryCandidates`, `CandidateLookup`, `DegradedStep`.
+
+- 61402b1: `emit.table` (and `extractTable`) now match columns to header cells more forgivingly, and a column can name the header text it appears under.
+
+  - A column still matches a header with exactly its name first. When none does, it matches a header that differs only in case, spacing (non-breaking spaces included) or Unicode compatibility form, so `sku` reads a column headed `SKU`.
+  - A column can be a `ColumnSpec`, `{ type, headers }`, listing other header text to try: `{ sku: { type: 'string', headers: ['Stock code'] } }`. Aliases are matched the same way, exact first.
+  - If two header cells match one column at the same step, extraction fails with an `ExtractionError` naming both, instead of picking one. A guessed column is a wrong-column read.
+  - New exports: `ColumnSpec`, `ColumnType` and `normaliseHeader`.
+
+  Workflows whose headers matched exactly before read the same columns as before.
+
+### Patch Changes
+
+- Updated dependencies [61402b1]
+  - @sfysh/ir@0.4.0
+
 ## 0.7.0
 
 ### Minor Changes
