@@ -22,7 +22,7 @@ The IR is JSON-Schema-first and designed to survive breaking changes through exp
 | `hashWorkflow(workflow)`, `hashStep(step)`                                | Stable `sha256:` hash of what a workflow or step does. Ignores `metadata`, `$schema` and key order.                                                                                |
 | `findStep`, `replaceStep`, `insertStep`, `listStepIds`                    | Address steps by id through nested `guard` and `loop` bodies.                                                                                                                      |
 | `diffPatch(patch)`, `diffStep(before, after)`                             | Field-level changes as JSON Pointers, for rendering a readable diff.                                                                                                               |
-| `planExtract(schema)`                                                     | Decides how an `extract` schema is read from the page: one value, a flat list, or typed table rows.                                                                                |
+| `planExtract(schema)`                                                     | Decides how an `extract` schema is read from the page: one value, a flat list, or typed table rows. A column property may name its header text with `x-header` (`HEADER_KEYWORD`). |
 | `parseRoleSelector(value)`                                                | Reads the `role` selector format (`button[name='Sign in']`, `heading[level=2]`) into `{ role, options, unparsed }`. Never throws; anything it cannot read is listed in `unparsed`. |
 
 ## Usage

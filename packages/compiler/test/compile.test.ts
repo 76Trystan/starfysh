@@ -702,6 +702,37 @@ describe('compile: extract schema branching', () => {
     expect(source).not.toContain("type: 'array'");
   });
 
+  it('passes x-header aliases to emit.table as a column spec, and leaves other columns bare', async () => {
+    const workflow = {
+      irVersion: '1.0.0',
+      id: 'test_aliases',
+      name: 'Aliases',
+      steps: [
+        {
+          id: 'ext_rows',
+          intent: 'Read the rows.',
+          action: 'extract',
+          target: { candidates: [{ kind: 'css', value: 'table' }] },
+          schema: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                sku: { type: 'string', 'x-header': ['Stock code', 'Item code'] },
+                qty: { type: 'integer' },
+              },
+            },
+          },
+          bind: 'rows',
+        },
+      ],
+    } as unknown as Workflow;
+    const { source } = await compile(workflow);
+    expect(source).toMatch(
+      /sku: \{\s*type: 'string',\s*headers: \['Stock code', 'Item code'\],?\s*\},\s*qty: 'number'/,
+    );
+  });
+
   it('refuses an extract schema it cannot read from a page', async () => {
     const workflow = {
       irVersion: '1.0.0',

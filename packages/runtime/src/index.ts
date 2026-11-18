@@ -27,8 +27,14 @@ export {
 } from './vault.js';
 export type { EnvVaultResolverOptions, VaultResolver } from './vault.js';
 
-export { ExtractionError, extractTable, extractValue, extractList } from './emit.js';
-export type { ColumnSchema, TableRow } from './emit.js';
+export {
+  ExtractionError,
+  extractTable,
+  extractValue,
+  extractList,
+  normaliseHeader,
+} from './emit.js';
+export type { ColumnSchema, ColumnSpec, ColumnType, TableRow } from './emit.js';
 
 export { guard } from './guard.js';
 

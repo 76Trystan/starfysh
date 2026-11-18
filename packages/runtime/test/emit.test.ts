@@ -186,3 +186,65 @@ describe('WorkflowContext.emit.output + ctx.drainOutputs', () => {
     expect(ctxB.drainOutputs()).toEqual(['b1']);
   });
 });
+
+describe('extractTable header matching', () => {
+  const rows = [['A-001', '12']];
+
+  it('matches a column to a header that differs only in case and spacing', async () => {
+    const loc = mockTableLocator({ headers: [' SKU ', 'Qty  '], rows });
+    expect(await extractTable(loc, { sku: 'string', qty: 'number' })).toEqual([
+      { sku: 'A-001', qty: 12 },
+    ]);
+  });
+
+  it('folds Unicode compatibility forms', async () => {
+    const loc = mockTableLocator({ headers: ['ＳＫＵ', 'qty'], rows });
+    expect(await extractTable(loc, { sku: 'string', qty: 'number' })).toEqual([
+      { sku: 'A-001', qty: 12 },
+    ]);
+  });
+
+  it('matches a column under a header alias, also loosely', async () => {
+    const loc = mockTableLocator({ headers: ['Stock code', 'QUANTITY ON HAND'], rows });
+    expect(
+      await extractTable(loc, {
+        sku: { type: 'string', headers: ['Stock code'] },
+        qty: { type: 'number', headers: ['Quantity on hand'] },
+      }),
+    ).toEqual([{ sku: 'A-001', qty: 12 }]);
+  });
+
+  it('prefers an exact match over a loose one', async () => {
+    const loc = mockTableLocator({ headers: ['SKU', 'sku'], rows: [['upper', 'lower']] });
+    expect(await extractTable(loc, { sku: 'string' })).toEqual([{ sku: 'lower' }]);
+  });
+
+  it('refuses to guess between two headers that match loosely', async () => {
+    const loc = mockTableLocator({ headers: ['SKU', 'Sku '], rows: [['a', 'b']] });
+    await expect(extractTable(loc, { sku: 'string' })).rejects.toThrow(
+      /matches more than one table header \('SKU', 'Sku'\)/,
+    );
+  });
+
+  it('refuses to guess when the name and an alias are both present as columns', async () => {
+    const loc = mockTableLocator({ headers: ['sku', 'Stock code'], rows: [['a', 'b']] });
+    await expect(
+      extractTable(loc, { sku: { type: 'string', headers: ['Stock code'] } }),
+    ).rejects.toThrow(ExtractionError);
+  });
+
+  it('names every header it looked for when none match', async () => {
+    const loc = mockTableLocator({ headers: ['Item', 'Count'], rows });
+    await expect(
+      extractTable(loc, { sku: { type: 'string', headers: ['Stock code'] } }),
+    ).rejects.toThrow(/looked for 'sku', 'Stock code'\)\. Headers were: Item, Count/);
+  });
+
+  it('coerces aliased columns by their spec type', async () => {
+    const loc = mockTableLocator({ headers: ['Active?'], rows: [['yes']] });
+    const typed: { live: boolean }[] = await extractTable(loc, {
+      live: { type: 'boolean', headers: ['Active?'] },
+    });
+    expect(typed).toEqual([{ live: true }]);
+  });
+});

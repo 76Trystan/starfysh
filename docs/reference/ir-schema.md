@@ -89,6 +89,23 @@ The `schema` decides how the page is read. The compiler and the interpreter shar
 
 For a table, each property's `type` sets how its cells are coerced: `string`, `number`, `integer` (read as a number) or `boolean`. Any other property type is refused, as is any schema outside this table: the compiler throws `CompilerError` and the interpreter fails the step. Nothing is read from the page in that case.
 
+**Matching columns to headers.** Each property is matched to a header cell by its name. A header with exactly that text (after trimming) wins. When there is none, a header that differs only in case, spacing or Unicode compatibility form matches, so a property `sku` reads a column headed `SKU`. When the page uses different words, name them with `x-header`, a string or a list of strings, tried after the property name in the same way:
+
+```json
+{
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "sku": { "type": "string", "x-header": ["Stock code", "Item code"] },
+      "qty": { "type": "integer", "x-header": "Quantity on hand" }
+    }
+  }
+}
+```
+
+If two header cells match one property at the same step (two columns headed `SKU` and `sku `, or the name and an alias both present), the step fails with an `ExtractionError` naming both. It never picks one, because a guessed column is a wrong-column read. An `x-header` that is empty, blank or not made of strings makes the schema unsupported. Aliases are only available in the JSON Schema form; a bare column map matches by name.
+
 Every `extract` step adds one entry to the run's outputs: an object with a single key, the `bind` name (or the step `id` when there is no `bind`), holding the extracted value. An extract inside a loop adds one entry per iteration. The entry is added after the step's `post` conditions pass, so a step whose postcondition fails contributes nothing. The verifier's output-stability check compares these entries across runs.
 
 #### `wait`

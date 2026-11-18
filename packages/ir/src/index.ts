@@ -24,8 +24,8 @@ export {
   validatePatch,
 } from './patch.js';
 export type { ApplyPatchResult, StepChange, StepDiff, StepLocation, StepPatch } from './patch.js';
-export { planExtract } from './extract.js';
-export type { ColumnType, ExtractPlan } from './extract.js';
+export { HEADER_KEYWORD, planExtract } from './extract.js';
+export type { ColumnSpec, ColumnType, ExtractPlan } from './extract.js';
 export { parseRoleSelector } from './selectors.js';
 export type { RoleOptionValue, RoleSelector } from './selectors.js';
 

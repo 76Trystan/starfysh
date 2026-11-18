@@ -512,6 +512,47 @@ describe('parity: compiled code and the interpreter drive the page identically',
     expect(interpreted.log).toEqual(compiled.log);
   });
 
+  it('on a table whose headers differ in case and use an x-header alias', async () => {
+    const aliased = {
+      irVersion: '1.0.0',
+      id: 'wf_aliased_table',
+      name: 'Aliased table',
+      steps: [
+        {
+          id: 'extract_001',
+          intent: 'Read the stock table.',
+          action: 'extract',
+          target: { candidates: [{ kind: 'css', value: 'table.stock' }] },
+          schema: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                sku: { type: 'string', 'x-header': 'Stock code' },
+                qty: { type: 'integer' },
+              },
+            },
+          },
+          bind: 'rows',
+        },
+      ],
+    } as unknown as Workflow;
+    const { compiled, interpreted } = await both(aliased, {
+      url: 'https://x.test/stock',
+      count: { 'locator("table.stock").locator("tbody tr, tr:not(:first-child)")': 1 },
+      texts: {
+        'locator("table.stock").locator("thead th, tr:first-child th")': ['STOCK CODE', ' Qty '],
+        'locator("table.stock").locator("tbody tr, tr:not(:first-child)").nth(0).locator("td, th")':
+          ['A1', '7'],
+      },
+    });
+
+    expect(compiled.status).toBe('ok');
+    expect(interpreted.log).toEqual(compiled.log);
+    expect(interpreted.outputs).toEqual(compiled.outputs);
+    expect(compiled.outputs).toEqual([{ rows: [{ sku: 'A1', qty: 7 }] }]);
+  });
+
   it('on the reference supplier-portal workflow', async () => {
     const script: PageScript = {
       url: 'https://portal.acmesupply.com/dashboard/reports/stock',

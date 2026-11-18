@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { planExtract } from '../src/index.js';
+import { HEADER_KEYWORD, planExtract } from '../src/index.js';
 
 describe('planExtract', () => {
   it('reads a string schema as a single value', () => {
@@ -110,5 +110,47 @@ describe('planExtract', () => {
 
   it.each([null, undefined, 'string', 42, []])('refuses a non-object schema (%s)', (schema) => {
     expect(planExtract(schema).kind).toBe('unsupported');
+  });
+});
+
+describe('planExtract header aliases', () => {
+  const rows = (properties: Record<string, unknown>) => ({
+    type: 'array',
+    items: { type: 'object', properties },
+  });
+
+  it('reads x-header as a column spec, from a string or a list, trimmed', () => {
+    expect(
+      planExtract(
+        rows({
+          sku: { type: 'string', 'x-header': ' Stock code ' },
+          qty: { type: 'integer', 'x-header': ['Qty', 'Quantity on hand'] },
+          name: { type: 'string' },
+        }),
+      ),
+    ).toEqual({
+      kind: 'table',
+      columns: {
+        sku: { type: 'string', headers: ['Stock code'] },
+        qty: { type: 'number', headers: ['Qty', 'Quantity on hand'] },
+        name: 'string',
+      },
+    });
+  });
+
+  it('exports the keyword name', () => {
+    expect(HEADER_KEYWORD).toBe('x-header');
+  });
+
+  it.each([
+    ['an empty string', ''],
+    ['an empty list', []],
+    ['a list with a blank entry', ['Qty', ' ']],
+    ['a number', 3],
+    ['a list with a non-string', ['Qty', 4]],
+  ])('refuses an x-header that is %s', (_label, header) => {
+    const plan = planExtract(rows({ qty: { type: 'number', 'x-header': header } }));
+    expect(plan.kind).toBe('unsupported');
+    expect(plan.kind === 'unsupported' && plan.reason).toMatch(/column 'qty': 'x-header' must be/);
   });
 });

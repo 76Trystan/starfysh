@@ -7,13 +7,23 @@
 /** Primitive type a table column is coerced to. */
 export type ColumnType = 'string' | 'number' | 'boolean';
 
+/** A table column whose header text differs from its name. Same shape as the runtime's `ColumnSpec`. */
+export interface ColumnSpec {
+  type: ColumnType;
+  /** Header cells the column may appear under, tried after the column name. */
+  headers: string[];
+}
+
+/** JSON Schema keyword on a table column property naming its header text. */
+export const HEADER_KEYWORD = 'x-header';
+
 export type ExtractPlan =
   /** One text value: the first matched element's text. */
   | { kind: 'value' }
   /** One text value per matched element. */
   | { kind: 'list' }
   /** Typed rows read from a table, one object per row, keyed by column. */
-  | { kind: 'table'; columns: Record<string, ColumnType> }
+  | { kind: 'table'; columns: Record<string, ColumnType | ColumnSpec> }
   /** The schema does not describe a read the runtime can perform. */
   | { kind: 'unsupported'; reason: string };
 
@@ -31,6 +41,12 @@ export type ExtractPlan =
  * `string`, `number`, `integer` (read as `number`) or `boolean`. A property
  * of any other type makes the whole schema `unsupported`, because there is
  * no honest way to coerce a table cell into an object or an array.
+ *
+ * A property may name the header text it appears under with `x-header`,
+ * a string or a list of strings: `{ "type": "string", "x-header": "Stock code" }`.
+ * The column is then a `ColumnSpec`. Without it the column is its bare
+ * type, so plans for existing workflows are unchanged. Header matching
+ * itself (exact first, then ignoring case and spacing) is the runtime's.
  *
  * A column map whose first column is literally named `type` is read as a
  * JSON Schema, not a column map. Name the column something else.
@@ -58,7 +74,7 @@ export function planExtract(schema: unknown): ExtractPlan {
           "an array of objects needs 'items.properties' to name the table columns",
         );
       }
-      const columns: Record<string, ColumnType> = {};
+      const columns: Record<string, ColumnType | ColumnSpec> = {};
       for (const [name, property] of Object.entries(properties as Record<string, unknown>)) {
         const type =
           typeof property === 'object' && property !== null
@@ -70,7 +86,9 @@ export function planExtract(schema: unknown): ExtractPlan {
             `column '${name}' has type ${JSON.stringify(type)}; table columns must be string, number, integer or boolean`,
           );
         }
-        setOwn(columns, name, column);
+        const headers = headersOf(property as Record<string, unknown>);
+        if (typeof headers === 'string') return unsupported(`column '${name}': ${headers}`);
+        setOwn(columns, name, headers === undefined ? column : { type: column, headers });
       }
       if (Object.keys(columns).length === 0) {
         return unsupported("'items.properties' names no columns");
@@ -88,7 +106,7 @@ export function planExtract(schema: unknown): ExtractPlan {
       entries.length > 0 &&
       entries.every(([, v]) => v === 'string' || v === 'number' || v === 'boolean')
     ) {
-      const columns: Record<string, ColumnType> = {};
+      const columns: Record<string, ColumnType | ColumnSpec> = {};
       for (const [name, type] of entries) setOwn(columns, name, type as ColumnType);
       return { kind: 'table', columns };
     }
@@ -104,8 +122,30 @@ function columnTypeOf(type: unknown): ColumnType | undefined {
   return undefined;
 }
 
+/**
+ * Read a property's `x-header`: undefined when absent, the header list
+ * when valid, or a reason string when it is malformed.
+ */
+function headersOf(property: Record<string, unknown>): string[] | undefined | string {
+  if (!Object.prototype.hasOwnProperty.call(property, HEADER_KEYWORD)) return undefined;
+  const raw = property[HEADER_KEYWORD];
+  const list = typeof raw === 'string' ? [raw] : raw;
+  if (
+    !Array.isArray(list) ||
+    list.length === 0 ||
+    !list.every((h) => typeof h === 'string' && h.trim() !== '')
+  ) {
+    return `'${HEADER_KEYWORD}' must be a non-empty string or a non-empty list of them`;
+  }
+  return list.map((h: string) => h.trim());
+}
+
 /** Assign as an own property, so a column called `__proto__` stays a column. */
-function setOwn(target: Record<string, ColumnType>, key: string, value: ColumnType): void {
+function setOwn(
+  target: Record<string, ColumnType | ColumnSpec>,
+  key: string,
+  value: ColumnType | ColumnSpec,
+): void {
   Object.defineProperty(target, key, {
     value,
     enumerable: true,

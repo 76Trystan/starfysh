@@ -11,23 +11,45 @@
 
 import type { Locator } from './types.js';
 
+/** Primitive type a table column is coerced to. */
+export type ColumnType = 'string' | 'number' | 'boolean';
+
 /**
- * Column schema for `ctx.emit.table`. Maps column header name to the
- * primitive type the column should coerce to. 'string' is pass-through,
- * 'number' and 'boolean' coerce or fail.
+ * A column with header text other than its name. `headers` are the
+ * header cells the column may appear under, tried after the name itself.
  */
-export type ColumnSchema = Record<string, 'string' | 'number' | 'boolean'>;
+export interface ColumnSpec {
+  type: ColumnType;
+  headers?: readonly string[];
+}
+
+/**
+ * Column schema for `ctx.emit.table`. Maps each output field to the type
+ * its cells coerce to ('string' is pass-through, 'number' and 'boolean'
+ * coerce or fail), or to a `ColumnSpec` naming other header text the
+ * column may appear under.
+ *
+ * A field is matched to a header cell by its name and its `headers`:
+ * first exactly (after trimming), then ignoring case, runs of whitespace
+ * and Unicode compatibility forms. Two header cells matching one field at
+ * the same step is an error, never a guess, because a guess here is a
+ * wrong-column read.
+ */
+export type ColumnSchema = Record<string, ColumnType | ColumnSpec>;
+
+type CellType<C> = C extends ColumnSpec ? C['type'] : C;
 
 /**
  * Infer the row type from a column schema literal.
- * `{ sku: 'string', qty: 'number' }` becomes `{ sku: string; qty: number }`.
+ * `{ sku: 'string', qty: { type: 'number', headers: ['Quantity'] } }`
+ * becomes `{ sku: string; qty: number }`.
  */
 export type TableRow<S extends ColumnSchema> = {
-  [K in keyof S]: S[K] extends 'string'
+  [K in keyof S]: CellType<S[K]> extends 'string'
     ? string
-    : S[K] extends 'number'
+    : CellType<S[K]> extends 'number'
       ? number
-      : S[K] extends 'boolean'
+      : CellType<S[K]> extends 'boolean'
         ? boolean
         : never;
 };
@@ -61,13 +83,7 @@ export async function extractTable<S extends ColumnSchema>(
 
   const columnIndex: Record<string, number> = {};
   for (const key of schemaKeys) {
-    const index = trimmedHeaders.indexOf(key);
-    if (index === -1) {
-      throw new ExtractionError(
-        `Column '${key}' not found in table headers. Headers were: ${trimmedHeaders.join(', ')}`,
-      );
-    }
-    columnIndex[key] = index;
+    columnIndex[key] = findColumn(key, schema[key]!, trimmedHeaders);
   }
 
   const rows: TableRow<S>[] = [];
@@ -79,7 +95,7 @@ export async function extractTable<S extends ColumnSchema>(
     const row: Record<string, unknown> = {};
     for (const key of schemaKeys) {
       const raw = cells[columnIndex[key]!]?.trim() ?? '';
-      row[key] = coerce(raw, schema[key]!, key);
+      row[key] = coerce(raw, columnType(schema[key]!), key);
     }
     rows.push(row as TableRow<S>);
   }
@@ -105,6 +121,53 @@ export async function extractValue(locator: Locator): Promise<string | null> {
  */
 export async function extractList(locator: Locator): Promise<string[]> {
   return locator.allTextContents();
+}
+
+function columnType(column: ColumnType | ColumnSpec): ColumnType {
+  return typeof column === 'string' ? column : column.type;
+}
+
+/**
+ * Header text compared loosely: Unicode compatibility forms folded (NFKC),
+ * whitespace runs (non-breaking spaces included) collapsed to one space,
+ * trimmed, and lower-cased.
+ */
+export function normaliseHeader(text: string): string {
+  return text.normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/**
+ * Index of the header cell a field reads from. Exact matches on the name
+ * or an alias win; loose matches (`normaliseHeader`) are tried only when
+ * there is no exact one. More than one cell at the winning step throws.
+ */
+function findColumn(key: string, column: ColumnType | ColumnSpec, headers: string[]): number {
+  const names = [key, ...(typeof column === 'string' ? [] : (column.headers ?? []))];
+  const exact = matching(headers, (h) => names.includes(h));
+  const loose = names.map(normaliseHeader);
+  const found =
+    exact.length > 0 ? exact : matching(headers, (h) => loose.includes(normaliseHeader(h)));
+
+  const tried = names.map((n) => `'${n}'`).join(', ');
+  if (found.length === 0) {
+    throw new ExtractionError(
+      `Column '${key}' not found in table headers (looked for ${tried}). Headers were: ${headers.join(', ')}`,
+    );
+  }
+  if (found.length > 1) {
+    throw new ExtractionError(
+      `Column '${key}' matches more than one table header (${found.map((i) => `'${headers[i]}'`).join(', ')}); give it a header alias that names one.`,
+    );
+  }
+  return found[0]!;
+}
+
+function matching(headers: string[], test: (header: string) => boolean): number[] {
+  const indices: number[] = [];
+  headers.forEach((h, i) => {
+    if (test(h)) indices.push(i);
+  });
+  return indices;
 }
 
 function coerce(raw: string, type: 'string' | 'number' | 'boolean', field: string): unknown {
