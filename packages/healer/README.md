@@ -556,6 +556,8 @@ A heal record holds the workflow hash, the failure, the triage decision, the pol
 
 **Reviews are separate records.** A person may answer hours after the heal ran and the file is only ever appended to, so `reviewRecord()` writes a second record that points at the heal by id. A review must name the reviewer.
 
+**Shadow mode.** Model-written patches always wait for a person, but every verified one is also decided a second time under the candidate automatic rule (`SHADOW_AUTO_POLICY`: a selector patch, no approval reasons, score at least 0.8). The result is on `HealAttempt.shadow` and in the corpus as `wouldAutoAccept: { policy, eligible, reasons }`. Set against the reviewer's verdict, it shows how often the automatic rule agrees with people on your own workflows, which is the evidence needed before model-written patches are ever accepted without review. `heal({ shadowPolicy })` tests a different rule. The verdict never changes the real decision, and `renderReview()` never shows it: a reviewer told the machine would have accepted a patch is nudged to accept it, and the agreement rate would then measure the nudge. Keep it out of anything a reviewer reads before deciding, including JSON passed to an agent that presents the review.
+
 **Reading it back.** `readCorpus(dir)` returns every record in the order written. A line that is not valid JSON, or is a record of another version or kind, is skipped and listed in `problems` instead of thrown, so a line cut off by a crash does not hide the rest. A missing corpus reads as empty. `MemoryCorpus` keeps records in memory for tests and benchmark runs.
 
 Use one writer per corpus directory. Two processes appending at once can interleave long lines.

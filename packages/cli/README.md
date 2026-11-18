@@ -112,7 +112,7 @@ Options:
 - `--dir <path>` state directory (default `.compile`).
 - `-n`, `--runs <count>` live runs to verify a patch with (default and minimum 3).
 - `--timeout <ms>` fail a run that takes longer than this.
-- `--json` emit JSON (status, heal id, pending path and the corpus record) instead of the review.
+- `--json` emit JSON (status, heal id, pending path and the corpus record) instead of the review. For a heal waiting for approval, the record leaves out the shadow-mode verdict (`wouldAutoAccept`), so nothing that presents the review can nudge the reviewer; the corpus keeps it.
 - `--auto-promote` apply a verified promotion without asking. See below.
 
 Exit codes:

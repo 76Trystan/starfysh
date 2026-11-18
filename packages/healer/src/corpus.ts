@@ -44,6 +44,7 @@ import type { PromoteResult } from './promote.js';
 import { PROMPT_ERROR_MAX_CHARS } from './prompt.js';
 import type { ReachApproval } from './reach.js';
 import type { ReversionCode } from './revert.js';
+import type { ShadowDecision } from './shadow.js';
 import type { PatchScore } from './score.js';
 import type { HealerTriage, HealRoute } from './triage.js';
 
@@ -142,6 +143,13 @@ export interface CorpusAttempt {
   decision?: CorpusDecision;
   /** Earlier heals this patch undoes. */
   reversions?: { code: ReversionCode; at: string }[];
+  /**
+   * Shadow mode: whether the candidate automatic rule would have accepted
+   * this patch without a person. Compared with the reviewer's verdict in
+   * a later `review` record to measure how often the rule agrees with
+   * people. Present on verified model-written patches.
+   */
+  wouldAutoAccept?: ShadowDecision;
 }
 
 /** The final result of one `heal()`. */
@@ -609,6 +617,13 @@ function corpusAttempt(attempt: HealAttempt): CorpusAttempt {
     out.verification = corpusVerification(attempt.verification);
   }
   if (attempt.decision !== undefined) out.decision = corpusDecision(attempt.decision);
+  if (attempt.shadow !== undefined) {
+    out.wouldAutoAccept = {
+      policy: { ...attempt.shadow.policy },
+      eligible: attempt.shadow.eligible,
+      reasons: [...attempt.shadow.reasons],
+    };
+  }
   if (attempt.reversions !== undefined) {
     out.reversions = attempt.reversions.map((r) => ({ code: r.code, at: r.at.toISOString() }));
   }

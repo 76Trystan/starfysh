@@ -365,7 +365,12 @@ export async function runHealCommand(opts: HealCommandOptions): Promise<HealComm
       pending: pendingPath,
       output: render(
         opts.format,
-        { status: 'decided', healId: record.id, pending: pendingPath, record },
+        {
+          status: 'decided',
+          healId: record.id,
+          pending: pendingPath,
+          record: withoutShadow(record),
+        },
         () =>
           [
             renderReview(result.decision, { workflow }),
@@ -991,4 +996,17 @@ function notHealedText(
   }
   lines.push(`Recorded as heal ${record.id}.`);
   return lines.join('\n');
+}
+
+/**
+ * The corpus record without its shadow verdicts, for output a reviewer may
+ * read before deciding. Telling a reviewer the automatic rule would have
+ * accepted a patch nudges them to accept it, which would spoil the
+ * agreement data shadow mode collects. The corpus keeps the verdicts.
+ */
+function withoutShadow(record: HealCorpusRecord): HealCorpusRecord {
+  return {
+    ...record,
+    attempts: record.attempts.map(({ wouldAutoAccept: _hidden, ...attempt }) => attempt),
+  };
 }

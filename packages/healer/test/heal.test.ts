@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Workflow } from '@sfysh/ir';
+import type { StepPatch, Workflow } from '@sfysh/ir';
 import { MemoryUsageLedger, MeteredProvider, ProviderError } from '@sfysh/providers';
 import type { CompleteOptions, Completion, Provider } from '@sfysh/providers';
 import { VaultSecretMissingError } from '@sfysh/runtime';
@@ -10,10 +10,14 @@ import {
   DEFAULT_HEAL_LIMITS,
   DEFAULT_HEAL_MAX_TOKENS,
   heal,
+  healRecord,
   HEAL_WINDOW_MS,
   MemoryHealHistory,
   patchClassOrder,
+  renderReview,
   resolveHealLimits,
+  SHADOW_AUTO_POLICY,
+  shadowDecision,
 } from '../src/index.js';
 import type { HealInput, HealResult } from '../src/index.js';
 
@@ -505,6 +509,53 @@ describe('heal', () => {
         ['insert_step', 'verified'],
       ]);
       expect(result.decision.status).toBe('awaiting_approval');
+      // A patch that failed verification has no shadow verdict; an
+      // inserted step would never be accepted automatically.
+      expect(result.attempts[0]!.shadow).toBeUndefined();
+      expect(result.attempts[1]!.shadow).toMatchObject({ eligible: false });
+      expect(result.attempts[1]!.shadow!.reasons).toContain('insert_step');
+    });
+  });
+
+  describe('shadow mode', () => {
+    it('records that the automatic rule would accept a strong selector patch, while a person still decides', async () => {
+      const result = await healOn(newSite, scripted([selectorAnswer()]));
+      expect(result.status).toBe('decided');
+      if (result.status !== 'decided') return;
+      expect(result.decision.status).toBe('awaiting_approval');
+      expect(result.attempts[0]!.shadow).toEqual({
+        policy: SHADOW_AUTO_POLICY,
+        eligible: true,
+        reasons: [],
+      });
+    });
+
+    it('records why the rule would still hold a patch, under a stricter shadow policy', async () => {
+      const result = await healOn(newSite, scripted([selectorAnswer()]), {
+        shadowPolicy: { mode: 'auto', minScore: 1 },
+      });
+      if (result.status !== 'decided') throw new Error('expected a decision');
+      expect(result.attempts[0]!.shadow).toMatchObject({
+        eligible: false,
+        reasons: ['score_below_threshold'],
+      });
+    });
+
+    it('never shows the shadow verdict in the review a person reads', async () => {
+      const result = await healOn(newSite, scripted([selectorAnswer()]));
+      if (result.status !== 'decided') throw new Error('expected a decision');
+      const review = renderReview(result.decision, { workflow });
+      expect(review).not.toMatch(/shadow|automatic|would have/i);
+    });
+
+    it('keeps the verdict in the corpus record', async () => {
+      const result = await healOn(newSite, scripted([selectorAnswer()]));
+      const record = healRecord({ workflow, knownGood, result, redact: (t) => t });
+      expect(record.attempts[0]!.wouldAutoAccept).toEqual({
+        policy: SHADOW_AUTO_POLICY,
+        eligible: true,
+        reasons: [],
+      });
     });
   });
 });
@@ -527,5 +578,26 @@ describe('resolveHealLimits', () => {
       healOn(newSite, provider, { limits: { maxAttemptsPerFailure: 0 } }),
     ).rejects.toBeInstanceOf(RangeError);
     expect(provider.calls).toHaveLength(0);
+  });
+});
+
+describe('shadowDecision', () => {
+  it('reports a patch the checks would refuse as rejected, not eligible', () => {
+    const patch = {
+      workflowId: workflow.id,
+      baseHash: 'sha256:not-this-workflow',
+      stepId: 'click_002',
+      op: 'replace',
+      before: click002,
+      after: click002,
+      rationale: 'x',
+    } as unknown as StepPatch;
+    const shadow = shadowDecision({
+      workflow,
+      patchClass: 'selector',
+      score: { score: 0.9, level: 'high', signals: [] },
+      verification: { status: 'not_applied', patch, errors: [] },
+    });
+    expect(shadow).toEqual({ policy: SHADOW_AUTO_POLICY, eligible: false, reasons: ['rejected'] });
   });
 });

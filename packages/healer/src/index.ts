@@ -192,3 +192,6 @@ export type {
   PromotionSkip,
   PromotionSkipReason,
 } from './promote.js';
+
+export { SHADOW_AUTO_POLICY, shadowDecision } from './shadow.js';
+export type { ShadowDecision } from './shadow.js';

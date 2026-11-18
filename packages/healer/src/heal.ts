@@ -42,6 +42,8 @@ import { HEAL_WINDOW_MS, resolveHealLimits } from './limits.js';
 import type { HealHistory, HealLimits } from './limits.js';
 import type { HealFailure } from './prompt.js';
 import { findReversions, patchRecord } from './revert.js';
+import { shadowDecision } from './shadow.js';
+import type { ShadowDecision } from './shadow.js';
 import type { Reversion } from './revert.js';
 import { triageFailure } from './triage.js';
 import type { HealRoute, TriageDecision } from './triage.js';
@@ -79,6 +81,11 @@ export interface HealInput {
   verify?: HealVerifyOptions;
   /** Default: every patch waits for a person. */
   policy?: AcceptancePolicy;
+  /**
+   * The automatic rule shadow mode records a verdict for, on every
+   * verified patch. Default `SHADOW_AUTO_POLICY`. Does not affect `policy`.
+   */
+  shadowPolicy?: AcceptancePolicy;
   /** Defaults in `DEFAULT_HEAL_LIMITS`. */
   limits?: Partial<HealLimits>;
   /** Longest one model call may take. See `generateSelectorPatch`. */
@@ -101,6 +108,12 @@ export interface HealAttempt {
   decision?: PatchDecision;
   /** Earlier heals this patch undoes. Present only when there are some. */
   reversions?: Reversion[];
+  /**
+   * What the shadow policy would have decided. Present alongside
+   * `decision`. For the record only: it never changes the real decision,
+   * and it must not be shown to the reviewer (see `shadow.ts`).
+   */
+  shadow?: ShadowDecision;
 }
 
 /**
@@ -285,15 +298,19 @@ export async function heal(input: HealInput): Promise<HealResult> {
           await input.history.patches(workflow.id),
         );
         if (reversions.length > 0) attempt.reversions = reversions;
-        const decision = decidePatch({
+        const decideInput = {
           workflow,
           patchClass,
           score: generated.score,
           verification,
           reversions,
+        };
+        const decision = decidePatch({
+          ...decideInput,
           ...(input.policy !== undefined ? { policy: input.policy } : {}),
         });
         attempt.decision = decision;
+        attempt.shadow = shadowDecision(decideInput, input.shadowPolicy);
         if (decision.status !== 'rejected') {
           // Recorded whether accepted or held: the state this heal started
           // from is one the workflow really was in, which is what a later

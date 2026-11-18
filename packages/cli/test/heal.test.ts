@@ -427,6 +427,11 @@ describe('compile heal, approve and reject', () => {
     const parsed = JSON.parse(out);
     expect(parsed).toMatchObject({ status: 'decided', healId: pendingIds()[0] });
     expect(parsed.record.kind).toBe('heal');
+    // The shadow verdict is kept from anything a reviewer might read first,
+    // but stays in the corpus for the agreement report.
+    expect(out).not.toContain('wouldAutoAccept');
+    const stored = (await readCorpus(join(state, 'corpus'))).records[0] as HealCorpusRecord;
+    expect(stored.attempts[0]!.wouldAutoAccept).toMatchObject({ eligible: expect.any(Boolean) });
   });
 
   it('needs a provider from the flag or the backend', async () => {
