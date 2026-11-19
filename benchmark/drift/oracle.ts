@@ -71,7 +71,11 @@ export function applyOracle(workflow: Workflow, oracle: readonly OraclePatch[]):
   return { workflow: current, patches };
 }
 
-function buildPatch(workflow: Workflow, o: OraclePatch, nextId: () => string): StepPatch {
+/**
+ * Build one oracle patch as a real `StepPatch` against `workflow`. An
+ * inserted step takes its id from `nextId`.
+ */
+export function buildPatch(workflow: Workflow, o: OraclePatch, nextId: () => string): StepPatch {
   const base = { workflowId: workflow.id, baseHash: hashWorkflow(workflow) };
   if (o.kind === 'insert_click' || o.kind === 'insert_wait') {
     const after =

@@ -245,6 +245,54 @@ export function judgeHeal(baseline: Observation, patched: Observation): HealJudg
   return { verdict: reasons.length === 0 ? 'correct' : 'false_heal', reasons };
 }
 
+/** The attribute the fixtures mark real elements with. The healer never sees it. */
+export const TRUTH_ATTRIBUTE = 'data-sfysh-truth';
+
+/**
+ * Whether a healed workflow names the truth marker where the original did
+ * not. The model cannot see the marker (it reads the accessibility tree),
+ * so a selector built on it was invented, and passing would only show the
+ * fixture leaked. Such a heal is scored invalid, whatever it did.
+ */
+export function namesTruthMarker(original: Workflow, healed: Workflow): boolean {
+  return (
+    JSON.stringify(healed).includes(TRUTH_ATTRIBUTE) &&
+    !JSON.stringify(original).includes(TRUTH_ATTRIBUTE)
+  );
+}
+
+/**
+ * Judge one heal of several. After an early heal of a case that needs
+ * more, the patched workflow may still fail further on; that is progress,
+ * not a false heal, as long as everything it did so far is right. Correct
+ * means: no decoy or unmarked element was touched, the marked elements
+ * acted on are the start of the original's (all of them, if it passed),
+ * and the outputs emitted are the start of the original's (all of them,
+ * exactly, if it passed). A passing run is judged by `judgeHeal`.
+ */
+export function judgeProgress(baseline: Observation, patched: Observation): HealJudgement {
+  if (patched.status === 'ok') return judgeHeal(baseline, patched);
+  const reasons: string[] = [];
+  const acted = patched.truth.filter((t) => !t.includes(':drift:'));
+  const strays = acted.filter((t) => t.endsWith(':none') || t.endsWith(':decoy'));
+  if (strays.length > 0) {
+    reasons.push(`it acted on elements it was not meant to (${[...new Set(strays)].join(', ')})`);
+  }
+  if (!isPrefix(acted, baseline.truth)) {
+    reasons.push(
+      `it acted on ${acted.join(', ') || 'nothing'}, which is not how the original started (${baseline.truth.join(', ')})`,
+    );
+  }
+  if (!isPrefix(patched.outputs.map(canonical), baseline.outputs.map(canonical))) {
+    reasons.push('the outputs it emitted before failing differ from the original');
+  }
+  return { verdict: reasons.length === 0 ? 'correct' : 'false_heal', reasons };
+}
+
+function isPrefix(part: readonly string[], whole: readonly string[]): boolean {
+  return part.length <= whole.length && part.every((p, i) => p === whole[i]);
+}
+
 function canonical(value: unknown): string {
   return JSON.stringify(value, (_key, v: unknown) =>
     v !== null && typeof v === 'object' && !Array.isArray(v)

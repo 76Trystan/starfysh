@@ -52,8 +52,11 @@ That runs the drift self-tests in Chromium (about a minute and a half; the cases
 | `fixtures/shop.workflow.json`   | The workflow written against it: open the catalogue, pick Garden, read the products, check delivery to 2000, read the estimate.                                                                                    |
 | `page-drift.js`                 | The operators, run inside the page: `rename_text`, `set_attribute`, `remove_attribute`, `retag`, `reorder_columns`, `wrap_in_menu`, `add_overlay`, `add_decoy`, `remove`, `on_loads`, `shadow`, `iframe`, `delay`. |
 | `oracle.ts`                     | Builds a case's correct heal as real patches and checks each against the healer's rules.                                                                                                                           |
-| `drift.ts`                      | `loadFixture`, `driftedPages` (a page factory for `replay` and the healer), `observe` (run a workflow and record what it did), `judgeHeal`.                                                                        |
-| `cases.ts`                      | The suite: 51 named cases across both fixtures, each with the effect it must have, the step it breaks, the heal that would be right, and whether a decoy trap is present.                                          |
+| `drift.ts`                      | `loadFixture`, `driftedPages` (a page factory for `replay` and the healer), `observe` (run a workflow and record what it did), `judgeHeal`, `judgeProgress` (one heal of several), `namesTruthMarker`.             |
+| `heal-run.ts`                   | `runDriftCase`: runs the healer on one case until it passes or the healer stops, judges every heal, and writes the corpus.                                                                                         |
+| `run.ts`, `summary.ts`          | The `heal:drift` command and its printed summary.                                                                                                                                                                  |
+| `oracle-provider.ts`            | A provider that answers with each case's oracle heal, for a free dry run of the harness.                                                                                                                           |
+| `cases.ts`                      | The suite: 69 named cases across both fixtures, each with its group, the effect it must have, the step it breaks, the heal that would be right, and whether a decoy trap is present.                               |
 
 **How a heal is judged.** Not by verification, which only sees outputs. Elements the workflow is meant to act on carry a hidden truth marker, and the fixture records which marked element each click and fill lands on. `judgeHeal(baseline, patched)` calls a heal correct only if the patched workflow on the drifted page acts on the same elements, in the same order, as the original workflow on the clean page, and produces exactly the same outputs with no tolerance. Clicks on elements a drift added (a banner's dismiss button, a menu toggle) are allowed. A decoy that behaves like the real element and yields identical outputs passes verification, and is still judged a false heal. The healer never sees the markers: its view of the page is the accessibility tree.
 
@@ -73,6 +76,19 @@ The right first heal: `selector` 19, `insert_step` 13 (menus, banners, a wait fo
 **Oracles.** Every healable case carries a correct heal (`oracle`, built in `oracle.ts`), as successive patches when it needs several. The self-tests build each oracle patch as a real `StepPatch`, pass it through the healer's own `checkPatch` for its class, apply it, and require `judgeHeal` to call the result correct. So every case marked healable is provably healable within Starfysh's rules, and a model's heal can be compared with a known right answer.
 
 **Known gaps.** Six `not_healable` cases are things a person could fix but Starfysh cannot yet, marked with `gap`: `ab_test` (2; a patch is verified on its first selector only, so it fails on the other design), `intermittent` (2; an inserted dismiss click fails on visits without the banner), `iframe` (1; the runtime cannot enter frames), `header_alias` (1; the fix is an `x-header` alias, and patches may not change an extract schema). The other four `not_healable` cases remove the feature the workflow needs.
+
+**Running the healer on the suite.**
+
+```sh
+pnpm --filter @sfysh/benchmark heal:drift -- --provider anthropic --model <id> --price-in <usd> --price-out <usd> --max-usd 5
+pnpm --filter @sfysh/benchmark heal:drift -- --provider oracle   # free dry run
+```
+
+Each case runs the way a user's workflow would meet the change. A run that passes on a fallback selector gets a promotion (no model); a failure goes to `heal()`. A decided patch is applied as if a reviewer approved it, and the workflow runs again, up to four heals, because some cases need several. Each heal is written to a corpus with a `benchmark` label from the judge, and the final workflow is judged on page loads 1 and 2, so an A/B test or an intermittent banner shows both faces. A patch that names the truth marker is scored a false heal: the model cannot see it, so it was invented. Model calls go through a `MeteredProvider`, so tokens and cost are recorded per case when prices are given.
+
+Options: `--runs <n>` (default 1; use 3 or more for anything published, since model answers vary), `--case <id-prefix>` (repeatable), `--group <single|robustness|silent|complex>`, `--max-tokens`, `--out <dir>`. Results go to `results/drift-<timestamp>/`: `results.json` (a header with the suite hash, provider, model, prices and the judge's definition, then one entry per case run) and `corpus/heals.jsonl`, which `compile report --dir <that directory>` reads. The printed summary is a working view, not the published report.
+
+The oracle dry run is the harness's own check: every single-change case heals correctly, every not-healable case gets no patch, and no case meant to pass reaches the healer. Six complex cases do not heal even with the right answers, for reasons in the healer rather than the harness: a first heal of a case that needs several is verified by replaying the whole workflow, which still fails at the next broken step, and the identical-twin case fails with a Playwright strict-mode error that triage does not classify, so it is escalated.
 
 **Adding a case.** Add an entry to `cases.ts` with its drifts and expectation. The self-tests check that it really has the effect it claims; a drift selector that matches nothing fails the case rather than silently doing nothing.
 

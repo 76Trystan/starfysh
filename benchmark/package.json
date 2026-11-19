@@ -5,12 +5,14 @@
   "scripts": {
     "bench": "node --import tsx/esm harness/index.ts",
     "typecheck": "tsc --noEmit",
-    "test:drift": "vitest run --config drift/vitest.config.ts"
+    "test:drift": "vitest run --config drift/vitest.config.ts",
+    "heal:drift": "node --import tsx/esm drift/run.ts"
   },
   "dependencies": {
     "@sfysh/healer": "workspace:*",
     "@sfysh/ir": "workspace:*",
     "@sfysh/playwright-adapter": "workspace:*",
+    "@sfysh/providers": "workspace:*",
     "@sfysh/runtime": "workspace:*",
     "@sfysh/triage": "workspace:*",
     "@sfysh/verifier": "workspace:*"

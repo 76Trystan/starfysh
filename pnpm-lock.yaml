@@ -35,6 +35,9 @@ importers:
       '@sfysh/playwright-adapter':
         specifier: workspace:*
         version: link:../packages/playwright-adapter
+      '@sfysh/providers':
+        specifier: workspace:*
+        version: link:../packages/providers
       '@sfysh/runtime':
         specifier: workspace:*
         version: link:../packages/runtime
