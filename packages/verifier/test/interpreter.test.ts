@@ -523,6 +523,27 @@ describe('interpreter: ranked candidates', () => {
     expect(ctx.degraded()).toEqual([]);
   });
 
+  it('uses only the first candidate for a step named in primaryOnly, and falls through elsewhere', async () => {
+    const named = setup(broken);
+    const thrown = await failure(
+      createInterpreter({ primaryOnly: ['click_001'] })(
+        named.ctx,
+        wf([click('click_001', candidates)]),
+      ),
+    );
+    expect(thrown.step.selector).toEqual(candidates[0]);
+    expect(named.log).toEqual(['getByRole("button",{"name":"Sign in"}).click']);
+
+    // A step not named still falls through.
+    const other = setup(broken);
+    await createInterpreter({ primaryOnly: ['click_999'] })(
+      other.ctx,
+      wf([click('click_001', candidates)]),
+    );
+    expect(other.log).toHaveLength(2);
+    expect(other.ctx.degraded()).toHaveLength(1);
+  });
+
   it('falls through by default, as generated code does, and records the step as degraded', async () => {
     const { ctx, log } = setup(broken);
     await interpretWorkflow(ctx, wf([click('click_001', candidates)]));

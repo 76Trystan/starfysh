@@ -253,3 +253,18 @@ describe('label records', () => {
     expect(read.problems[0]!.message).toContain('Unknown label verdict');
   });
 });
+
+describe('corpusReport: partial heals', () => {
+  it('counts a heal whose patch only progressed as verified, and says how many were partial', () => {
+    const partial = healRec('p1', { decision: 'awaiting_approval' });
+    partial.attempts[0]!.verification = {
+      status: 'progressed',
+      failedStepId: 'click_004',
+      outputsMatched: 1,
+    };
+    const report = corpusReport([partial, healRec('v1', { decision: 'awaiting_approval' })]);
+    expect(report.overall.verified).toBe(2);
+    expect(report.overall.partial).toBe(1);
+    expect(renderReport(report)).toContain('Verified: 2 (1 partial).');
+  });
+});

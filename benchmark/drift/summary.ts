@@ -21,7 +21,12 @@ export function renderSummary(results: readonly CaseRunResult[], usage: UsageTot
     if (rows.length === 0) continue;
     const healed = rows.filter((r) => r.outcome === 'healed');
     const correct = healed.filter((r) => r.judgement?.verdict === 'correct').length;
-    const falseHeals = rows.filter((r) => r.judgement?.verdict === 'false_heal').length;
+    // A false heal anywhere in the run counts, finished or not.
+    const falseHeals = rows.filter(
+      (r) =>
+        r.judgement?.verdict === 'false_heal' ||
+        r.heals.some((h) => h.judgement?.verdict === 'false_heal'),
+    ).length;
     const partial = rows.filter((r) => r.outcome === 'partial' || r.outcome === 'max_heals').length;
     const notHealed = rows.filter((r) => r.outcome === 'not_healed').length;
     lines.push(

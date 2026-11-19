@@ -104,6 +104,15 @@ export interface InterpreterOptions {
    * through on.
    */
   candidates?: 'first' | 'fallthrough';
+  /**
+   * Step ids that use their primary candidate only, whatever `candidates`
+   * says. A healer verifying a patch uses this to prove the patched step's
+   * first choice works while the other steps fall through as they do in
+   * production: a step that already runs on a fallback is not the patch's
+   * business, and holding it to its primary would fail every patch on a
+   * page where several steps degrade at once.
+   */
+  primaryOnly?: readonly string[];
   /** Values for `{ param }` references, keyed by parameter name. */
   params?: Record<string, string>;
   /** Called once for every step execution, after it finishes or fails. */
@@ -339,7 +348,7 @@ class Run {
     root: Root,
     action: (locator: Locator) => Promise<void>,
   ): Promise<void> {
-    if (this.options.candidates === 'first') {
+    if (this.options.candidates === 'first' || this.options.primaryOnly?.includes(info.id)) {
       await action(this.locate(primaryOf(target, info.id), root));
       return;
     }

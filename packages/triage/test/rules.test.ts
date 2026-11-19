@@ -312,3 +312,54 @@ describe('classify: attribution passes through', () => {
     expect(result).not.toHaveProperty('message');
   });
 });
+
+describe('classify: a selector that matched several elements', () => {
+  // As Playwright reports it when a page gains a twin of the element.
+  const STRICT =
+    "locator.click: Error: strict mode violation: getByRole('button', { name: 'Apply' }) resolved to 2 elements:\n" +
+    '    1) <button type="button" data-testid="apply-filter">Apply</button> aka getByTestId(\'apply-filter\')\n' +
+    "    2) <button type=\"button\">Apply</button> aka getByRole('button', { name: 'Apply' }).nth(1)\n";
+
+  it('is a site change, not retried, with the match count and the selector in the reason', () => {
+    const result = classify({
+      error: new Error(STRICT),
+      attribution: {
+        stepId: 'click_004',
+        action: 'click',
+        selector: { kind: 'role', value: "button[name='Apply']" },
+      },
+    });
+    expect(result).toMatchObject({
+      kind: 'site',
+      rule: 'selector_ambiguous',
+      retryable: false,
+      stepId: 'click_004',
+    });
+    expect(result.reason).toBe(
+      'role selector "button[name=\'Apply\']" matched 2 elements, so it no longer picks out one',
+    );
+  });
+
+  it('is recognised from the message alone, without attribution', () => {
+    const result = classify({
+      error: new Error('strict mode violation: locator resolved to 3 elements'),
+    });
+    expect(result).toMatchObject({ kind: 'site', rule: 'selector_ambiguous' });
+    expect(result.reason).toContain('3 elements');
+  });
+
+  it('is recognised through a StepFailure wrapper', () => {
+    const step = {
+      id: 'click_004',
+      action: 'click',
+      selector: { kind: 'role', value: "button[name='Apply']" },
+    };
+    const result = classify({ error: new StepFailure(step as never, new Error(STRICT)) });
+    expect(result.rule).toBe('selector_ambiguous');
+  });
+
+  it('is not confused with an ordinary element timeout', () => {
+    const result = classify({ error: timeoutError(PLAYWRIGHT_CLICK_TIMEOUT) });
+    expect(result.rule).toBe('selector_timeout');
+  });
+});

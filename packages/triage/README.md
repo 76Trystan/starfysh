@@ -55,13 +55,16 @@ The first rule that matches wins.
 | 8   | Response status 401 or 403                                                                                                                       | `auth`            | `http_auth`              |
 | 9   | Network-level error in the message (`net::ERR_`, `ECONNREFUSED`, `ECONNRESET`, `ETIMEDOUT`, `ENOTFOUND`, `EAI_AGAIN`, `EPIPE`, `socket hang up`) | `flake`           | `network_error`          |
 | 10  | A 5xx status quoted in the message next to a word that makes it a status code (`status code 503`, `HTTP 502`, `502 Bad Gateway`, `received 500`) | `flake`           | `http_server_error`      |
-| 11  | Timeout while waiting for an element                                                                                                             | `site`, retryable | `selector_timeout`       |
-| 12  | Any other timeout (navigation, a run or step time limit)                                                                                         | `flake`           | `timeout`                |
-| 13  | Nothing matched                                                                                                                                  | `unknown`         | `no_rule`                |
+| 11  | A selector matched several elements (`strict mode violation`, `resolved to 2 elements`)                                                          | `site`            | `selector_ambiguous`     |
+| 12  | Timeout while waiting for an element                                                                                                             | `site`, retryable | `selector_timeout`       |
+| 13  | Any other timeout (navigation, a run or step time limit)                                                                                         | `flake`           | `timeout`                |
+| 14  | Nothing matched                                                                                                                                  | `unknown`         | `no_rule`                |
 
-Two points about the message rules.
+Three points about the message rules.
 
-**A timeout is not always a flake.** A page that is slow to load is transient. An element that never appears on a page that did load is what a changed selector looks like, and treating it as a flake would retry it indefinitely without the healer ever seeing it. Rule 11 applies when the attribution says the failing step was a `click`, `fill` or `extract` with a selector. With no attribution at all, it falls back to the wording of the backend's message (`waiting for locator(...)`, `locator.click: Timeout`). Attribution wins when both are present.
+**A timeout is not always a flake.** A page that is slow to load is transient. An element that never appears on a page that did load is what a changed selector looks like, and treating it as a flake would retry it indefinitely without the healer ever seeing it. Rule 12 applies when the attribution says the failing step was a `click`, `fill` or `extract` with a selector. With no attribution at all, it falls back to the wording of the backend's message (`waiting for locator(...)`, `locator.click: Timeout`). Attribution wins when both are present.
+
+**A selector that matches twice is a site change.** A strict backend such as Playwright refuses to act on a selector that resolves to more than one element. It usually means the page gained a look-alike of the element the step meant, so the selector needs to be made specific: `site`, and not retryable, because a retry finds the same two elements. The reason names the selector and the match count.
 
 **A number in a message is not a status code.** `Expected 500 rows` and `Price 502.00` do not match rule 10. The number has to sit beside a word that makes it an HTTP status.
 

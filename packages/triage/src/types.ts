@@ -33,6 +33,12 @@ export type TriageRule =
   | 'assertion_failed'
   /** An element action timed out waiting for its selector. */
   | 'selector_timeout'
+  /**
+   * A selector matched more than one element, so the backend refused to
+   * act (Playwright's "strict mode violation"). The page gained a twin of
+   * the element the step meant.
+   */
+  | 'selector_ambiguous'
   /** The response says a required field was missing (HTTP 400 or 422). */
   | 'required_field_missing'
   /** HTTP 5xx on the response. */

@@ -134,8 +134,9 @@ export interface CaseRunResult {
   heals: HealStepResult[];
   /**
    * The final workflow judged against ground truth on two page loads.
-   * Present for `healed`, and for `partial` and `max_heals` (where it is a
-   * false heal unless the run passes).
+   * Present for `healed` (judged in full by `judgeHeal`), and for `partial`
+   * and `max_heals` (judged by `judgeProgress`: correct if everything
+   * done before the workflow stopped was right).
    */
   judgement?: HealJudgement;
   usage: UsageTotals;
@@ -266,7 +267,10 @@ export async function runDriftCase(
 
   const judgement =
     result === 'healed' || result === 'partial' || result === 'max_heals'
-      ? await judgeOnLoads(workflow, judgeHeal)
+      ? // A healed run is judged in full. An unfinished one is judged on what
+        // it did before stopping: incomplete is not the same as wrong, and
+        // counting it as a false heal would inflate the number that matters.
+        await judgeOnLoads(workflow, result === 'healed' ? judgeHeal : judgeProgress)
       : undefined;
 
   const entries = options.ledger?.entries.slice(ledgerStart) ?? [];

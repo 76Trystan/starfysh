@@ -10,6 +10,13 @@
 //    the workflow before it broke. Runs that agree with each other are not
 //    enough: a patch that reads the wrong column reads it the same way
 //    every time.
+//    One exception: a site change that broke several steps. A correct
+//    patch for the first can never pass, because the next broken step
+//    still fails. Such a patch `progressed` when every run passes the
+//    patched step and then fails at the same later step, with the outputs
+//    so far matching the start of the known-good ones. A progressed patch
+//    is always held for a person (`partial_heal`), and the next heal
+//    picks up from the patched workflow.
 // 2. A decision (`decidePatch`). Human approval is the default. A verified
 //    patch waits for a person (`approvePatch`) unless the caller opted in
 //    to automatic acceptance, and even then some patches always wait.
@@ -97,9 +104,11 @@ export interface VerifyPatchInput {
    */
   params?: Record<string, string>;
   /**
-   * Runs the workflow. Default: the IR interpreter, first candidate only,
-   * which also confirms the patched step ran (see `stepRan`). A custom
-   * runner skips that confirmation.
+   * Runs the workflow. Default: the IR interpreter, with the patched (or
+   * inserted) step on its first candidate only and every other step
+   * falling through its candidates as in production. It also confirms the
+   * patched step ran (see `stepRan`). A custom runner skips that
+   * confirmation, and a patch verified with one never `progressed`.
    */
   runner?: RunnerFn;
   /**
@@ -147,6 +156,25 @@ export type PatchVerification =
       report: VerifyReport;
     }
   | {
+      /**
+       * Every run passed the patched step, then failed at the same later
+       * step (`failedStepId`), with the outputs emitted so far matching
+       * the start of the known-good outputs. The patch moved the workflow
+       * on but cannot show it reaches the end: another step is broken too.
+       * `decidePatch` always holds it for a person.
+       */
+      status: 'progressed';
+      patch: StepPatch;
+      workflow: Workflow;
+      hash: string;
+      report: VerifyReport;
+      stepRan: 'confirmed';
+      /** The step every run failed at, after the patched one. */
+      failedStepId: string;
+      /** How many known-good outputs the runs reproduced before failing. */
+      outputsMatched: number;
+    }
+  | {
       status: 'verified';
       patch: StepPatch;
       /** The workflow with the patch applied. */
@@ -190,16 +218,22 @@ export async function verifyPatch(input: VerifyPatchInput): Promise<PatchVerific
   const watchedId = input.patch.op === 'replace' ? input.patch.stepId : input.patch.after.id;
   // Runs are sequential, so the order of calls is the run index.
   const ranPerRun: boolean[] = [];
+  // Every step that passed, per run, for telling progress from no change.
+  const passedPerRun: Set<string>[] = [];
   let calls = 0;
   const runner: RunnerFn =
     input.runner ??
     (async (ctx, workflow) => {
       const index = calls++;
       let ran = false;
+      const passed = new Set<string>();
+      passedPerRun[index] = passed;
       const interpreter = createInterpreter({
-        candidates: 'first',
+        candidates: 'fallthrough',
+        ...(watchedId !== undefined ? { primaryOnly: [watchedId] } : {}),
         ...(input.params !== undefined ? { params: input.params } : {}),
         onStep: (trace) => {
+          if (trace.status === 'ok') passed.add(trace.stepId);
           if (trace.stepId === watchedId && trace.status === 'ok') ran = true;
         },
       });
@@ -267,7 +301,30 @@ export async function verifyPatch(input: VerifyPatchInput): Promise<PatchVerific
     });
   }
 
-  if (failures.length > 0) return { status: 'failed', patch: input.patch, failures, report };
+  if (failures.length > 0) {
+    const progress =
+      input.runner === undefined && watchedId !== undefined
+        ? progressOf(
+            report,
+            passedPerRun,
+            [watchedId, input.patch.stepId],
+            input.knownGood,
+            input.tolerance,
+          )
+        : undefined;
+    if (progress !== undefined) {
+      return {
+        status: 'progressed',
+        patch: input.patch,
+        workflow: patched,
+        hash: applied.hash,
+        report,
+        stepRan: 'confirmed',
+        ...progress,
+      };
+    }
+    return { status: 'failed', patch: input.patch, failures, report };
+  }
   const envelope =
     input.knownGood.history !== undefined
       ? envelopeOf(input.knownGood.history, report, input.tolerance)
@@ -281,6 +338,45 @@ export async function verifyPatch(input: VerifyPatchInput): Promise<PatchVerific
     stepRan: input.runner === undefined ? 'confirmed' : 'unchecked',
     ...(envelope !== undefined ? { envelope } : {}),
   };
+}
+
+/**
+ * Whether failed runs still show the patch worked: in every run the
+ * patched step passed (and, for an inserted step, the step it was inserted
+ * before), then the run failed at one and the same other step;
+ * the runs' outputs agree with each other; and they match the start of
+ * the known-good outputs. Undefined when any of that does not hold.
+ */
+function progressOf(
+  report: VerifyReport,
+  passedPerRun: readonly Set<string>[],
+  mustPass: readonly string[],
+  knownGood: KnownGood,
+  tolerance: ToleranceMap | undefined,
+): { failedStepId: string; outputsMatched: number } | undefined {
+  const failedAt = new Set<string>();
+  for (const [index, outcome] of report.replays.entries()) {
+    const stepId = outcome.error?.stepId;
+    if (outcome.status === 'ok' || stepId === undefined || mustPass.includes(stepId)) {
+      return undefined;
+    }
+    // The patched step passed before the run failed, so the failure is
+    // further on. An inserted step that passed while the step it was meant
+    // to clear still fails is no progress at all.
+    const passed = passedPerRun[index];
+    if (passed === undefined || !mustPass.every((id) => passed.has(id))) return undefined;
+    failedAt.add(stepId);
+  }
+  const [failedStepId] = failedAt;
+  if (failedAt.size !== 1 || failedStepId === undefined) return undefined;
+
+  const outputs = report.replays.map((r) => r.outputs);
+  if (!compareOutputs(outputs, tolerance).stable) return undefined;
+  const emitted = outputs[0]!.length;
+  if (emitted > knownGood.outputs.length) return undefined;
+  const expected = knownGood.outputs.slice(0, emitted);
+  if (!compareOutputs([expected, outputs[0]!], tolerance).stable) return undefined;
+  return { failedStepId, outputsMatched: emitted };
 }
 
 /**
@@ -349,6 +445,12 @@ export type ApprovalReasonCode =
   | 'score_below_threshold'
   /** The patch undoes an earlier heal: the site may be switching between versions. */
   | 'reverts_earlier_heal'
+  /**
+   * The patch moved the workflow past the broken step, but another step
+   * further on is broken too (`progressed`), so no run reached the end.
+   * Always reviewed: the evidence is the start of the run, not all of it.
+   */
+  | 'partial_heal'
   /** Verification used a custom runner, so it did not confirm the patched step ran. */
   | 'step_not_confirmed'
   /**
@@ -438,7 +540,7 @@ export function decidePatch(input: DecidePatchInput): PatchDecision {
       message: 'The patch breaks a rule, so it cannot be accepted whatever verification showed.',
     };
   }
-  if (verification.status !== 'verified') {
+  if (verification.status !== 'verified' && verification.status !== 'progressed') {
     return {
       status: 'rejected',
       patch,
@@ -496,7 +598,13 @@ export function decidePatch(input: DecidePatchInput): PatchDecision {
       message: 'Verification did not confirm that the patched step ran.',
     });
   }
-  if (verification.envelope?.status === 'outside') {
+  if (verification.status === 'progressed') {
+    reasons.push({
+      code: 'partial_heal',
+      message: `Partial heal: the patched step now works, but every verification run then failed at step ${verification.failedStepId}, so another step is broken too. The outputs matched the first ${verification.outputsMatched} known-good output(s). Approve it and heal again to continue.`,
+    });
+  }
+  if (verification.status === 'verified' && verification.envelope?.status === 'outside') {
     const fields = [...new Set(verification.envelope.deviations.map((d) => d.path))];
     reasons.push({
       code: 'possibly_false_heal',

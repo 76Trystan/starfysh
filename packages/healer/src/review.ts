@@ -61,8 +61,13 @@ export function renderReview(decision: PatchDecision, options: RenderReviewOptio
 
   if (decision.status !== 'rejected') {
     const { report } = decision;
+    const partial =
+      decision.status === 'awaiting_approval' &&
+      decision.reasons.some((r) => r.code === 'partial_heal');
     const lines = [
-      `Verification: ${report.passed} of ${report.runs} live runs passed, and every run's outputs matched the last known-good run.`,
+      partial
+        ? `Verification: none of the ${report.runs} live runs reached the end. Each passed the patched step, then failed at the same later step, and the outputs it gave before failing matched the start of the last known-good run.`
+        : `Verification: ${report.passed} of ${report.runs} live runs passed, and every run's outputs matched the last known-good run.`,
     ];
     lines.push(
       `Timing: ${Math.round(report.timing.minMs)} to ${Math.round(report.timing.maxMs)} ms per run.`,

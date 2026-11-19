@@ -58,6 +58,12 @@ const REQUIRED_FIELD = re(
   WB + 'required' + WB + '|' + WB + 'missing (?:required )?(?:field|parameter|property)' + WB,
 );
 
+// A selector that matched several elements, which a strict backend refuses
+// to act on. Playwright words it "strict mode violation: <locator>
+// resolved to 2 elements". The count is kept for the reason.
+const AMBIGUOUS = re('strict mode violation' + '|' + 'resolved to ([0-9]+) elements');
+const MATCH_COUNT = re('resolved to ([0-9]+) elements');
+
 /** Actions that operate on an element found by a selector. */
 const ELEMENT_ACTIONS = new Set(['click', 'fill', 'extract']);
 
@@ -76,9 +82,11 @@ const ELEMENT_ACTIONS = new Set(['click', 'fill', 'extract']);
  *  8. Response is 401 or 403: `auth`.
  *  9. Network-level error: `flake`.
  * 10. A 5xx status quoted in the error message: `flake`.
- * 11. Timeout while waiting for an element: `site`, retryable.
- * 12. Any other timeout: `flake`.
- * 13. Nothing matched: `unknown`.
+ * 11. A selector matched several elements (strict mode): `site`. Not
+ *     retryable: the page has two matches, and a retry finds the same two.
+ * 12. Timeout while waiting for an element: `site`, retryable.
+ * 13. Any other timeout: `flake`.
+ * 14. Nothing matched: `unknown`.
  *
  * A violated postcondition is the strongest single signal of site drift and
  * runs before any instanceof check, so a `PostconditionViolation` thrown
@@ -149,6 +157,18 @@ export function classify(input: ClassifyInput): ClassifyResult {
   }
   if (SERVER_ERROR_IN_MESSAGE.test(message)) {
     return result('flake', 'http_server_error', 'server error reported in the error message');
+  }
+
+  if (AMBIGUOUS.test(message)) {
+    const count = MATCH_COUNT.exec(message)?.[1];
+    const matched = count !== undefined ? `${count} elements` : 'more than one element';
+    return result(
+      'site',
+      'selector_ambiguous',
+      where.selector
+        ? `${where.selector.kind} selector ${JSON.stringify(where.selector.value)} matched ${matched}, so it no longer picks out one`
+        : `a selector matched ${matched}, so it no longer picks out one`,
+    );
   }
 
   if (TIMEOUT.test(message)) {

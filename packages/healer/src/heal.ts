@@ -14,7 +14,10 @@
 // 4. Verify each patch live against the known-good outputs, then decide
 //    (`verifyPatch`, `decidePatch`). The first patch that is accepted or
 //    held for approval ends the heal. A patch that fails verification moves
-//    on to the next class. A verified patch that undoes an earlier heal
+//    on to the next class. A patch that only progressed (it fixed this
+//    step, and a later step is broken too) is decided like a verified one
+//    and always held for a person; the next heal starts from it. A
+//    verified patch that undoes an earlier heal
 //    (`findReversions`) is always held for a person, and every decided
 //    heal is recorded in the history so later heals can be checked.
 //
@@ -291,7 +294,8 @@ export async function heal(input: HealInput): Promise<HealResult> {
         pageFactory: input.pageFactory,
       });
       attempt.verification = verification;
-      if (verification.status === 'verified') {
+      // A progressed patch is decided too; `decidePatch` always holds it for a person.
+      if (verification.status === 'verified' || verification.status === 'progressed') {
         const reversions = findReversions(
           generated.patch,
           workflow,

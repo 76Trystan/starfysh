@@ -641,3 +641,181 @@ describe('approvePatch', () => {
     expect(result).toMatchObject({ status: 'refused', code: 'stale' });
   });
 });
+
+describe('verifyPatch: a site change that broke several steps', () => {
+  // Read the heading, open the orders, open the details, read the heading
+  // again. The redesign renames both links, so a correct patch for the
+  // first can never pass on its own.
+  const twoLinks = {
+    irVersion: '1.0.0',
+    id: 'wf_two_links',
+    name: 'Read an order through two links',
+    steps: [
+      {
+        id: 'nav_001',
+        intent: 'Open the portal.',
+        action: 'navigate',
+        url: 'https://portal.example.com/',
+      },
+      {
+        id: 'extract_002',
+        intent: 'Read the heading first.',
+        action: 'extract',
+        target: { candidates: [{ kind: 'css', value: 'h1' }] },
+        schema: { type: 'string' },
+      },
+      {
+        id: 'click_003',
+        intent: 'Open the orders page.',
+        action: 'click',
+        target: { candidates: [{ kind: 'role', value: "link[name='Orders']" }] },
+      },
+      {
+        id: 'click_004',
+        intent: 'Open the order details.',
+        action: 'click',
+        target: { candidates: [{ kind: 'role', value: "link[name='Details']" }] },
+      },
+      {
+        id: 'extract_005',
+        intent: 'Read the heading after.',
+        action: 'extract',
+        target: { candidates: [{ kind: 'css', value: 'h1' }] },
+        schema: { type: 'string' },
+      },
+    ],
+  } as unknown as Workflow;
+  const before: Site = { links: ['Orders', 'Details'], heading: 'Order 1042' };
+  const redesigned: Site = { links: ['My orders', 'Order details'], heading: 'Order 1042' };
+  let outputs: unknown[];
+
+  beforeEach(async () => {
+    const report = await replay(twoLinks, {
+      pageFactory: () => sitePage(before),
+      runner: (await import('@sfysh/verifier')).interpretWorkflow,
+      runs: 1,
+    });
+    outputs = report.replays[0]!.outputs;
+    expect(outputs).toHaveLength(2);
+  });
+
+  function relink(stepId: string, names: string[], wf: Workflow = twoLinks): StepPatch {
+    const step = stepOf(wf, stepId);
+    return {
+      workflowId: wf.id,
+      baseHash: hashWorkflow(wf),
+      stepId,
+      op: 'replace',
+      before: step,
+      after: {
+        ...step,
+        target: { candidates: names.map((n) => ({ kind: 'role', value: `link[name='${n}']` })) },
+      } as unknown as Step,
+      rationale: 'The link was renamed.',
+    };
+  }
+
+  const input = (patch: StepPatch, site: Site = redesigned): VerifyPatchInput => ({
+    workflow: twoLinks,
+    patch,
+    knownGood: { outputs },
+    pageFactory: () => sitePage(site),
+  });
+
+  it('reports a correct patch for the first broken step as progressed, naming the next one', async () => {
+    const result = await verifyPatch(input(relink('click_003', ['My orders'])));
+    expect(result).toMatchObject({
+      status: 'progressed',
+      failedStepId: 'click_004',
+      outputsMatched: 1,
+      stepRan: 'confirmed',
+    });
+  });
+
+  it('fails a patch that does not fix the step it changed', async () => {
+    const result = await verifyPatch(input(relink('click_003', ['Archive'])));
+    expect(result.status).toBe('failed');
+  });
+
+  it('fails a patch whose run emits different outputs before the next broken step', async () => {
+    const result = await verifyPatch(
+      input(relink('click_003', ['My orders']), { ...redesigned, heading: 'Order 9999' }),
+    );
+    expect(result.status).toBe('failed');
+  });
+
+  it('fails an inserted step that passes while the step it was meant to clear still fails', async () => {
+    const patch: StepPatch = {
+      workflowId: twoLinks.id,
+      baseHash: hashWorkflow(twoLinks),
+      stepId: 'click_003',
+      op: 'insert_before',
+      after: {
+        id: 'healed_001',
+        intent: 'Open the orders menu.',
+        action: 'click',
+        target: { candidates: [{ kind: 'role', value: "link[name='Menu']" }] },
+      } as unknown as Step,
+      rationale: 'The link moved into a menu.',
+    };
+    const result = await verifyPatch(input(patch, { ...redesigned, links: ['Menu'] }));
+    expect(result.status).toBe('failed');
+  });
+
+  it('never reports progress for a custom runner, which cannot confirm the patched step ran', async () => {
+    const runner = (await import('@sfysh/verifier')).interpretWorkflow;
+    const result = await verifyPatch({ ...input(relink('click_003', ['My orders'])), runner });
+    expect(result.status).toBe('failed');
+  });
+
+  it('verifies the second heal, from the workflow the first produced', async () => {
+    const first = await verifyPatch(input(relink('click_003', ['My orders'])));
+    if (first.status !== 'progressed') throw new Error(first.status);
+    const second = await verifyPatch({
+      ...input(relink('click_004', ['Order details'], first.workflow)),
+      workflow: first.workflow,
+    });
+    expect(second.status).toBe('verified');
+  });
+
+  it('holds only the patched step to its first candidate; other steps fall through as in production', async () => {
+    // click_004 already runs on a fallback; patching click_003 should not
+    // fail because of it.
+    const fallback = structuredClone(twoLinks);
+    (stepOf(fallback, 'click_004') as unknown as Loose).target = {
+      candidates: [
+        { kind: 'role', value: "link[name='Details']" },
+        { kind: 'role', value: "link[name='Order details']" },
+      ],
+    };
+    const result = await verifyPatch({
+      ...input(relink('click_003', ['My orders'], fallback)),
+      workflow: fallback,
+    });
+    expect(result.status).toBe('verified');
+
+    // The patched step itself gets no fallback: a working second candidate
+    // does not rescue a broken first one.
+    const masked = await verifyPatch({
+      ...input(relink('click_003', ['Orders', 'My orders'], fallback)),
+      workflow: fallback,
+    });
+    expect(masked.status).toBe('failed');
+  });
+
+  it('is always held for a person with partial_heal, even under automatic acceptance', async () => {
+    const verification = await verifyPatch(input(relink('click_003', ['My orders'])));
+    const decision = decidePatch({
+      workflow: twoLinks,
+      patchClass: 'selector',
+      score: highScore,
+      verification,
+      policy: { mode: 'auto', minScore: CONFIDENCE_HIGH },
+    });
+    expect(decision.status).toBe('awaiting_approval');
+    if (decision.status !== 'awaiting_approval') return;
+    expect(decision.reasons.map((r) => r.code)).toEqual(['partial_heal']);
+    expect(decision.reasons[0]!.message).toContain('click_004');
+    expect(hashWorkflow(decision.workflow)).toBe(decision.hash);
+  });
+});

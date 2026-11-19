@@ -601,3 +601,85 @@ describe('shadowDecision', () => {
     expect(shadow).toEqual({ policy: SHADOW_AUTO_POLICY, eligible: false, reasons: ['rejected'] });
   });
 });
+
+describe('heal: a site change that broke two steps', () => {
+  // The redesign renames both links. The first heal can only progress; it
+  // is held for a person, and the second heal, from the patched workflow,
+  // verifies in full.
+  const details = {
+    id: 'click_004',
+    intent: 'Open the order details.',
+    action: 'click',
+    target: { candidates: [{ kind: 'role', value: "link[name='Details']" }] },
+  };
+  const twoLinks = {
+    ...workflow,
+    id: 'wf_two_links',
+    steps: [...(workflow.steps as unknown as Loose[]).slice(0, 2), details, workflow.steps[2]],
+  } as unknown as Workflow;
+  const redesigned: Site = { links: ['My orders', 'Order details'], heading: 'Order 1042' };
+
+  async function failedRun(wf: Workflow): Promise<ReplayOutcome> {
+    const report = await replay(wf, {
+      pageFactory: () => sitePage(redesigned),
+      runner: interpretWorkflow,
+      runs: 1,
+    });
+    return report.replays[0]!;
+  }
+
+  it('decides the first heal as a partial heal, then fully verifies the second', async () => {
+    const history = new MemoryHealHistory();
+    const base = {
+      knownGood,
+      redact: (text: string) => text,
+      pageFactory: () => sitePage(redesigned),
+      history,
+    };
+
+    const first = await heal({
+      ...base,
+      workflow: twoLinks,
+      outcome: await failedRun(twoLinks),
+      provider: scripted([selectorAnswer()]),
+    });
+    expect(first.status).toBe('decided');
+    if (first.status !== 'decided') return;
+    expect(first.attempts[0]!.verification).toMatchObject({
+      status: 'progressed',
+      failedStepId: 'click_004',
+      outputsMatched: 0,
+    });
+    expect(first.decision.status).toBe('awaiting_approval');
+    if (first.decision.status !== 'awaiting_approval') return;
+    expect(first.decision.reasons.map((r) => r.code)).toContain('partial_heal');
+    // The reviewer is told the truth about the runs: none reached the end.
+    const review = renderReview(first.decision, { workflow: twoLinks });
+    expect(review).toContain('none of the 3 live runs reached the end');
+    expect(review).not.toContain('0 of 3 live runs passed');
+
+    const patched = first.decision.workflow;
+    const second = await heal({
+      ...base,
+      workflow: patched,
+      outcome: await failedRun(patched),
+      provider: scripted([
+        JSON.stringify({
+          after: {
+            ...details,
+            target: { candidates: [{ kind: 'role', value: "link[name='Order details']" }] },
+          },
+          rationale: 'The link was renamed.',
+          confidence: 0.9,
+        }),
+      ]),
+    });
+    expect(second.status).toBe('decided');
+    if (second.status !== 'decided') return;
+    expect(second.attempts[0]!.verification?.status).toBe('verified');
+    expect(
+      second.decision.status === 'awaiting_approval' &&
+        second.decision.reasons.some((r) => r.code === 'partial_heal'),
+    ).toBe(false);
+  });
+});

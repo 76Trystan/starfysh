@@ -98,6 +98,10 @@ export interface CorpusVerification {
   /** `hashWorkflow` of the patched workflow, when it verified. */
   hash?: string;
   stepRan?: 'confirmed' | 'unchecked';
+  /** For `progressed`: the later step every run failed at. */
+  failedStepId?: string;
+  /** For `progressed`: how many known-good outputs the runs reproduced before failing. */
+  outputsMatched?: number;
   /** For `not_applied`: the validation errors' messages. */
   errors?: string[];
   /**
@@ -742,7 +746,10 @@ function corpusVerification(verification: PatchVerification): CorpusVerification
   } else {
     out.hash = verification.hash;
     out.stepRan = verification.stepRan;
-    if (verification.envelope !== undefined) {
+    if (verification.status === 'progressed') {
+      out.failedStepId = verification.failedStepId;
+      out.outputsMatched = verification.outputsMatched;
+    } else if (verification.envelope !== undefined) {
       out.envelope = { status: verification.envelope.status, runs: verification.envelope.runs };
       if (verification.envelope.status === 'outside') {
         out.envelope.deviations = verification.envelope.deviations.map((d) => ({

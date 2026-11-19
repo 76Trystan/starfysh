@@ -87,8 +87,14 @@ export interface ReportSummary {
   byTrigger: { failure: number; degraded: number };
   /** Heal records by outcome status (`decided`, `not_healed`, `routed`, ...). */
   outcomes: Record<string, number>;
-  /** Heals with a verified, decided patch. */
+  /** Heals with a verified, decided patch. Includes `partial`. */
   verified: number;
+  /**
+   * Of `verified`, heals whose patch only progressed: it fixed its step,
+   * and a later step was broken too. Their evidence is the start of the
+   * run, not all of it.
+   */
+  partial: number;
   /** Decided heals waiting for a person, with no answer yet. */
   pending: number;
   /** Latest human answer per heal. */
@@ -162,6 +168,7 @@ function summarise(group: readonly HealFacts[]): ReportSummary {
     byTrigger: { failure: 0, degraded: 0 },
     outcomes: {},
     verified: 0,
+    partial: 0,
     pending: 0,
     approved: 0,
     rejected: 0,
@@ -210,6 +217,7 @@ function summarise(group: readonly HealFacts[]): ReportSummary {
     if (decided === undefined) continue;
 
     summary.verified++;
+    if (decided.verification?.status === 'progressed') summary.partial++;
     const byPolicy = decided.decision?.status === 'accepted';
     const byReviewer = facts.reviews.some((r) => r.verdict === 'approved');
     const applied = byPolicy || byReviewer;
@@ -288,7 +296,7 @@ export function renderReport(report: CorpusReport, options: { workflow?: string 
       `  Heals: ${s.heals} (${s.byTrigger.failure} from failures, ${s.byTrigger.degraded} promotions of degraded runs). Outcomes: ${formatCounts(s.outcomes)}.`,
     );
     lines.push(
-      `  Verified: ${s.verified}. Applied: ${s.applied.total} (${s.applied.byReviewer} approved by a person, ${s.applied.byPolicy} by policy). Waiting: ${s.pending}. Rejected: ${s.rejected}. Reverted: ${s.reverted}.`,
+      `  Verified: ${s.verified} (${s.partial} partial). Applied: ${s.applied.total} (${s.applied.byReviewer} approved by a person, ${s.applied.byPolicy} by policy). Waiting: ${s.pending}. Rejected: ${s.rejected}. Reverted: ${s.reverted}.`,
     );
     lines.push(`  Held as possible false heals: ${s.possiblyFalseHeals}.`);
     const f = s.falseHeal;
