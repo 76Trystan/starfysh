@@ -139,7 +139,7 @@ export type {
   RankedCandidate,
   SemanticDiff,
 } from './diff.js';
-export { renderReview } from './review.js';
+export { DOUBT_CONFIDENCE_BELOW, renderReview } from './review.js';
 export type { RenderReviewOptions } from './review.js';
 
 export { findReversions, patchRecord } from './revert.js';

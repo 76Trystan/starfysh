@@ -10,6 +10,34 @@ import type { Workflow } from '@sfysh/ir';
 import type { PatchDecision } from './accept.js';
 import { printable, renderSemanticDiff, semanticDiff } from './diff.js';
 
+/**
+ * A model-reported confidence below this puts a "the model was not sure"
+ * line near the top of the review. Every false heal in the first real-model
+ * benchmark runs was reported below it, alongside many correct heals, so the
+ * line asks for a careful read and is not a verdict.
+ */
+export const DOUBT_CONFIDENCE_BELOW = 0.7;
+
+// Phrases in which the model asks a person to check its choice, or says the
+// page did not settle it. An English word list, kept narrow on purpose: a
+// match only adds a warning line, it never changes a decision.
+const DOUBT_PHRASES =
+  /\b(?:please (?:confirm|check|verify)|(?:reviewer|person) should (?:confirm|check|verify)|(?:does not|doesn't|did not|didn't|cannot|can't|could not|couldn't) (?:confirm|tell|show which)|not sure|unsure|unclear which)\b/i;
+
+/** Why the review warns that the model doubted its own patch; empty when it did not. */
+function modelDoubt(patch: PatchDecision['patch']): string[] {
+  const reasons: string[] = [];
+  if (typeof patch.confidence === 'number' && patch.confidence < DOUBT_CONFIDENCE_BELOW) {
+    reasons.push(
+      `it reported a confidence of ${patch.confidence.toFixed(2)} (below ${DOUBT_CONFIDENCE_BELOW.toFixed(1)})`,
+    );
+  }
+  if (DOUBT_PHRASES.test(patch.rationale)) {
+    reasons.push('its explanation asks a person to check the choice');
+  }
+  return reasons;
+}
+
 export interface RenderReviewOptions {
   /** The workflow the patch was written against. Gives an insert's anchor step its intent. */
   workflow?: Workflow;
@@ -31,6 +59,17 @@ export function renderReview(decision: PatchDecision, options: RenderReviewOptio
   sections.push(
     `Heal of workflow ${printable(patch.workflowId)}, step ${printable(patch.stepId)}: ${status}.`,
   );
+
+  // Straight after the status, so a reviewer cannot skim past it to the
+  // diff. Not shown for a rejected patch, which nobody will approve.
+  if (decision.status !== 'rejected') {
+    const doubt = modelDoubt(patch);
+    if (doubt.length > 0) {
+      sections.push(
+        `The model was not sure: ${doubt.join(', and ')}. Read its explanation at the end before approving, and check the element it chose is the one the step means.`,
+      );
+    }
+  }
 
   if (decision.status === 'rejected') {
     const lines = [printable(decision.message)];

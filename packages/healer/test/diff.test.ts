@@ -351,6 +351,59 @@ describe('renderReview', () => {
     expect(text).toContain('accepted automatically by policy.');
   });
 
+  describe('when the model doubted its own patch', () => {
+    const doubtful = (confidence: number | undefined, rationale: string): PatchDecision => {
+      const { confidence: _drop, ...rest } = awaiting.patch;
+      return {
+        ...awaiting,
+        patch: { ...rest, rationale, ...(confidence !== undefined ? { confidence } : {}) },
+      };
+    };
+
+    it('says so straight after the status when the model reported low confidence', () => {
+      const text = renderReview(doubtful(0.6, 'Renamed to Order archive.'));
+      expect(text).toContain(
+        'The model was not sure: it reported a confidence of 0.60 (below 0.7). Read its explanation',
+      );
+      expect(text.indexOf('The model was not sure')).toBeLessThan(
+        text.indexOf('Why a person must look:'),
+      );
+    });
+
+    it('says so when the explanation asks a person to confirm, whatever the confidence', () => {
+      const text = renderReview(
+        doubtful(0.9, 'Both links open the same page, so please confirm this choice.'),
+      );
+      expect(text).toContain(
+        'The model was not sure: its explanation asks a person to check the choice.',
+      );
+    });
+
+    it('gives both reasons when both apply', () => {
+      const text = renderReview(
+        doubtful(0.5, "The snapshot doesn't show which one replaced it. Please confirm."),
+      );
+      expect(text).toContain(
+        'it reported a confidence of 0.50 (below 0.7), and its explanation asks a person to check the choice.',
+      );
+    });
+
+    it('stays quiet for a confident patch with a plain explanation, or with no confidence given', () => {
+      expect(renderReview(doubtful(0.95, 'Renamed.'))).not.toContain('not sure');
+      expect(renderReview(doubtful(0.7, 'Renamed.'))).not.toContain('not sure');
+      expect(renderReview(doubtful(undefined, 'Renamed.'))).not.toContain('not sure');
+    });
+
+    it('is not shown for a rejected patch', () => {
+      const text = renderReview({
+        status: 'rejected',
+        patch: { ...patch, confidence: 0.3, rationale: 'Not sure, please confirm.' },
+        message: 'The patch breaks a rule.',
+      });
+      expect(text).not.toContain('The model was not sure');
+    });
+  });
+
   it('lists what was wrong with a rejected patch, and claims no verification', () => {
     const text = renderReview({
       status: 'rejected',

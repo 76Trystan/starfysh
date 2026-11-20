@@ -512,6 +512,8 @@ semanticDiff(patch, workflow); // the same diff as data, for JSON output
 
 A review shows, in this order: what was decided and every reason a person is needed; what the patch changes; the evidence (live runs, timing, and the confidence score with each signal); and last, the model's own explanation, marked as unverified.
 
+When the model doubted its own patch, a line saying so comes straight after the status, before anything else: "The model was not sure: ...". It appears when the model reported a confidence below `DOUBT_CONFIDENCE_BELOW` (0.7), or when its explanation asks a person to confirm or check the choice (an English phrase list). In the first real-model benchmark runs, every false heal carried one or both signals, and most read as "I picked this one of two look-alikes, please confirm". Plenty of correct heals carry them too, so the line asks for a careful read rather than predicting a wrong patch. It changes no decision and is left out of a rejected review.
+
 ```
 Heal of workflow wf_orders, step click_002: waiting for approval.
 
