@@ -6,7 +6,8 @@
     "bench": "node --import tsx/esm harness/index.ts",
     "typecheck": "tsc --noEmit",
     "test:drift": "vitest run --config drift/vitest.config.ts",
-    "heal:drift": "node --import tsx/esm drift/run.ts"
+    "heal:drift": "node --import tsx/esm drift/run.ts",
+    "report:drift": "node --import tsx/esm drift/report-cli.ts"
   },
   "dependencies": {
     "@sfysh/healer": "workspace:*",
