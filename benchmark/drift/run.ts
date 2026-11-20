@@ -1,7 +1,7 @@
 // Run the healer on the drift suite and write the results.
 //
 //   pnpm --filter @sfysh/benchmark heal:drift -- --provider anthropic \
-//     --model claude-sonnet-5-5 --price-in 3 --price-out 15 --max-usd 5
+//     --model claude-sonnet-5-5 --price-in 2 --price-out 10 --max-usd 5
 //
 // Options:
 //   --provider <anthropic|openai|gemini|ollama|oracle>  required. `oracle`
@@ -47,7 +47,13 @@ import { renderSummary } from './summary.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
+// pnpm passes the `--` in `pnpm heal:drift -- --provider ...` through to the
+// script, and parseArgs would read everything after it as positionals.
+const argv = process.argv.slice(2);
+if (argv[0] === '--') argv.shift();
+
 const { values } = parseArgs({
+  args: argv,
   options: {
     provider: { type: 'string' },
     model: { type: 'string' },
