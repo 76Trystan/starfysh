@@ -163,6 +163,21 @@ describe('scorePatch(): selector patches', () => {
     );
   });
 
+  it('matches the whole name when the selector says exact=true', () => {
+    // Without exact=true, "Orders" also names "Orders archive".
+    const exact = score(replace([{ kind: 'role', value: "link[name='Orders'][exact=true]" }]));
+    expect(codes(exact)).toContain('first_candidate_unique');
+    expect(codes(exact)).not.toContain('first_candidate_ambiguous');
+    // A partial name with exact=true names nothing.
+    expect(
+      codes(score(replace([{ kind: 'role', value: "link[name='Order'][exact=true]" }]))),
+    ).toContain('first_candidate_not_found');
+    // Two elements with the very same name stay ambiguous.
+    expect(
+      codes(score(replace([{ kind: 'role', value: "button[name='Help'][exact=true]" }]))),
+    ).toContain('first_candidate_ambiguous');
+  });
+
   it('reads nested lines and escaped quotes in the snapshot', () => {
     expect(
       codes(score(replace([{ kind: 'role', value: "link[name='Orders archive']" }]))),

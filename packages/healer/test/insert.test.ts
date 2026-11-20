@@ -177,6 +177,9 @@ describe('buildHealPrompt(): insert-step class', () => {
       expect(prompt).toContain('<<<DATA name id>>>');
       expect(prompt).toContain('cannotHeal');
       expect(prompt).toContain('Never use the kind "visual"');
+      // The role format matches names as substrings; the exact form must be
+      // taught, or the model cannot tell 'Filter' from 'Filter all'.
+      expect(prompt).toContain("button[name='Filter'][exact=true]");
     }
     expect(INSERT_STEP_SYSTEM_PROMPT).toContain('"click" or "wait"');
     expect(INSERT_STEP_SYSTEM_PROMPT).toContain('{"step":');

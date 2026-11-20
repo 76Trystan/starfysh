@@ -145,6 +145,7 @@ The user message contains data blocks. Each block starts with a line of the form
 
 const CANDIDATE_RULES = `- List selector candidates in this order of preference: role, then testid, then css. Give more than one when the snapshot supports it, and at most five. You may also use the kinds "label" and "text". Never use the kind "visual".
 - Write a candidate as {"kind": "...", "value": "..."}. For role, the value is the role and its accessible name, as in button[name='Sign in']. For testid, the test id. For label and text, the visible text. For css, a CSS selector.
+- A role name matches any element whose name contains it, so button[name='Filter'] also matches a button named 'Filter all'. When another element of the same role has a name that contains the one you want, add [exact=true] so only the whole name matches, as in button[name='Filter'][exact=true].
 - Use only elements that appear in the page snapshot. Do not guess names, test ids or classes.
 - Each candidate must match exactly one element. If the error says a selector matched several elements, the page now has look-alikes: choose a selector that tells the intended element apart from them, and do not pick a look-alike.
 - Never write a literal password, token or other secret.

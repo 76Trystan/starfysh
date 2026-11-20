@@ -264,7 +264,7 @@ The generators call this for you and set `patch.confidence` to the score, so any
 | `insert_step_cap`              | down to 0.6       | An insert-step patch cannot score above 0.6, so it is never `high`.                        |
 | `model_less_confident`         | down to its value | The model reported less than the evidence gave.                                            |
 
-A role selector is matched on its role and, when it has one, its accessible name as a case-insensitive substring. Label and text selectors are matched against the snapshot text.
+A role selector is matched on its role and, when it has one, its accessible name as a case-insensitive substring, or as the whole name when the selector carries `[exact=true]` (as Playwright does). The prompt tells the model to add `[exact=true]` when a look-alike's name contains the intended one. Label and text selectors are matched against the snapshot text.
 
 **What the score is not.** It is evidence that the selector points at something real, gathered before the patch has run. It says nothing about whether that element is the right one, which is what verification and a reviewer are for. The weights are starting values chosen by hand and have not been calibrated against real heals, and the commitment words are an English word list. The only thing that acts on the score is the opt-in automatic acceptance policy, which should stay off until the score has been calibrated.
 

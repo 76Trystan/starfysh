@@ -282,9 +282,15 @@ function ground(
   if (candidate.kind === 'role') {
     const { role, options } = parseRoleSelector(candidate.value);
     const name = options.name?.toLowerCase();
+    // Playwright matches a role name as a substring unless `exact=true`, in
+    // which case the whole name must match. Snapshot names are lower-cased,
+    // so this compares without case: it can only overcount the matches for
+    // an exact name, never report a unique match that is not.
+    const exact = options.exact === true;
     count = elements.filter(
       (element) =>
-        element.role === role.toLowerCase() && (name === undefined || element.name.includes(name)),
+        element.role === role.toLowerCase() &&
+        (name === undefined || (exact ? element.name === name : element.name.includes(name))),
     ).length;
   } else if (candidate.kind === 'label' || candidate.kind === 'text') {
     const needle = candidate.value.toLowerCase();
