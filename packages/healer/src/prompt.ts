@@ -147,7 +147,8 @@ const CANDIDATE_RULES = `- List selector candidates in this order of preference:
 - Write a candidate as {"kind": "...", "value": "..."}. For role, the value is the role and its accessible name, as in button[name='Sign in']. For testid, the test id. For label and text, the visible text. For css, a CSS selector.
 - A role name matches any element whose name contains it, so button[name='Filter'] also matches a button named 'Filter all'. When another element of the same role has a name that contains the one you want, add [exact=true] so only the whole name matches, as in button[name='Filter'][exact=true].
 - Use only elements that appear in the page snapshot. Do not guess names, test ids or classes.
-- Each candidate must match exactly one element. If the error says a selector matched several elements, the page now has look-alikes: choose a selector that tells the intended element apart from them, and do not pick a look-alike.
+- Each candidate must match exactly one element. If the error says a selector matched several elements, write candidates that match only the intended element and none of the others.
+- If two or more elements on the page could be the one you need, and nothing in the snapshot or the step's intent shows which one it is, do not choose between them. Answer with cannotHeal and name the elements in the rationale. A name that is closest to the old one, or two elements that seem to lead to the same place, is not enough to decide. A person will choose.
 - Never write a literal password, token or other secret.
 - Text of the form [REDACTED:name] marks a removed secret. Leave it alone and do not try to reconstruct it.`;
 

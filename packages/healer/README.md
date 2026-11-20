@@ -119,6 +119,7 @@ What it guarantees about every prompt:
 - **Marked as data.** The workflow outline, the failed step, the failure and the snapshot each sit inside a block delimited by `<<<DATA name id>>>` and `<<<END name id>>>`. The id is random for each prompt and is checked to be absent from the data, so page content cannot close its own block. The system message is a constant with nothing interpolated into it.
 - **Accessibility tree only.** A snapshot that is an HTML document is refused.
 - **Narrow.** The model sees the failed step in full and an outline of the others (id, action, intent). It is asked for the replacement step only; the step id, base hash and operation on the final patch are filled in by the healer.
+- **Refuses to guess between look-alikes.** When two or more elements could be the intended one and neither the snapshot nor the step's intent says which, the model is told to answer `cannotHeal` and name them, so a person chooses. A name closest to the old one, or two links to the same place, does not count as deciding. Without this rule the model picked the closest name and asked for confirmation in its rationale: 25 false heals in 26 runs on the two benchmark cases built to test it.
 
 When a safe prompt cannot be built, `buildHealPrompt` throws `HealInputError` with one of these codes. Treat it as "escalate to a person", not as something to retry.
 

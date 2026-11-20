@@ -7,6 +7,7 @@ import {
   buildHealPrompt,
   DEFAULT_PROMPT_SNAPSHOT_MAX_CHARS,
   SELECTOR_SYSTEM_PROMPT,
+  INSERT_STEP_SYSTEM_PROMPT,
   HealInputError,
   PROMPT_ERROR_MAX_CHARS,
   PROMPT_OUTLINE_MAX_STEPS,
@@ -426,6 +427,25 @@ describe('buildHealPrompt(): page content is data', () => {
     const a = buildHealPrompt(input({ snapshot: snapshotOf(hostile) })).messages[0]!.content;
     const b = buildHealPrompt(input()).messages[0]!.content;
     expect(a).toBe(b);
+  });
+});
+
+describe('system prompts: look-alike elements', () => {
+  it.each([
+    ['selector', SELECTOR_SYSTEM_PROMPT],
+    ['insert-step', INSERT_STEP_SYSTEM_PROMPT],
+  ])('the %s prompt says to refuse rather than choose between look-alikes', (_name, prompt) => {
+    expect(prompt).toContain(
+      "If two or more elements on the page could be the one you need, and nothing in the snapshot or the step's intent shows which one it is, do not choose between them. Answer with cannotHeal and name the elements in the rationale.",
+    );
+    expect(prompt).toContain('A name that is closest to the old one');
+  });
+
+  it('keeps the ambiguous-selector rule about writing a selector, not picking an element', () => {
+    expect(SELECTOR_SYSTEM_PROMPT).toContain(
+      'If the error says a selector matched several elements, write candidates that match only the intended element and none of the others.',
+    );
+    expect(SELECTOR_SYSTEM_PROMPT).not.toContain('do not pick a look-alike');
   });
 });
 
