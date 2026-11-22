@@ -11,7 +11,7 @@
 import type { Workflow } from '@sfysh/ir';
 import { INSERT_STEP_SYSTEM_PROMPT, SELECTOR_SYSTEM_PROMPT } from '@sfysh/healer';
 import type { Completion, Message, Provider } from '@sfysh/providers';
-import type { DriftCase } from './cases.js';
+import type { SuiteCase } from './case-kit.js';
 import { buildPatch, classOf } from './oracle.js';
 import type { OraclePatch } from './oracle.js';
 
@@ -21,7 +21,7 @@ export class OracleProvider implements Provider {
   private next: { workflow: Workflow; patch: OraclePatch } | undefined;
 
   /** Pass as `DriftHealOptions.beforeHeal`: points the provider at the oracle patch for this heal. */
-  readonly beforeHeal = (input: { driftCase: DriftCase; workflow: Workflow; index: number }) => {
+  readonly beforeHeal = (input: { driftCase: SuiteCase; workflow: Workflow; index: number }) => {
     const patch = input.driftCase.oracle?.[input.index];
     this.next = patch === undefined ? undefined : { workflow: input.workflow, patch };
   };

@@ -1,0 +1,101 @@
+{
+  "irVersion": "1.0.0",
+  "id": "drift_bank_statement",
+  "name": "Read the October everyday-account statement",
+  "steps": [
+    {
+      "id": "nav_001",
+      "intent": "Open online banking.",
+      "action": "navigate",
+      "url": "https://bank.drift.test/"
+    },
+    {
+      "id": "click_002",
+      "intent": "Open the statements page.",
+      "action": "click",
+      "target": {
+        "candidates": [
+          { "kind": "role", "value": "link[name='Statements']" },
+          { "kind": "testid", "value": "nav-statements" }
+        ]
+      }
+    },
+    {
+      "id": "click_003",
+      "intent": "Choose the everyday account.",
+      "action": "click",
+      "target": {
+        "candidates": [
+          { "kind": "role", "value": "button[name='Everyday account']" },
+          { "kind": "testid", "value": "acct-everyday" }
+        ]
+      }
+    },
+    {
+      "id": "fill_004",
+      "intent": "Enter the first day of the statement period.",
+      "action": "fill",
+      "target": {
+        "candidates": [
+          { "kind": "label", "value": "From date" },
+          { "kind": "css", "value": "#from" }
+        ]
+      },
+      "value": "2026-10-01"
+    },
+    {
+      "id": "fill_005",
+      "intent": "Enter the last day of the statement period.",
+      "action": "fill",
+      "target": {
+        "candidates": [
+          { "kind": "label", "value": "To date" },
+          { "kind": "css", "value": "#to" }
+        ]
+      },
+      "value": "2026-10-31"
+    },
+    {
+      "id": "click_006",
+      "intent": "Show the transactions for the period.",
+      "action": "click",
+      "target": {
+        "candidates": [
+          { "kind": "role", "value": "button[name='Show transactions']" },
+          { "kind": "testid", "value": "show-transactions" }
+        ]
+      }
+    },
+    {
+      "id": "extract_007",
+      "intent": "Read the transactions in the period.",
+      "action": "extract",
+      "target": {
+        "candidates": [
+          { "kind": "role", "value": "table[name='Transactions']" },
+          { "kind": "css", "value": "table.transactions" }
+        ]
+      },
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "date": { "type": "string" },
+            "description": { "type": "string" },
+            "amount": { "type": "number" }
+          }
+        }
+      },
+      "bind": "transactions"
+    },
+    {
+      "id": "extract_008",
+      "intent": "Read the closing balance for the period.",
+      "action": "extract",
+      "target": { "candidates": [{ "kind": "css", "value": "#closing-balance" }] },
+      "schema": { "type": "string" },
+      "bind": "closingBalance"
+    }
+  ]
+}

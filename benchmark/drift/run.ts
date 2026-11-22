@@ -42,7 +42,7 @@ import {
 } from '@sfysh/providers';
 import type { Provider, UsageBudget } from '@sfysh/providers';
 import { CASE_SETS, caseSetByName, DEFAULT_CASE_SET, modelRunRefusal } from './case-sets.js';
-import type { DriftCase } from './cases.js';
+import type { SuiteCase } from './case-kit.js';
 import { loadBaseline, runDriftCase } from './heal-run.js';
 import type { Baseline, CaseRunResult } from './heal-run.js';
 import { OracleProvider } from './oracle-provider.js';
@@ -175,7 +175,7 @@ const header = {
 };
 
 const browser = await chromium.launch();
-const baselines = new Map<DriftCase['fixture'], Baseline>();
+const baselines = new Map<SuiteCase['fixture'], Baseline>();
 const results: CaseRunResult[] = [];
 try {
   for (const driftCase of selected) {

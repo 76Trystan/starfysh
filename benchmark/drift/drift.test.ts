@@ -10,10 +10,15 @@ import { chromium } from 'playwright-core';
 import type { Browser } from 'playwright-core';
 import type { Workflow } from '@sfysh/ir';
 import { patchClassOrder } from '@sfysh/healer';
+import { CASE_SETS } from './case-sets.js';
 import { ALL_CASES, PORTAL_CASES } from './cases.js';
 import { judgeHeal, loadFixture, observe } from './drift.js';
 import { applyOracle } from './oracle.js';
 import type { Observation } from './drift.js';
+
+// Every case in every case set, so a held-out set is held to the same
+// checks as v1 from the moment it is added to `CASE_SETS`.
+const EVERY_CASE = CASE_SETS.flatMap((set) => set.cases);
 
 let browser: Browser;
 beforeAll(async () => {
@@ -90,7 +95,69 @@ describe('the shop fixture', () => {
   });
 });
 
-describe('the suite', () => {
+describe('the bank fixture', () => {
+  it('runs clean, records the elements it acted on, and produces the October statement', async () => {
+    const bank = loadFixture('bank');
+    const baseline = await observe(browser, bank, []);
+    expect(baseline.status).toBe('ok');
+    expect(baseline.degraded).toBeUndefined();
+    expect(baseline.truth).toEqual([
+      'click:click_002',
+      'click:click_003',
+      'fill:fill_004',
+      'fill:fill_005',
+      'click:click_006',
+    ]);
+    expect(baseline.outputs).toEqual([
+      {
+        transactions: [
+          { date: '2026-10-02', description: 'Salary', amount: 3200 },
+          { date: '2026-10-05', description: 'Grocer', amount: -84.2 },
+          { date: '2026-10-14', description: 'Electricity', amount: -132.75 },
+          { date: '2026-10-30', description: 'Transfer to savings', amount: -500 },
+        ],
+      },
+      { closingBalance: 'Closing balance $3,483.05' },
+    ]);
+  });
+
+  it('reads a different statement when the look-alike account is chosen', async () => {
+    const bank = loadFixture('bank');
+    const wrongAccount = structuredClone(bank.workflow);
+    const step = (wrongAccount.steps as unknown as Record<string, unknown>[]).find(
+      (s) => s.id === 'click_003',
+    )!;
+    step.target = { candidates: [{ kind: 'role', value: "button[name='Savings account']" }] };
+    const run = await observe(browser, bank, [], wrongAccount);
+    expect(run.status).toBe('ok');
+    expect(run.truth).toContain('click:none');
+    expect(run.outputs).toEqual([
+      {
+        transactions: [
+          { date: '2026-10-30', description: 'Transfer from everyday', amount: 500 },
+          { date: '2026-10-31', description: 'Interest', amount: 12.4 },
+        ],
+      },
+      { closingBalance: 'Closing balance $5,512.40' },
+    ]);
+  });
+});
+
+describe('every case set', () => {
+  it('has unique case ids across all sets', () => {
+    expect(new Set(EVERY_CASE.map((c) => c.id)).size).toBe(EVERY_CASE.length);
+  });
+
+  it('has an oracle on every healable case, none on the rest, and gaps only where nothing can be healed', () => {
+    for (const c of EVERY_CASE) {
+      const healable = ['promotion', 'selector', 'insert_step'].includes(c.expect.heal);
+      expect({ id: c.id, oracle: c.oracle !== undefined }).toEqual({ id: c.id, oracle: healable });
+      if (c.expect.gap !== undefined) expect(c.expect.heal).toBe('not_healable');
+    }
+  });
+});
+
+describe('the v1 suite', () => {
   it('has at least 50 cases, unique ids, and every effect and heal represented', () => {
     expect(ALL_CASES.length).toBeGreaterThanOrEqual(50);
     expect(new Set(ALL_CASES.map((c) => c.id)).size).toBe(ALL_CASES.length);
@@ -106,14 +173,6 @@ describe('the suite', () => {
     ]);
     expect(ALL_CASES.filter((c) => c.expect.trap).length).toBeGreaterThanOrEqual(4);
   });
-
-  it('has an oracle on every healable case, none on the rest, and gaps only where nothing can be healed', () => {
-    for (const c of ALL_CASES) {
-      const healable = ['promotion', 'selector', 'insert_step'].includes(c.expect.heal);
-      expect({ id: c.id, oracle: c.oracle !== undefined }).toEqual({ id: c.id, oracle: healable });
-      if (c.expect.gap !== undefined) expect(c.expect.heal).toBe('not_healable');
-    }
-  });
 });
 
 describe('each drift case does what it claims', () => {
@@ -123,7 +182,7 @@ describe('each drift case does what it claims', () => {
     return baselines.get(name)!;
   };
 
-  it.concurrent.each(ALL_CASES.map((c) => [c.id, c] as const))('%s', async (_id, driftCase) => {
+  it.concurrent.each(EVERY_CASE.map((c) => [c.id, c] as const))('%s', async (_id, driftCase) => {
     const fx = loadFixture(driftCase.fixture);
     const run = await observe(browser, fx, driftCase.drifts);
     const firstOnly = await observe(browser, fx, driftCase.drifts, fx.workflow, {
@@ -181,7 +240,7 @@ describe("every healable case is solvable within the healer's rules", () => {
     if (!baselines.has(name)) baselines.set(name, observe(browser, loadFixture(name), []));
     return baselines.get(name)!;
   };
-  const healable = ALL_CASES.filter((c) => c.oracle !== undefined);
+  const healable = EVERY_CASE.filter((c) => c.oracle !== undefined);
 
   it.concurrent.each(healable.map((c) => [c.id, c] as const))('%s', async (_id, driftCase) => {
     const fx = loadFixture(driftCase.fixture);

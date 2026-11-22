@@ -12,7 +12,7 @@
 // be tuned like the rest.
 
 import { ALL_CASES } from './cases.js';
-import type { DriftCase } from './cases.js';
+import type { SuiteCase } from './case-kit.js';
 import { suiteByCasesHash } from './suites.js';
 import type { FrozenSuite, SuiteRole } from './suites.js';
 
@@ -23,7 +23,7 @@ export interface CaseSet {
   file: string;
   /** What the set is for once frozen. */
   role: SuiteRole;
-  cases: readonly DriftCase[];
+  cases: readonly SuiteCase[];
 }
 
 export const CASE_SETS: readonly CaseSet[] = [

@@ -43,7 +43,7 @@ import { sumUsage } from '@sfysh/providers';
 import type { MemoryUsageLedger, Provider, RedactFn, UsageTotals } from '@sfysh/providers';
 import { createInterpreter, replay } from '@sfysh/verifier';
 import type { ReplayOutcome } from '@sfysh/verifier';
-import type { DriftCase } from './cases.js';
+import type { SuiteCase } from './case-kit.js';
 import {
   driftedPages,
   judgeHeal,
@@ -68,7 +68,7 @@ export interface DriftHealOptions {
   /** Passed to every `heal()` and `promote()` verification. */
   verify?: HealVerifyOptions;
   /** Called before every heal or promotion, with the workflow about to be healed. The oracle provider uses it. */
-  beforeHeal?: (input: { driftCase: DriftCase; workflow: Workflow; index: number }) => void;
+  beforeHeal?: (input: { driftCase: SuiteCase; workflow: Workflow; index: number }) => void;
   /** Clock for the corpus and the daily cap. */
   now?: () => Date;
 }
@@ -123,9 +123,9 @@ export type CaseOutcome =
 
 export interface CaseRunResult {
   caseId: string;
-  fixture: DriftCase['fixture'];
-  group: DriftCase['group'];
-  expect: DriftCase['expect'];
+  fixture: SuiteCase['fixture'];
+  group: SuiteCase['group'];
+  expect: SuiteCase['expect'];
   /** Which repetition of the case this is, from 1. */
   run: number;
   /** The first run on the drifted page. */
@@ -157,7 +157,7 @@ export interface Baseline {
  */
 export async function loadBaseline(
   browser: Browser,
-  name: DriftCase['fixture'],
+  name: SuiteCase['fixture'],
 ): Promise<Baseline> {
   const fixture = loadFixture(name);
   const runs: Observation[] = [];
@@ -175,7 +175,7 @@ export async function loadBaseline(
 
 /** Run one drift case once, healing until it passes or the healer stops. */
 export async function runDriftCase(
-  driftCase: DriftCase,
+  driftCase: SuiteCase,
   baseline: Baseline,
   options: DriftHealOptions,
   run = 1,
@@ -450,7 +450,7 @@ interface StepOutcome {
   healed?: Workflow;
 }
 
-function labelNote(driftCase: DriftCase, run: number, index: number, j: HealJudgement): string {
+function labelNote(driftCase: SuiteCase, run: number, index: number, j: HealJudgement): string {
   const where = `drift case ${driftCase.id}, run ${run}, heal ${index + 1}`;
   return j.reasons.length === 0 ? where : `${where}: ${j.reasons.join('; ')}`;
 }

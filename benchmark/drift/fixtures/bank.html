@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Online banking</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 0;
+      }
+      header {
+        display: flex;
+        gap: 1rem;
+        padding: 1rem;
+        background: #efe;
+      }
+      main {
+        padding: 1rem;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      [aria-pressed='true'] {
+        font-weight: bold;
+      }
+      .overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .overlay > div {
+        background: white;
+        padding: 2rem;
+      }
+      .menu {
+        position: relative;
+        display: inline-block;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      Drift fixture: an online banking portal. Same conventions as
+      portal.html: data-sfysh-truth marks the elements the workflow is meant
+      to act on, the script records which marked element each click and
+      fill lands on, and behaviour is wired by event delegation on
+      data-action. Written on 2026-11-22 for the held-out drift set, so it
+      deliberately differs from the portal and the shop in shape: an
+      account choice between look-alike buttons, two date fields with
+      similar labels, a signed money column, and an output computed from
+      the inputs.
+    -->
+    <header>
+      <nav aria-label="Banking">
+        <a href="#overview" data-action="nav" data-target="overview">Overview</a>
+        <a
+          href="#statements"
+          class="nav-statements"
+          data-action="nav"
+          data-target="statements"
+          data-testid="nav-statements"
+          data-sfysh-truth="click_002"
+          >Statements</a
+        >
+        <a href="#payments" data-action="nav" data-target="payments">Payments</a>
+        <a href="#profile" data-action="nav" data-target="profile">Profile</a>
+      </nav>
+    </header>
+    <main>
+      <section id="overview">
+        <h1>Overview</h1>
+        <p>Good morning.</p>
+      </section>
+      <section id="statements" hidden>
+        <h1>Statements</h1>
+        <div role="group" aria-label="Account">
+          <button
+            type="button"
+            aria-pressed="false"
+            data-action="account"
+            data-account="everyday"
+            data-testid="acct-everyday"
+            data-sfysh-truth="click_003"
+          >
+            Everyday account
+          </button>
+          <button
+            type="button"
+            aria-pressed="false"
+            data-action="account"
+            data-account="savings"
+            data-testid="acct-savings"
+          >
+            Savings account
+          </button>
+        </div>
+        <form class="period" onsubmit="return false;">
+          <label for="from">From date</label>
+          <input
+            id="from"
+            placeholder="YYYY-MM-DD"
+            data-role="from"
+            data-testid="period-from"
+            data-sfysh-truth="fill_004"
+          />
+          <label for="to">To date</label>
+          <input
+            id="to"
+            placeholder="YYYY-MM-DD"
+            data-role="to"
+            data-testid="period-to"
+            data-sfysh-truth="fill_005"
+          />
+          <button
+            type="button"
+            data-action="show"
+            data-testid="show-transactions"
+            data-sfysh-truth="click_006"
+          >
+            Show transactions
+          </button>
+        </form>
+        <table class="transactions" aria-label="Transactions" data-role="transactions-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Description</th>
+              <th>Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr data-account="everyday">
+              <td>2026-09-28</td>
+              <td>Rent</td>
+              <td>-$1,450.00</td>
+            </tr>
+            <tr data-account="everyday">
+              <td>2026-10-02</td>
+              <td>Salary</td>
+              <td>$3,200.00</td>
+            </tr>
+            <tr data-account="everyday">
+              <td>2026-10-05</td>
+              <td>Grocer</td>
+              <td>-$84.20</td>
+            </tr>
+            <tr data-account="everyday">
+              <td>2026-10-14</td>
+              <td>Electricity</td>
+              <td>-$132.75</td>
+            </tr>
+            <tr data-account="everyday">
+              <td>2026-10-30</td>
+              <td>Transfer to savings</td>
+              <td>-$500.00</td>
+            </tr>
+            <tr data-account="everyday">
+              <td>2026-11-01</td>
+              <td>Cafe</td>
+              <td>-$6.50</td>
+            </tr>
+            <tr data-account="savings">
+              <td>2026-10-30</td>
+              <td>Transfer from everyday</td>
+              <td>$500.00</td>
+            </tr>
+            <tr data-account="savings">
+              <td>2026-10-31</td>
+              <td>Interest</td>
+              <td>$12.40</td>
+            </tr>
+          </tbody>
+        </table>
+        <p id="closing-balance" aria-live="polite"></p>
+      </section>
+      <section id="payments" hidden>
+        <h1>Payments</h1>
+      </section>
+      <section id="profile" hidden>
+        <h1>Profile</h1>
+      </section>
+    </main>
+    <script>
+      window.__sfyshTruth = [];
+      const mark = (kind, target) => {
+        const el = target instanceof Element ? target.closest('[data-sfysh-truth]') : null;
+        window.__sfyshTruth.push(kind + ':' + (el ? el.getAttribute('data-sfysh-truth') : 'none'));
+      };
+      document.addEventListener('click', (e) => mark('click', e.composedPath()[0]), true);
+      document.addEventListener('input', (e) => mark('fill', e.composedPath()[0]), true);
+
+      const OPENING = { everyday: 1000, savings: 5000 };
+      let account = null;
+
+      const show = (id) => {
+        for (const s of document.querySelectorAll('main > section')) s.hidden = s.id !== id;
+      };
+      const valueOf = (role) => {
+        const input = document.querySelector('[data-role="' + role + '"]');
+        return input ? input.value.trim() : '';
+      };
+      // Formatted by hand, not toLocaleString, so the output cannot vary
+      // with the browser's locale data.
+      const money = (n) => {
+        const [whole, cents] = Math.abs(n).toFixed(2).split('.');
+        return (n < 0 ? '-$' : '$') + whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + '.' + cents;
+      };
+      const showTransactions = () => {
+        const result = document.querySelector('#closing-balance');
+        const from = valueOf('from');
+        const to = valueOf('to');
+        let balance = account ? OPENING[account] : 0;
+        for (const row of document.querySelectorAll('[data-role="transactions-table"] tbody tr')) {
+          const date = row.cells[0].textContent.trim();
+          const keep =
+            account !== null &&
+            row.getAttribute('data-account') === account &&
+            (from === '' || date >= from) &&
+            (to === '' || date <= to);
+          if (keep) balance += Number(row.cells[2].textContent.replace(/[$,]/g, ''));
+          else row.remove();
+        }
+        if (result) {
+          result.textContent = account
+            ? 'Closing balance ' + money(Math.round(balance * 100) / 100)
+            : 'Choose an account';
+        }
+      };
+      document.addEventListener('click', (e) => {
+        const origin = e.composedPath()[0];
+        const el = origin instanceof Element ? origin.closest('[data-action]') : null;
+        if (!el) return;
+        const action = el.getAttribute('data-action');
+        if (action === 'nav') {
+          e.preventDefault();
+          show(el.getAttribute('data-target'));
+        } else if (action === 'account') {
+          account = el.getAttribute('data-account');
+          for (const b of document.querySelectorAll('[data-action="account"]')) {
+            b.setAttribute('aria-pressed', String(b === el));
+          }
+        } else if (action === 'show') {
+          showTransactions();
+        } else if (action === 'dismiss') {
+          const overlay = el.closest('.overlay');
+          if (overlay) overlay.remove();
+        } else if (action === 'toggle-menu') {
+          const menu = el.closest('.menu');
+          const list = menu ? menu.querySelector('[data-role="menu-list"]') : null;
+          if (list) list.hidden = !list.hidden;
+        }
+      });
+    </script>
+  </body>
+</html>
