@@ -26,6 +26,8 @@
 import type { UsageTotals } from '@sfysh/providers';
 import type { DriftGap } from './cases.js';
 import type { CaseRunResult } from './heal-run.js';
+import { FROZEN_SUITES, suiteByCasesHash, suiteByName } from './suites.js';
+import type { FrozenSuite, SuiteRole } from './suites.js';
 
 /** What `heal:drift` writes to results.json. */
 export interface DriftResultsFile {
@@ -144,6 +146,8 @@ export interface CaseLine {
 export interface DriftReport {
   header: {
     suiteVersion: string | null;
+    /** The frozen suite's role, when the results match it: `tuning` or `held_out`. */
+    suiteRole: SuiteRole | null;
     cases: number;
     selected: number;
     casesSha256: string;
@@ -172,8 +176,14 @@ export interface DriftReport {
 }
 
 export interface BuildReportOptions {
-  /** The frozen suite version these results were run on, for example `drift-suite v1`. */
+  /**
+   * The frozen suite version these results were run on, for example
+   * `drift-suite v1`. When left out, the suite is found from the
+   * `cases.ts` hash in results.json.
+   */
   suiteVersion?: string;
+  /** The frozen suites to check against. Defaults to `FROZEN_SUITES`; tests pass their own. */
+  suites?: readonly FrozenSuite[];
 }
 
 export const FALSE_HEAL_FORMULA =
@@ -370,9 +380,26 @@ export function buildReport(file: DriftResultsFile, options: BuildReportOptions 
       `Partial suite: ${file.suite.selected} of ${file.suite.cases} cases were run. Group rates are not comparable with a full run.`,
     );
   }
-  if (options.suiteVersion === undefined) {
+  const suites = options.suites ?? FROZEN_SUITES;
+  const suiteVersion =
+    options.suiteVersion ?? suiteByCasesHash(file.suite.casesSha256, suites)?.name;
+  const named = suiteVersion !== undefined ? suiteByName(suiteVersion, suites) : undefined;
+  const matches = named !== undefined && named.casesSha256 === file.suite.casesSha256;
+  if (suiteVersion === undefined) {
     warnings.push(
-      'No suite version given. A published number must name the frozen suite it was measured on.',
+      'No suite version given, and the `cases.ts` hash matches no frozen suite. A published number must name the frozen suite it was measured on.',
+    );
+  } else if (named === undefined) {
+    warnings.push(
+      `"${suiteVersion}" is not a frozen suite (see \`drift/suites.ts\`). A published number must name the frozen suite it was measured on.`,
+    );
+  } else if (!matches) {
+    warnings.push(
+      `These results were not run on ${named.name}: their \`cases.ts\` sha256 is ${file.suite.casesSha256}, the frozen suite's is ${named.casesSha256}.`,
+    );
+  } else if (named.role === 'tuning') {
+    warnings.push(
+      `${named.name} is the tuning set: the prompt was changed because of what these cases showed, so its rates are partly fitted to them. Report it beside the held-out headline, labelled as the tuning set, never as the headline.`,
     );
   }
   if (file.runsPerCase < 3) {
@@ -383,7 +410,8 @@ export function buildReport(file: DriftResultsFile, options: BuildReportOptions 
   if (!priced) warnings.push('Some model calls had no price, so cost figures are left out.');
 
   const header = {
-    suiteVersion: options.suiteVersion ?? null,
+    suiteVersion: suiteVersion ?? null,
+    suiteRole: matches ? named.role : null,
     cases: file.suite.cases,
     selected: file.suite.selected,
     casesSha256: file.suite.casesSha256,
@@ -437,6 +465,12 @@ function groupByCase(rows: readonly CaseRunResult[]): Map<string, CaseRunResult[
   return map;
 }
 
+function roleLabel(role: SuiteRole | null): string {
+  if (role === 'tuning') return ' (tuning set)';
+  if (role === 'held_out') return ' (held-out set)';
+  return '';
+}
+
 function pct(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
 }
@@ -468,7 +502,7 @@ export function renderReport(report: DriftReport): string {
   line('## Run');
   line();
   line(
-    `- Suite: ${h.suiteVersion ?? 'unversioned'}, ${h.selected} of ${h.cases} cases, \`cases.ts\` sha256 \`${h.casesSha256}\``,
+    `- Suite: ${h.suiteVersion ?? 'unversioned'}${roleLabel(h.suiteRole)}, ${h.selected} of ${h.cases} cases, \`cases.ts\` sha256 \`${h.casesSha256}\``,
   );
   line(`- Model: ${h.provider}${h.model ? ` / ${h.model}` : ''}`);
   if (h.prices) {

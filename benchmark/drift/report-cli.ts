@@ -6,8 +6,10 @@
 // Takes a results folder (or its results.json) written by `heal:drift`.
 // Writes report.md and report.json into the same folder and prints the
 // Markdown. The report says at the top why it is not fit to publish when
-// it is not: a dry run, a partial suite, no suite version, fewer than 3
-// runs per case, or unpriced calls.
+// it is not: a dry run, a partial suite, no frozen suite (or one the
+// results were not run on), the tuning set, fewer than 3 runs per case,
+// or unpriced calls. Without --suite-version the suite is found from the
+// cases.ts hash in results.json (see suites.ts).
 
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';

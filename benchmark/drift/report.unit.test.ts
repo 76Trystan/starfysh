@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 import type { CaseRunResult } from './heal-run.js';
 import { buildReport, FALSE_HEAL_FORMULA, renderReport, wilson } from './report.js';
 import type { DriftResultsFile } from './report.js';
+import { FROZEN_SUITES } from './suites.js';
+import type { FrozenSuite } from './suites.js';
 
 type Expect = CaseRunResult['expect'];
 
@@ -87,6 +89,18 @@ function file(results: CaseRunResult[], over: Partial<DriftResultsFile> = {}): D
   };
 }
 
+// A held-out suite matching the sample's hash, so the headline tests do not
+// depend on the real frozen suites.
+const HELD: FrozenSuite = {
+  name: 'held-out h1',
+  role: 'held_out',
+  frozenOn: '2026-11-22',
+  cases: 6,
+  casesSha256: 'abc',
+  files: {},
+};
+const OPTS = { suiteVersion: 'held-out h1', suites: [HELD] };
+
 const SAMPLE = [
   run('a', selector, 'healed', { verdict: 'correct', score: 0.9, calls: 1, costUsd: 0.01 }),
   run('a', selector, 'healed', {
@@ -129,7 +143,7 @@ describe('wilson()', () => {
 });
 
 describe('buildReport(): heal quality', () => {
-  const report = buildReport(file(SAMPLE), { suiteVersion: 'drift-suite v1' });
+  const report = buildReport(file(SAMPLE), OPTS);
   const row = (label: string) => report.quality.find((q) => q.label.startsWith(label))!;
 
   it('splits healable runs by group and keeps the decoy row separate', () => {
@@ -174,7 +188,7 @@ describe('buildReport(): heal quality', () => {
 });
 
 describe('buildReport(): refusals and never-reached', () => {
-  const report = buildReport(file(SAMPLE), { suiteVersion: 'drift-suite v1' });
+  const report = buildReport(file(SAMPLE), OPTS);
 
   it('counts refusals, names gaps, and lists a patch made on an unhealable case', () => {
     expect(report.refusals).toMatchObject({ runs: 2, refused: 1 });
@@ -191,7 +205,7 @@ describe('buildReport(): refusals and never-reached', () => {
 });
 
 describe('buildReport(): supporting numbers', () => {
-  const report = buildReport(file(SAMPLE), { suiteVersion: 'drift-suite v1' });
+  const report = buildReport(file(SAMPLE), OPTS);
 
   it('bands decided heals by score at 0.5 and 0.8', () => {
     expect(report.supporting.scoreBands).toEqual([
@@ -228,9 +242,9 @@ describe('buildReport(): supporting numbers', () => {
 
 describe('buildReport(): warnings and headline', () => {
   it('gives a headline only when nothing rules it out', () => {
-    const report = buildReport(file(SAMPLE), { suiteVersion: 'drift-suite v1' });
+    const report = buildReport(file(SAMPLE), OPTS);
     expect(report.warnings).toEqual([]);
-    expect(report.headline).toContain('On drift-suite v1 (3 healable cases, 3 runs each');
+    expect(report.headline).toContain('On held-out h1 (3 healable cases, 3 runs each');
     expect(report.headline).toContain('false-heal rate of 25.0%');
     expect(report.headline).toContain('1 false heal(s) in 2 run(s)');
   });
@@ -252,9 +266,44 @@ describe('buildReport(): warnings and headline', () => {
   });
 });
 
+describe('buildReport(): frozen suites', () => {
+  const v1 = FROZEN_SUITES.find((s) => s.name === 'drift-suite v1')!;
+  const onV1 = { suite: { cases: 69, selected: 69, casesSha256: v1.casesSha256 } };
+
+  it('finds the suite from the cases hash and labels the tuning set', () => {
+    const report = buildReport(file(SAMPLE, onV1));
+    expect(report.header.suiteVersion).toBe('drift-suite v1');
+    expect(report.header.suiteRole).toBe('tuning');
+    expect(report.headline).toBeNull();
+    expect(report.warnings.join(' ')).toContain('drift-suite v1 is the tuning set');
+    expect(renderReport(report)).toContain('- Suite: drift-suite v1 (tuning set), 69 of 69');
+  });
+
+  it('refuses a suite name the results were not run on', () => {
+    const report = buildReport(file(SAMPLE), { suiteVersion: 'drift-suite v1' });
+    expect(report.header.suiteRole).toBeNull();
+    expect(report.headline).toBeNull();
+    expect(report.warnings.join(' ')).toContain('These results were not run on drift-suite v1');
+  });
+
+  it('refuses a suite name that is not frozen', () => {
+    const report = buildReport(file(SAMPLE), { suiteVersion: 'drift-suite v9' });
+    expect(report.headline).toBeNull();
+    expect(report.warnings.join(' ')).toContain('"drift-suite v9" is not a frozen suite');
+  });
+
+  it('labels a matching held-out suite and gives it the headline', () => {
+    const report = buildReport(file(SAMPLE), { suites: [HELD] });
+    expect(report.header.suiteVersion).toBe('held-out h1');
+    expect(report.header.suiteRole).toBe('held_out');
+    expect(report.headline).not.toBeNull();
+    expect(renderReport(report)).toContain('- Suite: held-out h1 (held-out set)');
+  });
+});
+
 describe('renderReport()', () => {
   it('states the formula, shows every table, and writes no dashes the style rules forbid', () => {
-    const text = renderReport(buildReport(file(SAMPLE), { suiteVersion: 'drift-suite v1' }));
+    const text = renderReport(buildReport(file(SAMPLE), OPTS));
     expect(text).toContain(FALSE_HEAL_FORMULA);
     for (const heading of [
       '## Heal quality',
