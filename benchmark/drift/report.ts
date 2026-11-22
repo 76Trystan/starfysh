@@ -31,7 +31,15 @@ import type { FrozenSuite, SuiteRole } from './suites.js';
 
 /** What `heal:drift` writes to results.json. */
 export interface DriftResultsFile {
-  suite: { cases: number; selected: number; casesSha256: string };
+  suite: {
+    /** The case set run (`heal:drift --cases`). Absent in results written before 2026-11-22, which are all v1. */
+    caseSet?: string;
+    /** The cases file whose hash is `casesSha256`. Absent before 2026-11-22, when it was always `cases.ts`. */
+    casesFile?: string;
+    cases: number;
+    selected: number;
+    casesSha256: string;
+  };
   provider: string;
   model: string | null;
   prices: Record<string, { inputPerMTok: number; outputPerMTok: number }> | null;
@@ -150,6 +158,8 @@ export interface DriftReport {
     suiteRole: SuiteRole | null;
     cases: number;
     selected: number;
+    /** The cases file the hash is of. */
+    casesFile: string;
     casesSha256: string;
     provider: string;
     model: string | null;
@@ -381,13 +391,14 @@ export function buildReport(file: DriftResultsFile, options: BuildReportOptions 
     );
   }
   const suites = options.suites ?? FROZEN_SUITES;
+  const casesFile = file.suite.casesFile ?? 'cases.ts';
   const suiteVersion =
     options.suiteVersion ?? suiteByCasesHash(file.suite.casesSha256, suites)?.name;
   const named = suiteVersion !== undefined ? suiteByName(suiteVersion, suites) : undefined;
   const matches = named !== undefined && named.casesSha256 === file.suite.casesSha256;
   if (suiteVersion === undefined) {
     warnings.push(
-      'No suite version given, and the `cases.ts` hash matches no frozen suite. A published number must name the frozen suite it was measured on.',
+      `No suite version given, and the \`${casesFile}\` hash matches no frozen suite. A published number must name the frozen suite it was measured on.`,
     );
   } else if (named === undefined) {
     warnings.push(
@@ -395,7 +406,7 @@ export function buildReport(file: DriftResultsFile, options: BuildReportOptions 
     );
   } else if (!matches) {
     warnings.push(
-      `These results were not run on ${named.name}: their \`cases.ts\` sha256 is ${file.suite.casesSha256}, the frozen suite's is ${named.casesSha256}.`,
+      `These results were not run on ${named.name}: their \`${casesFile}\` sha256 is ${file.suite.casesSha256}, the frozen suite's is ${named.casesSha256}.`,
     );
   } else if (named.role === 'tuning') {
     warnings.push(
@@ -414,6 +425,7 @@ export function buildReport(file: DriftResultsFile, options: BuildReportOptions 
     suiteRole: matches ? named.role : null,
     cases: file.suite.cases,
     selected: file.suite.selected,
+    casesFile,
     casesSha256: file.suite.casesSha256,
     provider: file.provider,
     model: file.model,
@@ -502,7 +514,7 @@ export function renderReport(report: DriftReport): string {
   line('## Run');
   line();
   line(
-    `- Suite: ${h.suiteVersion ?? 'unversioned'}${roleLabel(h.suiteRole)}, ${h.selected} of ${h.cases} cases, \`cases.ts\` sha256 \`${h.casesSha256}\``,
+    `- Suite: ${h.suiteVersion ?? 'unversioned'}${roleLabel(h.suiteRole)}, ${h.selected} of ${h.cases} cases, \`${h.casesFile}\` sha256 \`${h.casesSha256}\``,
   );
   line(`- Model: ${h.provider}${h.model ? ` / ${h.model}` : ''}`);
   if (h.prices) {

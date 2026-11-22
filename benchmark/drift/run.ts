@@ -14,6 +14,9 @@
 //   --max-usd <usd>          stop spending once this much is used (needs prices).
 //   --max-tokens <n>         stop spending once this many tokens are used.
 //   --runs <n>               runs per case (default 1; publish with 3 or more).
+//   --cases <set>            which case set to run (default v1; see case-sets.ts).
+//       A set meant to be held out runs only with --provider oracle until it
+//       is frozen in suites.ts.
 //   --case <id>              only cases whose id starts with this (repeatable).
 //   --group <group>          only this group (single, robustness, silent, complex).
 //   --out <dir>              default benchmark/results/drift-<timestamp>.
@@ -38,7 +41,7 @@ import {
   OpenAIProvider,
 } from '@sfysh/providers';
 import type { Provider, UsageBudget } from '@sfysh/providers';
-import { ALL_CASES } from './cases.js';
+import { CASE_SETS, caseSetByName, DEFAULT_CASE_SET, modelRunRefusal } from './case-sets.js';
 import type { DriftCase } from './cases.js';
 import { loadBaseline, runDriftCase } from './heal-run.js';
 import type { Baseline, CaseRunResult } from './heal-run.js';
@@ -62,6 +65,7 @@ const { values } = parseArgs({
     'max-usd': { type: 'string' },
     'max-tokens': { type: 'string' },
     runs: { type: 'string', default: '1' },
+    cases: { type: 'string', default: DEFAULT_CASE_SET },
     case: { type: 'string', multiple: true },
     group: { type: 'string' },
     out: { type: 'string' },
@@ -82,6 +86,16 @@ function positive(name: string, raw: string | undefined): number | undefined {
 
 const runs = positive('runs', values.runs)!;
 if (!Number.isInteger(runs) || runs < 1) fail('--runs must be a whole number of 1 or more.');
+
+const caseSet =
+  caseSetByName(values.cases!) ??
+  fail(`--cases must be one of ${CASE_SETS.map((s) => s.name).join(', ')}.`);
+const casesSource = await readFile(join(here, caseSet.file), 'utf8');
+const casesSha256 = createHash('sha256').update(casesSource).digest('hex');
+if (values.provider !== 'oracle') {
+  const refusal = modelRunRefusal(caseSet, casesSha256);
+  if (refusal !== null) fail(refusal);
+}
 
 const oracle = values.provider === 'oracle' ? new OracleProvider() : undefined;
 const vendor: Provider =
@@ -124,7 +138,7 @@ const provider = new MeteredProvider(vendor, {
   ...(prices ? { prices } : {}),
 });
 
-const selected = ALL_CASES.filter(
+const selected = caseSet.cases.filter(
   (c) =>
     (values.case === undefined || values.case.some((prefix) => c.id.startsWith(prefix))) &&
     (values.group === undefined || c.group === values.group),
@@ -140,12 +154,13 @@ await mkdir(out, { recursive: true });
 // Laid out as a CLI state directory, so `compile report --dir <out>` reads it.
 const corpus = new JsonlCorpus({ dir: join(out, 'corpus') });
 
-const casesSource = await readFile(join(here, 'cases.ts'), 'utf8');
 const header = {
   suite: {
-    cases: ALL_CASES.length,
+    caseSet: caseSet.name,
+    casesFile: caseSet.file,
+    cases: caseSet.cases.length,
     selected: selected.length,
-    casesSha256: createHash('sha256').update(casesSource).digest('hex'),
+    casesSha256,
   },
   provider: vendor.name,
   model: vendor.model ?? null,
