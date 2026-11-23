@@ -175,6 +175,25 @@ describe('the v1 suite', () => {
   });
 });
 
+describe('the h1 held-out set', () => {
+  const h1 = CASE_SETS.find((s) => s.name === 'h1')!;
+
+  it('is held out, on the bank fixture only, with 20+ healable cases and decoys', () => {
+    expect(h1.role).toBe('held_out');
+    expect(new Set(h1.cases.map((c) => c.fixture))).toEqual(new Set(['bank']));
+    expect(h1.cases.filter((c) => c.oracle !== undefined).length).toBeGreaterThanOrEqual(20);
+    expect(h1.cases.filter((c) => c.expect.trap).length).toBeGreaterThanOrEqual(4);
+    const heals = new Set(h1.cases.map((c) => c.expect.heal));
+    expect([...heals].sort()).toEqual([
+      'insert_step',
+      'none',
+      'not_healable',
+      'promotion',
+      'selector',
+    ]);
+  });
+});
+
 describe('each drift case does what it claims', () => {
   const baselines = new Map<string, Promise<Observation>>();
   const baselineOf = (name: string) => {
