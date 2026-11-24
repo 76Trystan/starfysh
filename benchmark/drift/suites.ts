@@ -8,9 +8,20 @@
 // rate measured on v1 today means the same thing as one measured on v1
 // next month. `suites.unit.test.ts` fails if a frozen file changes.
 //
+// A suite is also frozen by the sha256 of its built cases: the case array
+// the cases file exports, as canonical JSON (`casesDataHash`). The file
+// hash alone misses a change made elsewhere: cases after v1 are written
+// with the helpers in `case-kit.ts`, and an edit there (to how a row's
+// group is worked out, say) changes what a frozen suite's cases are
+// without touching its file. The helper file itself is not hashed, since
+// harmless edits to it (a new fixture name, a new helper) must stay
+// possible; only a change to what a frozen suite's cases build fails.
+//
 // The drift operators (`page-drift.js`, `drift.ts`) and the healer are not
 // frozen: they are the code under test, and a bug fix there is measured,
-// not hidden.
+// not hidden. If an operator change alters what a case does, the browser
+// self-tests (`drift.test.ts`) fail, since they hold every case to its
+// claimed effect.
 //
 // Roles:
 // - `tuning`: the prompt or scorer has been changed because of what these
@@ -19,6 +30,8 @@
 // - `held_out`: nothing is ever tuned against these cases. The published
 //   headline comes from a held-out suite. Any prompt change after a held-out
 //   suite exists means a new held-out suite for the next version.
+
+import { createHash } from 'node:crypto';
 
 export type SuiteRole = 'tuning' | 'held_out';
 
@@ -34,6 +47,8 @@ export interface FrozenSuite {
   casesFile: string;
   /** sha256 of the cases file, as `heal:drift` records it. */
   casesSha256: string;
+  /** sha256 of the built cases as canonical JSON (`casesDataHash`). */
+  casesDataSha256: string;
   /** sha256 of every file the cases read, keyed by path relative to this folder. */
   files: Record<string, string>;
 }
@@ -46,6 +61,7 @@ export const FROZEN_SUITES: readonly FrozenSuite[] = [
     cases: 69,
     casesFile: 'cases.ts',
     casesSha256: '1821387f637e92f671c795df7551012f5c316a6a46398a91e990e3217efd4684',
+    casesDataSha256: '65eef647e5dfd27e422c6739815d59c1d208d5b11b54f2d77f2819d0695da954',
     files: {
       'cases.ts': '1821387f637e92f671c795df7551012f5c316a6a46398a91e990e3217efd4684',
       'fixtures/portal.html': '4720f6f9b6e4e59e011a2aafa222f53ffff96c8fab626b6616459869734aba59',
@@ -57,6 +73,31 @@ export const FROZEN_SUITES: readonly FrozenSuite[] = [
     },
   },
 ];
+
+/**
+ * sha256 of a case array as canonical JSON: object keys sorted at every
+ * depth, array order kept, `undefined` fields dropped (as `JSON.stringify`
+ * drops them). Two arrays that build the same cases hash the same, however
+ * their source is written.
+ */
+export function casesDataHash(cases: readonly unknown[]): string {
+  return createHash('sha256').update(canonicalJson(cases)).digest('hex');
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`);
+    return `{${entries.join(',')}}`;
+  }
+  if (typeof value === 'function' || typeof value === 'symbol' || typeof value === 'bigint') {
+    throw new Error(`casesDataHash: cases must be plain JSON data, found a ${typeof value}`);
+  }
+  return JSON.stringify(value);
+}
 
 export function suiteByName(
   name: string,

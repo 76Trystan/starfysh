@@ -13,6 +13,7 @@ const frozen = (role: FrozenSuite['role']): FrozenSuite => ({
   cases: 0,
   casesFile: 'cases-h1.ts',
   casesSha256: 'h1hash',
+  casesDataSha256: 'h1data',
   files: {},
 });
 

@@ -98,6 +98,7 @@ const HELD: FrozenSuite = {
   cases: 6,
   casesFile: 'cases.ts',
   casesSha256: 'abc',
+  casesDataSha256: 'abcdata',
   files: {},
 };
 const OPTS = { suiteVersion: 'held-out h1', suites: [HELD] };

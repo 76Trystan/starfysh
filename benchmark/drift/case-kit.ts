@@ -11,6 +11,12 @@
 // reason: they are not exported there, and exporting them would be an edit
 // to a frozen file. They must build exactly what the v1 helpers build, so
 // a case written with either reads the same to the harness.
+//
+// This file is shared and not frozen, but what a frozen suite's cases
+// build from it is: `suites.unit.test.ts` hashes every frozen suite's
+// built cases (`casesDataHash` in `suites.ts`). Adding a fixture name or a
+// new helper is fine. Changing what an existing helper returns fails that
+// test if any frozen suite uses it; give the next set a new helper instead.
 
 import type { Condition, SelectorCandidate } from '@sfysh/ir';
 import type { DriftCase, DriftEffect, DriftGroup } from './cases.js';
