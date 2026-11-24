@@ -13,6 +13,7 @@
 
 import { ALL_CASES } from './cases.js';
 import { H1_CASES } from './cases-h1.js';
+import { H2_CASES } from './cases-h2.js';
 import type { SuiteCase } from './case-kit.js';
 import { suiteByCasesHash } from './suites.js';
 import type { FrozenSuite, SuiteRole } from './suites.js';
@@ -30,6 +31,7 @@ export interface CaseSet {
 export const CASE_SETS: readonly CaseSet[] = [
   { name: 'v1', file: 'cases.ts', role: 'tuning', cases: ALL_CASES },
   { name: 'h1', file: 'cases-h1.ts', role: 'held_out', cases: H1_CASES },
+  { name: 'h2', file: 'cases-h2.ts', role: 'held_out', cases: H2_CASES },
 ];
 
 /** The set `heal:drift` runs when `--cases` is not given. */
