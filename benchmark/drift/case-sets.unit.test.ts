@@ -50,10 +50,13 @@ describe('case sets', () => {
     expect(modelRunRefusal(heldOut, 'h1hash', [frozen('held_out')])).toBeNull();
   });
 
-  it('lets a model run on h1 as frozen in suites.ts', () => {
-    const h1 = caseSetByName('h1')!;
-    const suite = FROZEN_SUITES.find((s) => s.name === 'drift-suite h1')!;
-    expect(suite.casesFile).toBe(h1.file);
-    expect(modelRunRefusal(h1, suite.casesSha256)).toBeNull();
+  it.each([
+    ['h1', 'drift-suite h1'],
+    ['h2', 'drift-suite h2'],
+  ])('lets a model run on %s as frozen in suites.ts', (set, suiteName) => {
+    const cases = caseSetByName(set)!;
+    const suite = FROZEN_SUITES.find((s) => s.name === suiteName)!;
+    expect(suite.casesFile).toBe(cases.file);
+    expect(modelRunRefusal(cases, suite.casesSha256)).toBeNull();
   });
 });

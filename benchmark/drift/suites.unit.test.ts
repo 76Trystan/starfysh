@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest';
 import { CASE_SETS } from './case-sets.js';
 import { ALL_CASES } from './cases.js';
 import { H1_CASES } from './cases-h1.js';
+import { H2_CASES } from './cases-h2.js';
 import { casesDataHash, FROZEN_SUITES, suiteByCasesHash, suiteByName } from './suites.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -68,6 +69,20 @@ describe('frozen drift suites', () => {
       'fixtures/bank.workflow.json',
     ]);
     expect(suiteByCasesHash(h1.casesSha256)).toBe(h1);
+  });
+
+  it('h2 is the 52-case held-out set on the suppliers fixture', () => {
+    const h2 = suiteByName('drift-suite h2')!;
+    expect(h2.role).toBe('held_out');
+    expect(h2.casesFile).toBe('cases-h2.ts');
+    expect(h2.cases).toBe(H2_CASES.length);
+    expect(h2.cases).toBeGreaterThanOrEqual(50);
+    expect(Object.keys(h2.files).sort()).toEqual([
+      'cases-h2.ts',
+      'fixtures/suppliers.html',
+      'fixtures/suppliers.workflow.json',
+    ]);
+    expect(suiteByCasesHash(h2.casesSha256)).toBe(h2);
   });
 
   it('gives every suite a unique name and hash', () => {
