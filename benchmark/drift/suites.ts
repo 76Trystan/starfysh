@@ -72,6 +72,21 @@ export const FROZEN_SUITES: readonly FrozenSuite[] = [
         '78d07ef86c6db544593d422f26b09f8ca1fd6bca9aeac9721b6a9e79a1f92839',
     },
   },
+  {
+    name: 'drift-suite h1',
+    role: 'held_out',
+    frozenOn: '2026-11-24',
+    cases: 42,
+    casesFile: 'cases-h1.ts',
+    casesSha256: '94e535761b30ce130f8d53a08b4af7fda0a59c2c7e86e0966c8aab7c4331de49',
+    casesDataSha256: 'cba0d351042f1460113a97244c278666311b02627bea2e828d4290783e376f24',
+    files: {
+      'cases-h1.ts': '94e535761b30ce130f8d53a08b4af7fda0a59c2c7e86e0966c8aab7c4331de49',
+      'fixtures/bank.html': 'a18721b65df50cd87f8ee219f18261fcb927a623a23488c8fed6628f304ec78f',
+      'fixtures/bank.workflow.json':
+        '5d5f70668cc0eb45aed292241bc2c765aad75462aa903eb09e07bbd4bc35af1e',
+    },
+  },
 ];
 
 /**
