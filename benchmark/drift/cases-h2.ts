@@ -37,9 +37,12 @@ import {
   clickFirst,
   css,
   decoy,
+  delay,
   dropAttr,
+  iframe,
   label,
   menu,
+  onLoads,
   promote,
   remove,
   rename,
@@ -48,8 +51,10 @@ import {
   retag,
   role,
   setAttr,
+  shadow,
   testid,
   text,
+  waitFirst,
 } from './case-kit.js';
 
 export const SUPPLIER_CASES: SuiteCase[] = [
@@ -387,6 +392,147 @@ export const SUPPLIER_CASES: SuiteCase[] = [
         rename('label[for="delivered-since"]', 'Ordered since'),
       ],
       { effect: 'silent', heal: 'none' },
+    ],
+  ]),
+  // Complex changes.
+  ...cases('suppliers', 'complex', [
+    [
+      'locale-de',
+      // Four promotions, the harness's default heal cap (heal-run.ts).
+      'The portal switches to German; test ids and ids stay, and supplier names, the table name and its headers stay in English.',
+      [
+        rename(at('click_002'), 'Bestellungen'),
+        rename('label[for="ordered-since"]', 'Bestellt seit'),
+        rename('label[for="delivered-since"]', 'Geliefert seit'),
+        rename('label[for="min-total"]', 'Mindestbetrag je Position'),
+        rename('label[for="min-qty"]', 'Mindestmenge'),
+        rename(at('click_006'), 'Filter anwenden'),
+        rename('[data-testid="clear-filters"]', 'Filter löschen'),
+      ],
+      {
+        effect: 'degrades',
+        step: 'click_002',
+        steps: ['click_002', 'fill_004', 'fill_005', 'click_006'],
+        heal: 'promotion',
+      },
+      [promote('click_002'), promote('fill_004'), promote('fill_005'), promote('click_006')],
+    ],
+    [
+      'redesign',
+      "A redesign: a terms notice, the supplier list folded into a 'Choose supplier' dropdown, and 'Apply filters' renamed 'Run' with no test id. Three heals on three steps.",
+      [
+        banner('We have updated our supplier terms', 'Accept'),
+        menu('ul.suppliers', 'Choose supplier'),
+        rename(at('click_006'), 'Run'),
+        dropAttr(at('click_006'), 'data-testid'),
+      ],
+      { effect: 'fails', step: 'click_002', heal: 'insert_step' },
+      [
+        clickFirst(
+          'click_002',
+          role("button[name='Accept'][exact=true]"),
+          'Accept the supplier terms notice.',
+        ),
+        clickFirst(
+          'click_003',
+          role("button[name='Choose supplier']"),
+          'Open the supplier chooser.',
+        ),
+        reselect('click_006', role("button[name='Run']")),
+      ],
+    ],
+    [
+      'filter-labels-reworded',
+      "The two filters the workflow fills are relabelled 'Order placed from' and 'Line value from' and both get new ids. Two heals, on fields whose look-alikes (Delivered since, Minimum quantity) sit beside them; filling a look-alike changes the order lines.",
+      [
+        rename('label[for="ordered-since"]', 'Order placed from'),
+        setAttr(at('fill_004'), 'id', 'placed-from'),
+        setAttr('label[for="ordered-since"]', 'for', 'placed-from'),
+        rename('label[for="min-total"]', 'Line value from'),
+        setAttr(at('fill_005'), 'id', 'value-from'),
+        setAttr('label[for="min-total"]', 'for', 'value-from'),
+      ],
+      { effect: 'fails', step: 'fill_004', heal: 'selector' },
+      [
+        reselect('fill_004', label('Order placed from'), css('#placed-from')),
+        reselect('fill_005', label('Line value from'), css('#value-from')),
+      ],
+    ],
+    [
+      'orders-area-renamed',
+      "The orders area is renamed: the 'Purchase orders' link becomes 'Procurement' with no test id, and the order lines table's accessible name becomes 'Lines'. Two heals, on a click and an extract.",
+      [
+        rename(at('click_002'), 'Procurement'),
+        dropAttr(at('click_002'), 'data-testid'),
+        setAttr('table.order-lines', 'aria-label', 'Lines'),
+      ],
+      { effect: 'fails', step: 'click_002', heal: 'selector' },
+      [
+        reselect('click_002', role("link[name='Procurement']")),
+        reselect('extract_007', role("table[name='Lines']"), css('table.order-lines')),
+      ],
+    ],
+    [
+      'apply-twin',
+      'A second Apply filters button, identical to the first and to assistive technology, appears after it. Only its position tells them apart.',
+      [decoy(at('click_006'), 'Apply filters', 'after')],
+      { effect: 'fails', step: 'click_006', heal: 'selector', trap: true },
+      [reselect('click_006', css('form.filters button:first-of-type'))],
+    ],
+    [
+      'slow-supplier-link',
+      // Longer than every candidate's wait together (2 s each, tried in
+      // turn), for the reason given on v1's slow-apply-button.
+      'The Northwind Packaging link renders 8 seconds late, longer than the action waits through all its selectors.',
+      [delay(at('click_003'), 8000)],
+      { effect: 'fails', step: 'click_003', heal: 'insert_step' },
+      [
+        waitFirst(
+          'click_003',
+          { selectorVisible: '[data-testid="supplier-northwind-packaging"]' },
+          'Wait for the Northwind Packaging link to render.',
+        ),
+      ],
+    ],
+    [
+      'intermittent-survey-banner',
+      'A supplier survey covers the page on every other visit.',
+      [onLoads([1, 3, 5, 7], [banner('How are we doing? Take our 2-minute survey', 'Not now')])],
+      { effect: 'fails', step: 'click_002', heal: 'not_healable', gap: 'intermittent' },
+    ],
+    [
+      'ab-test-orders',
+      "An A/B test: on every other visit the 'Purchase orders' link is renamed 'Buying' and has no test id.",
+      [
+        onLoads(
+          [1, 3, 5, 7],
+          [rename(at('click_002'), 'Buying'), dropAttr(at('click_002'), 'data-testid')],
+        ),
+      ],
+      { effect: 'fails', step: 'click_002', heal: 'not_healable', gap: 'ab_test' },
+    ],
+    [
+      'ab-test-apply',
+      "An A/B test: on every other visit the 'Apply filters' button is renamed 'Search' and has no test id.",
+      [
+        onLoads(
+          [1, 3, 5, 7],
+          [rename(at('click_006'), 'Search'), dropAttr(at('click_006'), 'data-testid')],
+        ),
+      ],
+      { effect: 'fails', step: 'click_006', heal: 'not_healable', gap: 'ab_test' },
+    ],
+    [
+      'ordered-field-in-iframe',
+      'The Ordered since field moves into an embedded frame.',
+      [iframe(at('fill_004'), 'Order date filter')],
+      { effect: 'fails', step: 'fill_004', heal: 'not_healable', gap: 'iframe' },
+    ],
+    [
+      'apply-in-shadow-dom',
+      "The 'Apply filters' button moves into a web component (open shadow DOM).",
+      [shadow(at('click_006'))],
+      { effect: 'none', heal: 'none' },
     ],
   ]),
 ];

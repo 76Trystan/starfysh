@@ -288,6 +288,33 @@ describe('the h1 held-out set', () => {
   });
 });
 
+describe('the h2 held-out set', () => {
+  const h2 = CASE_SETS.find((s) => s.name === 'h2')!;
+  const count = (test: (c: (typeof h2.cases)[number]) => boolean) => h2.cases.filter(test).length;
+
+  // The mix was fixed on 2026-11-24, before any h2 case was written, as
+  // h1's proportions scaled by about 1.25 (see the header of cases-h2.ts).
+  // It is checked here so the set cannot drift towards the cases a model
+  // happens to do well or badly on.
+  it('is held out, on the suppliers fixture only, with the mix fixed in advance', () => {
+    expect(h2.role).toBe('held_out');
+    expect(new Set(h2.cases.map((c) => c.fixture))).toEqual(new Set(['suppliers']));
+    expect(h2.cases.length).toBeGreaterThanOrEqual(52);
+    expect(count((c) => c.oracle !== undefined)).toBeGreaterThanOrEqual(34);
+    expect(count((c) => c.expect.heal === 'selector')).toBe(16);
+    expect(count((c) => c.expect.heal === 'promotion')).toBe(10);
+    expect(count((c) => c.expect.heal === 'insert_step')).toBe(8);
+    expect(count((c) => c.expect.trap === true)).toBeGreaterThanOrEqual(5);
+    expect(count((c) => c.expect.heal === 'not_healable')).toBe(10);
+    // Robustness and silent by what the healer sees: every case it should
+    // never be called on, including complex ones (shadow DOM).
+    expect(count((c) => c.expect.heal === 'none')).toBe(8);
+    expect(new Set(h2.cases.flatMap((c) => (c.expect.gap ? [c.expect.gap] : [])))).toEqual(
+      new Set(['ab_test', 'header_alias', 'iframe', 'intermittent']),
+    );
+  });
+});
+
 describe('each drift case does what it claims', () => {
   const baselines = new Map<string, Promise<Observation>>();
   const baselineOf = (name: string) => {
