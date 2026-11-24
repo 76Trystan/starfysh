@@ -24,6 +24,7 @@
 // the files and writes the output.
 
 import type { UsageTotals } from '@sfysh/providers';
+import type { RunAbort } from './abort.js';
 import type { DriftGap } from './cases.js';
 import type { CaseRunResult } from './heal-run.js';
 import { FROZEN_SUITES, suiteByCasesHash, suiteByName } from './suites.js';
@@ -50,6 +51,8 @@ export interface DriftResultsFile {
   dryRun: boolean;
   startedAt: string;
   finishedAt?: string;
+  /** Present when `heal:drift` stopped early on a provider failure (see abort.ts). */
+  aborted?: RunAbort;
   usage: UsageTotals;
   results: CaseRunResult[];
 }
@@ -380,6 +383,12 @@ export function buildReport(file: DriftResultsFile, options: BuildReportOptions 
   }));
 
   const warnings: string[] = [];
+  if (file.aborted !== undefined) {
+    const a = file.aborted;
+    warnings.push(
+      `Stopped early: the provider failed on ${a.caseId} (run ${a.run}) with "${a.code}", so the run did not finish. These results are incomplete and must not be published.`,
+    );
+  }
   if (file.dryRun) {
     warnings.push(
       'Dry run with the oracle provider: these numbers measure the harness, not a model.',

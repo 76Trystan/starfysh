@@ -99,6 +99,8 @@ Each case runs the way a user's workflow would meet the change. A run that passe
 
 Options: `--runs <n>` (default 1; use 3 or more for anything published, since model answers vary), `--cases <set>` (which case set to run, default `v1`; listed in `case-sets.ts`, and a set meant to be held out runs only with `--provider oracle` until it is frozen in `suites.ts`), `--case <id-prefix>` (repeatable), `--group <single|robustness|silent|complex>`, `--max-tokens`, `--out <dir>`. Results go to `results/drift-<timestamp>/`: `results.json` (a header with the case set, its cases file and that file's hash, provider, model, prices and the judge's definition, then one entry per case run) and `corpus/heals.jsonl`, which `compile report --dir <that directory>` reads. The printed summary is a working view, not the published report.
 
+The script loads the repository's `.env` if there is one (`node --env-file-if-exists`), so a provider key kept there, such as `ANTHROPIC_API_KEY`, is picked up; a variable already set in the shell wins. If the provider fails in a way a retry will not fix (a missing or wrong key, an unknown model), the run stops at that case, prints the provider's error, exits 1, and records `aborted` in `results.json`; `report:drift` never prints a headline for such a run. Rate limits and server errors are retried by the healer and do not stop the run.
+
 **The report.** `report:drift` builds the published report from a results folder and writes `report.md` and `report.json` into it:
 
 ```sh

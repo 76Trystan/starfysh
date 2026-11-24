@@ -41,6 +41,8 @@ import {
   OpenAIProvider,
 } from '@sfysh/providers';
 import type { Provider, UsageBudget } from '@sfysh/providers';
+import { providerFailure } from './abort.js';
+import type { RunAbort } from './abort.js';
 import { CASE_SETS, caseSetByName, DEFAULT_CASE_SET, modelRunRefusal } from './case-sets.js';
 import type { SuiteCase } from './case-kit.js';
 import { loadBaseline, runDriftCase } from './heal-run.js';
@@ -177,8 +179,9 @@ const header = {
 const browser = await chromium.launch();
 const baselines = new Map<SuiteCase['fixture'], Baseline>();
 const results: CaseRunResult[] = [];
+let aborted: RunAbort | null = null;
 try {
-  for (const driftCase of selected) {
+  cases: for (const driftCase of selected) {
     let baseline = baselines.get(driftCase.fixture);
     if (baseline === undefined) {
       baseline = await loadBaseline(browser, driftCase.fixture);
@@ -203,14 +206,28 @@ try {
       results.push(result);
       const verdict = result.judgement ? ` ${result.judgement.verdict}` : '';
       console.log(`${result.outcome}${verdict}  ${result.durationMs}ms`);
+      // A provider failure a retry will not fix fails every later call
+      // too, so stop rather than finish a run with no model in it (see
+      // abort.ts). The oracle provider cannot fail this way.
+      aborted = oracle ? null : providerFailure(result);
+      if (aborted !== null) break cases;
     }
   }
 } finally {
   await browser.close();
   await writeFile(
     join(out, 'results.json'),
-    `${JSON.stringify({ ...header, finishedAt: new Date().toISOString(), usage: ledger.totals(), results }, null, 2)}\n`,
+    `${JSON.stringify({ ...header, finishedAt: new Date().toISOString(), ...(aborted ? { aborted } : {}), usage: ledger.totals(), results }, null, 2)}\n`,
   );
+}
+
+if (aborted !== null) {
+  console.error(
+    `\nStopped: the provider failed on ${aborted.caseId} (run ${aborted.run}) with "${aborted.code}": ${aborted.message}\n` +
+      'Retrying will not fix this, so the run was stopped rather than finished without a model. ' +
+      `Check the provider's API key and model name. Partial results: ${join(out, 'results.json')}`,
+  );
+  process.exit(1);
 }
 
 console.log(`\n${renderSummary(results, ledger.totals())}`);

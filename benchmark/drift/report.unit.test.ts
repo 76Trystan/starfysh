@@ -266,6 +266,15 @@ describe('buildReport(): warnings and headline', () => {
     expect(report.headline).toBeNull();
     expect(report.warnings.join(' ')).toContain(warning);
   });
+
+  it('withholds the headline for a run stopped on a provider failure', () => {
+    const aborted = { caseId: 'c1', run: 1, code: 'auth', message: 'invalid x-api-key' };
+    const report = buildReport(file(SAMPLE, { aborted }), OPTS);
+    expect(report.headline).toBeNull();
+    expect(report.warnings).toHaveLength(1);
+    expect(report.warnings[0]).toContain('Stopped early');
+    expect(report.warnings[0]).toContain('"auth"');
+  });
 });
 
 describe('buildReport(): frozen suites', () => {

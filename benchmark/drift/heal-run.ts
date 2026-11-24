@@ -92,8 +92,12 @@ export interface HealStepResult {
   attempts: {
     patchClass: ModelPatchClass;
     generated: string;
-    /** For a rejection: the stage (`input`, `response`, `candidates`, `policy`) and code. */
-    rejection?: { stage: string; code: string };
+    /**
+     * For a rejection: the stage (`input`, `response`, `candidates`,
+     * `policy`, or `provider` when the model call failed) and code. A
+     * provider failure also carries the provider's message, redacted.
+     */
+    rejection?: { stage: string; code: string; message?: string };
     verification?: string;
     decision?: string;
   }[];
@@ -408,7 +412,13 @@ export async function runDriftCase(
               ...(a.generated.status === 'rejected'
                 ? { rejection: { stage: a.generated.stage, code: a.generated.code } }
                 : a.generated.status === 'provider_error'
-                  ? { rejection: { stage: 'provider', code: a.generated.code } }
+                  ? {
+                      rejection: {
+                        stage: 'provider',
+                        code: a.generated.code,
+                        message: a.generated.message,
+                      },
+                    }
                   : {}),
               ...(a.verification ? { verification: a.verification.status } : {}),
               ...(a.decision ? { decision: a.decision.status } : {}),
