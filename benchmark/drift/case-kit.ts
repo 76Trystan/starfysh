@@ -23,8 +23,8 @@ import type { DriftCase, DriftEffect, DriftGroup } from './cases.js';
 import type { Drift } from './drift.js';
 import type { OraclePatch } from './oracle.js';
 
-/** Every fixture in `fixtures/`. v1 uses `portal` and `shop`. */
-export type FixtureName = 'portal' | 'shop' | 'bank';
+/** Every fixture in `fixtures/`. v1 uses `portal` and `shop`, h1 `bank`, h2 `suppliers`. */
+export type FixtureName = 'portal' | 'shop' | 'bank' | 'suppliers';
 
 /** A drift case on any fixture. */
 export type SuiteCase = Omit<DriftCase, 'fixture'> & { fixture: FixtureName };

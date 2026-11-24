@@ -143,6 +143,100 @@ describe('the bank fixture', () => {
   });
 });
 
+describe('the suppliers fixture', () => {
+  const NORTHWIND_PACKAGING = {
+    orderLines: [
+      {
+        po: 'PO-4452',
+        item: 'Packing tape',
+        quantity: 120,
+        lineTotal: 186,
+        ordered: '2026-09-04',
+      },
+      { po: 'PO-4481', item: 'Pallet wrap', quantity: 60, lineTotal: 412.8, ordered: '2026-10-02' },
+      {
+        po: 'PO-4503',
+        item: 'Corrugated boxes',
+        quantity: 250,
+        lineTotal: 775,
+        ordered: '2026-10-21',
+      },
+    ],
+  };
+
+  it("runs clean, records the elements it acted on, and reads Northwind Packaging's lines", async () => {
+    const suppliers = loadFixture('suppliers');
+    const baseline = await observe(browser, suppliers, []);
+    expect(baseline.status).toBe('ok');
+    expect(baseline.degraded).toBeUndefined();
+    expect(baseline.truth).toEqual([
+      'click:click_002',
+      'click:click_003',
+      'fill:fill_004',
+      'fill:fill_005',
+      'click:click_006',
+    ]);
+    expect(baseline.outputs).toEqual([
+      NORTHWIND_PACKAGING,
+      { orderTotal: 'Total for 3 lines: $1,373.80' },
+    ]);
+  });
+
+  // Each look-alike is a working element beside the real one. Acting on it
+  // must change the outputs, so a heal that picks it is caught by output
+  // comparison as well as by the truth markers.
+  it.each([
+    [
+      'the other Northwind supplier',
+      'click_003',
+      { kind: 'role', value: "link[name='Northwind Paper Co']" },
+      'Total for 2 lines: $498.50',
+    ],
+    [
+      'Delivered since instead of Ordered since',
+      'fill_004',
+      { kind: 'label', value: 'Delivered since' },
+      'Total for 3 lines: $1,838.80',
+    ],
+    [
+      'Minimum quantity instead of Minimum line total',
+      'fill_005',
+      { kind: 'label', value: 'Minimum quantity' },
+      'Total for 2 lines: $961.00',
+    ],
+    [
+      'Clear filters instead of Apply filters',
+      'click_006',
+      { kind: 'role', value: "button[name='Clear filters']" },
+      '',
+    ],
+  ])('reads different outputs when %s is used', async (_, stepId, candidate, orderTotal) => {
+    const suppliers = loadFixture('suppliers');
+    const wrong = structuredClone(suppliers.workflow);
+    const step = (wrong.steps as unknown as Record<string, unknown>[]).find(
+      (s) => s.id === stepId,
+    )!;
+    step.target = { candidates: [candidate] };
+    const run = await observe(browser, suppliers, [], wrong);
+    expect(run.status).toBe('ok');
+    expect(run.truth).toContain(`${stepId.startsWith('fill') ? 'fill' : 'click'}:none`);
+    expect(run.outputs[1]).toEqual({ orderTotal });
+    expect(run.outputs[0]).not.toEqual(NORTHWIND_PACKAGING);
+  });
+
+  it('survives reordered columns, since its script and the extract read by header', async () => {
+    const suppliers = loadFixture('suppliers');
+    const run = await observe(browser, suppliers, [
+      { op: 'reorder_columns', table: 'table.order-lines', order: [3, 0, 5, 1, 4, 2] },
+    ]);
+    expect(run.status).toBe('ok');
+    expect(run.outputs).toEqual([
+      NORTHWIND_PACKAGING,
+      { orderTotal: 'Total for 3 lines: $1,373.80' },
+    ]);
+  });
+});
+
 describe('every case set', () => {
   it('has unique case ids across all sets', () => {
     expect(new Set(EVERY_CASE.map((c) => c.id)).size).toBe(EVERY_CASE.length);

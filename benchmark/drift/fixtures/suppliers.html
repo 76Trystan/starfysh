@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Supplier portal</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 0;
+      }
+      header {
+        display: flex;
+        gap: 1rem;
+        padding: 1rem;
+        background: #eef;
+      }
+      main {
+        padding: 1rem;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      [aria-current='true'] {
+        font-weight: bold;
+      }
+      .overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .overlay > div {
+        background: white;
+        padding: 2rem;
+      }
+      .menu {
+        position: relative;
+        display: inline-block;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      Drift fixture: a supplier portal for purchase orders. Same conventions
+      as portal.html and bank.html: data-sfysh-truth marks the elements the
+      workflow is meant to act on, the script records which marked element
+      each click and fill lands on, and behaviour is wired by event
+      delegation on data-action. Written on 2026-11-24 for the held-out
+      drift set h2. Where it differs from the bank on purpose:
+      - The supplier is chosen from a list of links, two of which share a
+        first word (Northwind Packaging, Northwind Paper Co).
+      - The filters come in look-alike pairs: Ordered since beside
+        Delivered since (sharing a placeholder), Minimum line total beside
+        Minimum quantity (sharing a placeholder), and Apply filters beside
+        Clear filters. Filling or clicking the wrong one of a pair changes
+        the outputs.
+      - The script reads table cells by header name, not by position, so
+        reordering the columns is a fair change to test.
+      - The extract maps a two-word header with x-header.
+    -->
+    <header>
+      <nav aria-label="Supplier portal">
+        <a href="#home" data-action="nav" data-target="home">Home</a>
+        <a
+          href="#orders"
+          class="nav-orders"
+          data-action="nav"
+          data-target="orders"
+          data-testid="nav-orders"
+          data-sfysh-truth="click_002"
+          >Purchase orders</a
+        >
+        <a href="#invoices" data-action="nav" data-target="invoices">Invoices</a>
+        <a href="#catalogue" data-action="nav" data-target="catalogue">Catalogue</a>
+      </nav>
+    </header>
+    <main>
+      <section id="home">
+        <h1>Supplier portal</h1>
+        <p>Three suppliers have open orders.</p>
+      </section>
+      <section id="orders" hidden>
+        <h1>Purchase orders</h1>
+        <nav aria-label="Suppliers">
+          <ul class="suppliers">
+            <li>
+              <a
+                href="#orders"
+                data-action="supplier"
+                data-supplier="northwind-packaging"
+                data-testid="supplier-northwind-packaging"
+                data-sfysh-truth="click_003"
+                >Northwind Packaging</a
+              >
+            </li>
+            <li>
+              <a
+                href="#orders"
+                data-action="supplier"
+                data-supplier="northwind-paper"
+                data-testid="supplier-northwind-paper"
+                >Northwind Paper Co</a
+              >
+            </li>
+            <li>
+              <a
+                href="#orders"
+                data-action="supplier"
+                data-supplier="harbour"
+                data-testid="supplier-harbour"
+                >Harbour Safety Supplies</a
+              >
+            </li>
+          </ul>
+        </nav>
+        <form class="filters" onsubmit="return false;">
+          <label for="ordered-since">Ordered since</label>
+          <input
+            id="ordered-since"
+            placeholder="YYYY-MM-DD"
+            data-role="ordered-since"
+            data-testid="filter-ordered-since"
+            data-sfysh-truth="fill_004"
+          />
+          <label for="delivered-since">Delivered since</label>
+          <input
+            id="delivered-since"
+            placeholder="YYYY-MM-DD"
+            data-role="delivered-since"
+            data-testid="filter-delivered-since"
+          />
+          <label for="min-total">Minimum line total</label>
+          <input
+            id="min-total"
+            placeholder="0"
+            data-role="min-total"
+            data-testid="filter-min-total"
+            data-sfysh-truth="fill_005"
+          />
+          <label for="min-qty">Minimum quantity</label>
+          <input id="min-qty" placeholder="0" data-role="min-qty" data-testid="filter-min-qty" />
+          <button
+            type="button"
+            data-action="apply"
+            data-testid="apply-filters"
+            data-sfysh-truth="click_006"
+          >
+            Apply filters
+          </button>
+          <button type="button" data-action="clear" data-testid="clear-filters">
+            Clear filters
+          </button>
+        </form>
+        <table class="order-lines" aria-label="Order lines" data-role="order-lines-table">
+          <thead>
+            <tr>
+              <th>PO</th>
+              <th>Item</th>
+              <th>Quantity</th>
+              <th>Line total</th>
+              <th>Ordered</th>
+              <th>Delivered</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr data-supplier="northwind-packaging">
+              <td>PO-4410</td>
+              <td>Corrugated boxes</td>
+              <td>400</td>
+              <td>$1,240.00</td>
+              <td>2026-08-20</td>
+              <td>2026-09-03</td>
+            </tr>
+            <tr data-supplier="northwind-packaging">
+              <td>PO-4452</td>
+              <td>Packing tape</td>
+              <td>120</td>
+              <td>$186.00</td>
+              <td>2026-09-04</td>
+              <td>2026-09-12</td>
+            </tr>
+            <tr data-supplier="northwind-paper">
+              <td>PO-4459</td>
+              <td>Copy paper</td>
+              <td>80</td>
+              <td>$356.00</td>
+              <td>2026-09-10</td>
+              <td>2026-09-16</td>
+            </tr>
+            <tr data-supplier="northwind-packaging">
+              <td>PO-4467</td>
+              <td>Bubble wrap rolls</td>
+              <td>30</td>
+              <td>$96.30</td>
+              <td>2026-09-18</td>
+              <td>2026-09-25</td>
+            </tr>
+            <tr data-supplier="harbour">
+              <td>PO-4475</td>
+              <td>Safety gloves</td>
+              <td>200</td>
+              <td>$318.00</td>
+              <td>2026-09-25</td>
+              <td>2026-10-01</td>
+            </tr>
+            <tr data-supplier="northwind-packaging">
+              <td>PO-4481</td>
+              <td>Pallet wrap</td>
+              <td>60</td>
+              <td>$412.80</td>
+              <td>2026-10-02</td>
+              <td>2026-10-09</td>
+            </tr>
+            <tr data-supplier="northwind-paper">
+              <td>PO-4490</td>
+              <td>Envelopes</td>
+              <td>500</td>
+              <td>$142.50</td>
+              <td>2026-10-08</td>
+              <td>2026-10-15</td>
+            </tr>
+            <tr data-supplier="northwind-packaging">
+              <td>PO-4503</td>
+              <td>Corrugated boxes</td>
+              <td>250</td>
+              <td>$775.00</td>
+              <td>2026-10-21</td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+        <p id="order-total" aria-live="polite"></p>
+      </section>
+      <section id="invoices" hidden>
+        <h1>Invoices</h1>
+      </section>
+      <section id="catalogue" hidden>
+        <h1>Catalogue</h1>
+      </section>
+    </main>
+    <script>
+      window.__sfyshTruth = [];
+      const mark = (kind, target) => {
+        const el = target instanceof Element ? target.closest('[data-sfysh-truth]') : null;
+        window.__sfyshTruth.push(kind + ':' + (el ? el.getAttribute('data-sfysh-truth') : 'none'));
+      };
+      document.addEventListener('click', (e) => mark('click', e.composedPath()[0]), true);
+      document.addEventListener('input', (e) => mark('fill', e.composedPath()[0]), true);
+
+      let supplier = null;
+
+      const show = (id) => {
+        for (const s of document.querySelectorAll('main > section')) s.hidden = s.id !== id;
+      };
+      const valueOf = (role) => {
+        const input = document.querySelector('[data-role="' + role + '"]');
+        return input ? input.value.trim() : '';
+      };
+      // Formatted by hand, not toLocaleString, so the output cannot vary
+      // with the browser's locale data.
+      const money = (n) => {
+        const [whole, cents] = Math.abs(n).toFixed(2).split('.');
+        return (n < 0 ? '-$' : '$') + whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + '.' + cents;
+      };
+      // Cells are found by their column's header text, so the columns can
+      // be reordered without breaking the page.
+      const columnOf = (table, header) =>
+        [...table.querySelectorAll('thead th')].findIndex((th) => th.textContent.trim() === header);
+      const applyFilters = () => {
+        const table = document.querySelector('[data-role="order-lines-table"]');
+        const result = document.querySelector('#order-total');
+        if (!table) return;
+        const orderedSince = valueOf('ordered-since');
+        const deliveredSince = valueOf('delivered-since');
+        const minTotal = Number(valueOf('min-total') || '0');
+        const minQty = Number(valueOf('min-qty') || '0');
+        const col = {
+          quantity: columnOf(table, 'Quantity'),
+          total: columnOf(table, 'Line total'),
+          ordered: columnOf(table, 'Ordered'),
+          delivered: columnOf(table, 'Delivered'),
+        };
+        let total = 0;
+        let lines = 0;
+        for (const row of table.querySelectorAll('tbody tr')) {
+          const cell = (i) => row.cells[i].textContent.trim();
+          const lineTotal = Number(cell(col.total).replace(/[$,]/g, ''));
+          const delivered = cell(col.delivered);
+          const keep =
+            supplier !== null &&
+            row.getAttribute('data-supplier') === supplier &&
+            (orderedSince === '' || cell(col.ordered) >= orderedSince) &&
+            (deliveredSince === '' || (delivered !== '' && delivered >= deliveredSince)) &&
+            lineTotal >= minTotal &&
+            Number(cell(col.quantity)) >= minQty;
+          if (keep) {
+            total += lineTotal;
+            lines += 1;
+          } else row.remove();
+        }
+        if (result) {
+          result.textContent = supplier
+            ? 'Total for ' + lines + ' lines: ' + money(Math.round(total * 100) / 100)
+            : 'Choose a supplier';
+        }
+      };
+      const clearFilters = () => {
+        for (const input of document.querySelectorAll('.filters input')) input.value = '';
+        const result = document.querySelector('#order-total');
+        if (result) result.textContent = '';
+      };
+      document.addEventListener('click', (e) => {
+        const origin = e.composedPath()[0];
+        const el = origin instanceof Element ? origin.closest('[data-action]') : null;
+        if (!el) return;
+        const action = el.getAttribute('data-action');
+        if (action === 'nav') {
+          e.preventDefault();
+          show(el.getAttribute('data-target'));
+        } else if (action === 'supplier') {
+          e.preventDefault();
+          supplier = el.getAttribute('data-supplier');
+          for (const a of document.querySelectorAll('[data-action="supplier"]')) {
+            a.setAttribute('aria-current', String(a === el));
+          }
+        } else if (action === 'apply') {
+          applyFilters();
+        } else if (action === 'clear') {
+          clearFilters();
+        } else if (action === 'dismiss') {
+          const overlay = el.closest('.overlay');
+          if (overlay) overlay.remove();
+        } else if (action === 'toggle-menu') {
+          const menu = el.closest('.menu');
+          const list = menu ? menu.querySelector('[data-role="menu-list"]') : null;
+          if (list) list.hidden = !list.hidden;
+        }
+      });
+    </script>
+  </body>
+</html>

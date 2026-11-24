@@ -1,0 +1,103 @@
+{
+  "irVersion": "1.0.0",
+  "id": "drift_supplier_orders",
+  "name": "Read Northwind Packaging's order lines since September",
+  "steps": [
+    {
+      "id": "nav_001",
+      "intent": "Open the supplier portal.",
+      "action": "navigate",
+      "url": "https://suppliers.drift.test/"
+    },
+    {
+      "id": "click_002",
+      "intent": "Open the purchase orders page.",
+      "action": "click",
+      "target": {
+        "candidates": [
+          { "kind": "role", "value": "link[name='Purchase orders']" },
+          { "kind": "testid", "value": "nav-orders" }
+        ]
+      }
+    },
+    {
+      "id": "click_003",
+      "intent": "Choose the supplier Northwind Packaging.",
+      "action": "click",
+      "target": {
+        "candidates": [
+          { "kind": "role", "value": "link[name='Northwind Packaging']" },
+          { "kind": "testid", "value": "supplier-northwind-packaging" }
+        ]
+      }
+    },
+    {
+      "id": "fill_004",
+      "intent": "Only include orders placed since the start of September.",
+      "action": "fill",
+      "target": {
+        "candidates": [
+          { "kind": "label", "value": "Ordered since" },
+          { "kind": "css", "value": "#ordered-since" }
+        ]
+      },
+      "value": "2026-09-01"
+    },
+    {
+      "id": "fill_005",
+      "intent": "Leave out order lines worth less than $100.",
+      "action": "fill",
+      "target": {
+        "candidates": [
+          { "kind": "label", "value": "Minimum line total" },
+          { "kind": "css", "value": "#min-total" }
+        ]
+      },
+      "value": "100"
+    },
+    {
+      "id": "click_006",
+      "intent": "Apply the filters.",
+      "action": "click",
+      "target": {
+        "candidates": [
+          { "kind": "role", "value": "button[name='Apply filters']" },
+          { "kind": "testid", "value": "apply-filters" }
+        ]
+      }
+    },
+    {
+      "id": "extract_007",
+      "intent": "Read the order lines that match the filters.",
+      "action": "extract",
+      "target": {
+        "candidates": [
+          { "kind": "role", "value": "table[name='Order lines']" },
+          { "kind": "css", "value": "table.order-lines" }
+        ]
+      },
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "po": { "type": "string" },
+            "item": { "type": "string" },
+            "quantity": { "type": "number" },
+            "lineTotal": { "type": "number", "x-header": "Line total" },
+            "ordered": { "type": "string" }
+          }
+        }
+      },
+      "bind": "orderLines"
+    },
+    {
+      "id": "extract_008",
+      "intent": "Read the total of the matching order lines.",
+      "action": "extract",
+      "target": { "candidates": [{ "kind": "css", "value": "#order-total" }] },
+      "schema": { "type": "string" },
+      "bind": "orderTotal"
+    }
+  ]
+}

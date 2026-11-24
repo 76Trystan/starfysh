@@ -73,6 +73,7 @@ const FIXTURES: Record<string, { origin: string }> = {
   portal: { origin: 'https://portal.drift.test' },
   shop: { origin: 'https://shop.drift.test' },
   bank: { origin: 'https://bank.drift.test' },
+  suppliers: { origin: 'https://suppliers.drift.test' },
 };
 
 /** Load a fixture and its workflow from `drift/fixtures/`. */
