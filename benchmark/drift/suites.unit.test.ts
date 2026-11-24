@@ -28,7 +28,7 @@ describe('frozen drift suites', () => {
 
   it('records the cases-file hash the way heal:drift does', () => {
     for (const suite of FROZEN_SUITES) {
-      expect(suite.files['cases.ts']).toBe(suite.casesSha256);
+      expect(suite.files[suite.casesFile]).toBe(suite.casesSha256);
     }
   });
 

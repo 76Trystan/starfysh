@@ -1,9 +1,9 @@
 // Frozen drift suites: which versions of the suite a published number may
 // name, and what each one is for.
 //
-// A suite is frozen by the sha256 of `cases.ts` (the hash `heal:drift`
-// writes into every results.json) and of the fixture files its cases run
-// on. Once a suite is listed here its files do not change: a new case, a
+// A suite is frozen by the sha256 of its cases file (`cases.ts` for v1;
+// the hash `heal:drift` writes into every results.json) and of the fixture
+// files its cases run on. Once a suite is listed here its files do not change: a new case, a
 // reworded oracle or an edited fixture goes into the next version, so a
 // rate measured on v1 today means the same thing as one measured on v1
 // next month. `suites.unit.test.ts` fails if a frozen file changes.
@@ -30,6 +30,8 @@ export interface FrozenSuite {
   frozenOn: string;
   /** Number of cases in the suite. */
   cases: number;
+  /** The cases file, relative to this folder. Also a key of `files`. */
+  casesFile: string;
   /** sha256 of the cases file, as `heal:drift` records it. */
   casesSha256: string;
   /** sha256 of every file the cases read, keyed by path relative to this folder. */
@@ -42,6 +44,7 @@ export const FROZEN_SUITES: readonly FrozenSuite[] = [
     role: 'tuning',
     frozenOn: '2026-11-22',
     cases: 69,
+    casesFile: 'cases.ts',
     casesSha256: '1821387f637e92f671c795df7551012f5c316a6a46398a91e990e3217efd4684',
     files: {
       'cases.ts': '1821387f637e92f671c795df7551012f5c316a6a46398a91e990e3217efd4684',

@@ -11,6 +11,7 @@ const frozen = (role: FrozenSuite['role']): FrozenSuite => ({
   role,
   frozenOn: '2026-11-22',
   cases: 0,
+  casesFile: 'cases-h1.ts',
   casesSha256: 'h1hash',
   files: {},
 });

@@ -96,6 +96,7 @@ const HELD: FrozenSuite = {
   role: 'held_out',
   frozenOn: '2026-11-22',
   cases: 6,
+  casesFile: 'cases.ts',
   casesSha256: 'abc',
   files: {},
 };

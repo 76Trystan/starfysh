@@ -9,7 +9,7 @@
 // it is not: a dry run, a partial suite, no frozen suite (or one the
 // results were not run on), the tuning set, fewer than 3 runs per case,
 // or unpriced calls. Without --suite-version the suite is found from the
-// cases.ts hash in results.json (see suites.ts).
+// cases-file hash in results.json (see suites.ts).
 
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
