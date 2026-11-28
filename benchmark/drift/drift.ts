@@ -304,3 +304,5 @@ function canonical(value: unknown): string {
       : v,
   );
 }
+
+// Throwaway: checks the drift-selftest.yml path filter.
