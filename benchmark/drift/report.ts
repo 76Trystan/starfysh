@@ -83,6 +83,18 @@ export interface QualityRow {
   falseHeals: number;
   /** False heals over verified runs. Null when nothing was verified. */
   falseHealRate: Rate | null;
+  /** Distinct cases with a verified, decided patch in any run. */
+  casesVerified: number;
+  /** Distinct cases with a false heal in any run. */
+  casesWithFalseHeal: number;
+  /**
+   * The same rate counted by case: cases with a false heal in any run over
+   * cases verified in any run. Runs of one case share the page, the change
+   * and the prompt, so they are not independent trials, and the per-run
+   * interval looks more precise than the evidence is. Null when nothing was
+   * verified.
+   */
+  caseFalseHealRate: Rate | null;
   /** Correct runs over all runs in the row. Null for an empty row. */
   healRate: Rate | null;
 }
@@ -178,6 +190,8 @@ export interface DriftReport {
   /** Reasons the numbers are not fit to publish as they stand. Empty when they are. */
   warnings: string[];
   formula: string;
+  /** How the by-case false-heal rate is counted, and why it is shown. */
+  caseFormula: string;
   quality: QualityRow[];
   refusals: RefusalsSection;
   neverReached: NeverReachedSection;
@@ -201,6 +215,9 @@ export interface BuildReportOptions {
 
 export const FALSE_HEAL_FORMULA =
   'False-heal rate = case runs with at least one false heal, divided by case runs with at least one verified, decided patch.';
+
+export const CASE_FALSE_HEAL_FORMULA =
+  'By case = cases with a false heal in any run, divided by cases with a verified, decided patch in any run. Runs of one case are correlated, so the per-run interval overstates precision; the truth lies between the two.';
 
 const HEALABLE = new Set(['promotion', 'selector', 'insert_step']);
 const isHealable = (r: CaseRunResult) => HEALABLE.has(r.expect.heal);
@@ -258,6 +275,8 @@ function qualityRow(label: string, rows: readonly CaseRunResult[]): QualityRow {
   const verified = rows.filter(decided).length;
   const correct = rows.filter(isCorrect).length;
   const falseHeals = rows.filter(hasFalseHeal).length;
+  const casesVerified = new Set(rows.filter(decided).map((r) => r.caseId)).size;
+  const casesWithFalseHeal = new Set(rows.filter(hasFalseHeal).map((r) => r.caseId)).size;
   return {
     label,
     cases: new Set(rows.map((r) => r.caseId)).size,
@@ -267,6 +286,9 @@ function qualityRow(label: string, rows: readonly CaseRunResult[]): QualityRow {
     correct,
     falseHeals,
     falseHealRate: wilson(falseHeals, verified),
+    casesVerified,
+    casesWithFalseHeal,
+    caseFalseHealRate: wilson(casesWithFalseHeal, casesVerified),
     healRate: wilson(correct, rows.length),
   };
 }
@@ -452,6 +474,7 @@ export function buildReport(file: DriftResultsFile, options: BuildReportOptions 
     header,
     warnings,
     formula: FALSE_HEAL_FORMULA,
+    caseFormula: CASE_FALSE_HEAL_FORMULA,
     quality,
     refusals,
     neverReached,
@@ -468,7 +491,8 @@ function headlineOf(header: DriftReport['header'], quality: QualityRow[]): strin
   const falseRate =
     all.falseHealRate === null
       ? 'no verified heals to measure a false-heal rate on'
-      : `a false-heal rate of ${pct(all.falseHealRate.value)} (95% CI ${pct(all.falseHealRate.low)} to ${pct(all.falseHealRate.high)})`;
+      : `a false-heal rate of ${pct(all.falseHealRate.value)} (95% CI ${pct(all.falseHealRate.low)} to ${pct(all.falseHealRate.high)}; ` +
+        `by case, ${all.casesWithFalseHeal} of ${all.casesVerified}, 95% CI ${pct(all.caseFalseHealRate!.low)} to ${pct(all.caseFalseHealRate!.high)})`;
   return (
     `On ${header.suiteVersion} (${all.cases} healable cases, ${header.runsPerCase} runs each, model ${header.model ?? header.provider}), ` +
     `Starfysh made a correct heal in ${pct(all.healRate.value)} of case runs, with ${falseRate}. ` +
@@ -499,6 +523,11 @@ function pct(value: number): string {
 function rateCell(rate: Rate | null): string {
   if (rate === null) return 'n/a';
   return `${pct(rate.value)} (${pct(rate.low)} to ${pct(rate.high)})`;
+}
+
+function caseRateCell(q: QualityRow): string {
+  if (q.caseFalseHealRate === null) return 'n/a';
+  return `${q.casesWithFalseHeal} of ${q.casesVerified}: ${rateCell(q.caseFalseHealRate)}`;
 }
 
 function usd(value: number): string {
@@ -556,14 +585,16 @@ export function renderReport(report: DriftReport): string {
   line('## Heal quality (healable cases)');
   line();
   line(
-    '| Group | Cases | Runs | Healer invoked | Verified | Correct | False heals | False-heal rate (95% CI) | Heal rate (95% CI) |',
+    '| Group | Cases | Runs | Healer invoked | Verified | Correct | False heals | False-heal rate (95% CI) | False-heal rate by case (95% CI) | Heal rate (95% CI) |',
   );
-  line('|---|---:|---:|---:|---:|---:|---:|---|---|');
+  line('|---|---:|---:|---:|---:|---:|---:|---|---|---|');
   for (const q of report.quality) {
     line(
-      `| ${q.label} | ${q.cases} | ${q.runs} | ${q.attempted} | ${q.verified} | ${q.correct} | ${q.falseHeals} | ${rateCell(q.falseHealRate)} | ${rateCell(q.healRate)} |`,
+      `| ${q.label} | ${q.cases} | ${q.runs} | ${q.attempted} | ${q.verified} | ${q.correct} | ${q.falseHeals} | ${rateCell(q.falseHealRate)} | ${caseRateCell(q)} | ${rateCell(q.healRate)} |`,
     );
   }
+  line();
+  line(report.caseFormula);
   line();
   line(
     'Heal rate is correct runs over all runs in the row, so a healer that heals nothing cannot score well on false-heal rate alone.',

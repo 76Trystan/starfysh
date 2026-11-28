@@ -3,7 +3,13 @@
 
 import { describe, expect, it } from 'vitest';
 import type { CaseRunResult } from './heal-run.js';
-import { buildReport, FALSE_HEAL_FORMULA, renderReport, wilson } from './report.js';
+import {
+  buildReport,
+  CASE_FALSE_HEAL_FORMULA,
+  FALSE_HEAL_FORMULA,
+  renderReport,
+  wilson,
+} from './report.js';
 import type { DriftResultsFile } from './report.js';
 import { FROZEN_SUITES } from './suites.js';
 import type { FrozenSuite } from './suites.js';
@@ -177,6 +183,36 @@ describe('buildReport(): heal quality', () => {
     expect(row('All').healRate).toMatchObject({ numerator: 2, denominator: 5 });
   });
 
+  it('also counts false heals by case, over cases verified in any run', () => {
+    // a verified twice, b once (a false heal), c once: 3 cases, 1 false.
+    expect(row('All')).toMatchObject({ casesVerified: 3, casesWithFalseHeal: 1 });
+    expect(row('All').caseFalseHealRate).toMatchObject({ numerator: 1, denominator: 3 });
+    expect(row('Decoy')).toMatchObject({ casesVerified: 1, casesWithFalseHeal: 1 });
+  });
+
+  it('counts a case once however many of its runs were verified or false', () => {
+    const repeated = buildReport(
+      file([
+        run('x', selector, 'healed', { verdict: 'false_heal' }),
+        run('x', selector, 'healed', { verdict: 'false_heal', runNo: 2 }),
+        run('x', selector, 'not_healed', { runNo: 3 }),
+        run('y', selector, 'not_healed'),
+        run('y', selector, 'healed', { verdict: 'correct', runNo: 2 }),
+      ]),
+      OPTS,
+    );
+    const all = repeated.quality.find((q) => q.label === 'All healable')!;
+    expect(all).toMatchObject({ verified: 3, falseHeals: 2 });
+    expect(all.falseHealRate).toMatchObject({ numerator: 2, denominator: 3 });
+    expect(all.caseFalseHealRate).toMatchObject({ numerator: 1, denominator: 2 });
+  });
+
+  it('gives no by-case rate when nothing was verified', () => {
+    const none = buildReport(file([run('x', selector, 'not_healed')]), OPTS);
+    const all = none.quality.find((q) => q.label === 'All healable')!;
+    expect(all).toMatchObject({ casesVerified: 0, casesWithFalseHeal: 0, caseFalseHealRate: null });
+  });
+
   it('does not count an unfinished heal as correct', () => {
     // Case c ended partial with a correct judgement: verified, not correct.
     expect(row('Complex')).toMatchObject({ runs: 1, verified: 1, correct: 0, falseHeals: 0 });
@@ -248,6 +284,7 @@ describe('buildReport(): warnings and headline', () => {
     expect(report.warnings).toEqual([]);
     expect(report.headline).toContain('On held-out h1 (3 healable cases, 3 runs each');
     expect(report.headline).toContain('false-heal rate of 25.0%');
+    expect(report.headline).toContain('by case, 1 of 3, 95% CI 6.1% to 79.2%');
     expect(report.headline).toContain('1 false heal(s) in 2 run(s)');
   });
 
@@ -316,6 +353,9 @@ describe('renderReport()', () => {
   it('states the formula, shows every table, and writes no dashes the style rules forbid', () => {
     const text = renderReport(buildReport(file(SAMPLE), OPTS));
     expect(text).toContain(FALSE_HEAL_FORMULA);
+    expect(text).toContain(CASE_FALSE_HEAL_FORMULA);
+    expect(text).toContain('| False-heal rate by case (95% CI) |');
+    expect(text).toContain('| 1 of 3: 33.3% (6.1% to 79.2%) |');
     for (const heading of [
       '## Heal quality',
       '## Refusals',
