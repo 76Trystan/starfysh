@@ -1,0 +1,53 @@
+name: Drift self-tests
+
+# Runs the browser-backed drift self-tests on pull requests that could change
+# what a drift case does. The frozen suites hash their case files and
+# fixtures, but not the drift operators or the packages the judge and oracle
+# run through, so a change there can alter a frozen case and still pass the
+# root baseline. Without this job it would only fail in the next nightly
+# benchmark run.
+#
+# The path list is the drift module itself plus every workspace package the
+# self-tests load, directly or through a dependency. Update it when the drift
+# module gains a new @sfysh import.
+
+on:
+  pull_request:
+    paths:
+      - 'benchmark/drift/**'
+      - 'benchmark/package.json'
+      - 'packages/healer/**'
+      - 'packages/ir/**'
+      - 'packages/playwright-adapter/**'
+      - 'packages/providers/**'
+      - 'packages/runtime/**'
+      - 'packages/triage/**'
+      - 'packages/verifier/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/drift-selftest.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  drift-selftest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      # Same install as benchmark.yml, for the same reasons: run it through
+      # the benchmark's own playwright-core so the browser build matches the
+      # locked version, and install chrome-headless-shell because headless
+      # launches use it.
+      - run: pnpm --filter @sfysh/benchmark exec playwright-core install --with-deps chromium chromium-headless-shell
+
+      - run: pnpm --filter @sfysh/benchmark test:drift
