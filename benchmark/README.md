@@ -40,7 +40,7 @@ All tasks use public sites that require no authentication.
 pnpm --filter @sfysh/benchmark test:drift
 ```
 
-That runs the drift self-tests in Chromium (about a minute and a half; the cases run concurrently). They are not part of the repository's `pnpm test`, because the baseline runs without a browser; the nightly benchmark workflow runs them.
+That runs the drift self-tests in Chromium (about four minutes; the cases run concurrently). They are not part of the repository's `pnpm test`, because the baseline runs without a browser. Two workflows run them instead: the nightly benchmark workflow, and `drift-selftest.yml` on every pull request that touches `benchmark/drift/`, the benchmark's `package.json`, the lockfile, or a package the self-tests load (healer, ir, playwright-adapter, providers, runtime, triage, verifier). The frozen suites hash their case files and fixtures but not the drift operators or those packages, so the pull request job is what stops a change there from silently altering a frozen case.
 
 **Pieces.**
 
