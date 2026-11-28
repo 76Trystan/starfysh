@@ -6,7 +6,7 @@
 
 A browser-automation compiler that turns one AI-recorded session into a deterministic, self-healing script. The agent authors the code once, the runtime runs it indefinitely.
 
-> **Status: Phase 1 in progress.** The paragraph above is the vision. Phase 0 (IR, compiler, runtime, Playwright adapter) shipped on npm at 0.1.x and has since seen several minor releases. Phase 1 (parser, verifier, triage, healer, CLI, MCP server) is in progress. The parser and verifier are published on npm. The triage classifier, model providers, CLI, and healer work inside the repo but are not yet published. The full heal loop (diagnose, patch, verify live, review, approve or undo) runs end to end in the repo's tests, but only against scripted models and simulated pages: the healer has not yet been run against a real model or measured on a benchmark. The sections below separate what you can use today from what is coming.
+> **Status: Phase 1 in progress.** The paragraph above is the vision. Phase 0 (IR, compiler, runtime, Playwright adapter) shipped on npm at 0.1.x and has since seen several minor releases. Phase 1 (parser, verifier, triage, healer, CLI, MCP server) is in progress. The parser and verifier are published on npm. The triage classifier, model providers, CLI, and healer work inside the repo but are not yet published. The full heal loop (diagnose, patch, verify live, review, approve or undo) runs end to end in the repo's tests against scripted models and simulated pages. The healer has also been measured with a real model on a synthetic-drift benchmark: on a held-out set of 52 site changes it healed 75.5% of case runs correctly, with 0 false heals in 77 verified runs (see the [false-heal methodology and results](./docs/reference/false-heal-methodology.md)). It has not yet healed a real user's workflow. The sections below separate what you can use today from what is coming.
 
 ## What ships today
 
@@ -32,7 +32,7 @@ Four more packages are in the repo but not yet published:
 
 **What this means in practice.** You can hand-author a workflow IR following the schema in `@sfysh/ir`, compile it with `@sfysh/compiler`, and execute the result via `@sfysh/runtime` plus Playwright. Or start from an existing Playwright script, lift it into IR with `@sfysh/parser`, and feed it into the same pipeline. That is a working, deterministic path from JSON (or TypeScript) to a running browser automation.
 
-**What is not here yet.** A first run of the healer against a real model, the benchmark that measures it, and the MCP server that lets coding agents drive the stack. Those are the remaining components that take Starfysh from "a well-typed Playwright toolkit" to "an automation you can actually leave running". See the [roadmap](#roadmap).
+**What is not here yet.** Healing measured on real sites rather than synthetic drift, and the MCP server that lets coding agents drive the stack. Those are the remaining components that take Starfysh from "a well-typed Playwright toolkit" to "an automation you can actually leave running". See the [roadmap](#roadmap).
 
 ## Try it in 5 minutes
 
@@ -162,7 +162,9 @@ Reliability only means something if it is measurable. The numbers Phase 1 tracks
 
 The intent is to report these honestly rather than selectively.
 
-Today `compile report` computes heal outcomes, how many heals needed a person, and the false-heal rate from the local heal corpus. The rate counts only heals with a ground-truth label, and unlabelled heals are shown, never assumed correct. It also shows how often an automatic-acceptance rule would have agreed with reviewers. Mean time between heals and time-to-heal need a scheduler and are not measured yet. No false-heal rate has been published: that waits for the benchmark.
+Today `compile report` computes heal outcomes, how many heals needed a person, and the false-heal rate from the local heal corpus. The rate counts only heals with a ground-truth label, and unlabelled heals are shown, never assumed correct. It also shows how often an automatic-acceptance rule would have agreed with reviewers. Mean time between heals and time-to-heal need a scheduler and are not measured yet.
+
+The first false-heal rate is published, measured on synthetic site changes whose correct fix is known in advance: [`docs/reference/false-heal-methodology.md`](./docs/reference/false-heal-methodology.md) gives the method, the full tables for two held-out sets and the tuning set, and the method's limits.
 
 ## Roadmap
 
@@ -185,7 +187,9 @@ Done so far:
 - Every patch waits for a person by default. The one automatic option, `--auto-promote`, applies only those model-free promotions, after verification and with a risk notice. Any applied patch can be undone with `compile revert`. Automatic acceptance of model-written patches is planned, but only once shadow-mode records show the rule agrees with reviewers.
 - `@sfysh/cli` drives parse, verify, heal, review (approve, reject, revert), labelling and reporting from the command line.
 
-Remaining: a first healer run against a real model, a 20-task benchmark with a synthetic-drift suite to measure the false-heal rate, the MCP server so coding agents can drive the stack, and a private beta followed by the public launch.
+- The synthetic-drift benchmark measures the healer against a real model on site changes with known correct fixes, with a published [false-heal rate and methodology](./docs/reference/false-heal-methodology.md).
+
+Remaining: a 20-task benchmark against live sites, the MCP server so coding agents can drive the stack, and a private beta followed by the public launch.
 
 ### Phase 2: API healing
 
@@ -274,4 +278,4 @@ Any TypeScript-aware editor works. VS Code picks up `tsconfig.base.json` and the
 
 ## Documentation
 
-See [`docs/reference/ir-schema.md`](./docs/reference/ir-schema.md) for the IR schema reference. Package-level docs live under each `packages/<name>/README.md`. The heal workflow (heal, approve, reject, revert, label, report, and the `.compile/` state they keep) is documented in [`packages/cli/README.md`](./packages/cli/README.md).
+See [`docs/reference/ir-schema.md`](./docs/reference/ir-schema.md) for the IR schema reference, and [`docs/reference/false-heal-methodology.md`](./docs/reference/false-heal-methodology.md) for how the false-heal rate is measured and the published results. Package-level docs live under each `packages/<name>/README.md`. The heal workflow (heal, approve, reject, revert, label, report, and the `.compile/` state they keep) is documented in [`packages/cli/README.md`](./packages/cli/README.md).

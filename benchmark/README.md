@@ -34,7 +34,7 @@ All tasks use public sites that require no authentication.
 
 ## Synthetic drift
 
-`drift/` reproduces site changes in a controlled way, with a known right answer, to measure the healer. It runs locally with no network: a fixture page is served by Playwright at a fake origin, and a list of DOM edits (a drift) is applied to it on every load.
+`drift/` reproduces site changes in a controlled way, with a known right answer, to measure the healer. It runs locally with no network: a fixture page is served by Playwright at a fake origin, and a list of DOM edits (a drift) is applied to it on every load. The method and the published results, written for readers outside the repository, are in [`docs/reference/false-heal-methodology.md`](../docs/reference/false-heal-methodology.md); this section is the working reference for running and extending the harness.
 
 ```sh
 pnpm --filter @sfysh/benchmark test:drift
