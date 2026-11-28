@@ -275,3 +275,5 @@ Any TypeScript-aware editor works. VS Code picks up `tsconfig.base.json` and the
 ## Documentation
 
 See [`docs/reference/ir-schema.md`](./docs/reference/ir-schema.md) for the IR schema reference. Package-level docs live under each `packages/<name>/README.md`. The heal workflow (heal, approve, reject, revert, label, report, and the `.compile/` state they keep) is documented in [`packages/cli/README.md`](./packages/cli/README.md).
+
+<!-- drift self-test trigger check, throwaway -->
